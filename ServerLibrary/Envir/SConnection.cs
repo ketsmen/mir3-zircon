@@ -1053,6 +1053,36 @@ namespace Server.Envir
                     break;
             }
         }
+        public void Process(C.NewHero p)
+        {
+            if (Stage != GameStage.Game) return;
+
+            Player.NewHero(p);
+        }
+        public void Process(C.ChangeHero p)
+        {
+            if (Stage != GameStage.Game) return;
+
+            Player.ChangeHero(p);
+        }
+        public void Process(C.ToggleHeroSpawn p)
+        {
+            if (Stage != GameStage.Game) return;
+
+            Player.ToggleHeroSpawn();
+        }
+        public void Process(C.SetHeroBehaviour p)
+        {
+            if (Stage != GameStage.Game) return;
+
+            Player.SetHeroBehaviour(p);
+        }
+        public void Process(C.SetHeroAutoPot p)
+        {
+            if (Stage != GameStage.Game) return;
+
+            Player.SetHeroAutoPot(p);
+        }
 
         public void Process(C.ItemSplit p)
         {

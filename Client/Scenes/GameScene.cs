@@ -59,6 +59,29 @@ namespace Client.Scenes
 
         #endregion
 
+        #region Hero
+
+        public ClientUserHero CurrentHero
+        {
+            get => _CurrentHero;
+            set
+            {
+                if (_CurrentHero == value) return;
+
+                _CurrentHero = value;
+
+                HeroChanged();
+            }
+        }
+        private ClientUserHero _CurrentHero;
+
+        public void HeroChanged()
+        {
+            HeroBox?.HeroChanged();
+        }
+
+        #endregion
+
         #region Observer
 
         public bool Observer
@@ -221,6 +244,7 @@ namespace Client.Scenes
         public QuestTrackerDialog QuestTrackerBox;
         public MilestoneAchievedDialog MilestoneAchievedBox;
         public CompanionDialog CompanionBox;
+        public HeroDialog HeroBox;
         public MonsterDialog MonsterBox;
         public MagicBarDialog MagicBarBox;
         public EditCharacterDialog EditCharacterBox;
@@ -239,6 +263,11 @@ namespace Client.Scenes
         public ClientUserItem[] Equipment = new ClientUserItem[Globals.EquipmentSize];
 
         public List<ClientUserQuest> QuestLog = new List<ClientUserQuest>();
+        public List<ClientHeroInformation> Heroes = new List<ClientHeroInformation>();
+        public int CurrentHeroIndex;
+        public int MaximumHeroCount;
+        public HeroSpawnState HeroSpawnState;
+        public HeroBehaviour HeroBehaviour;
 
         public HashSet<string> GuildWars = new HashSet<string>();
         public HashSet<CastleInfo> ConquestWars = new HashSet<CastleInfo>();
@@ -416,6 +445,7 @@ namespace Client.Scenes
             StorageBox?.LoadSettings();
             TradeBox?.LoadSettings();
             CompanionBox?.LoadSettings();
+            HeroBox?.LoadSettings();
             CommunicationBox?.LoadSettings();
             RankingBox?.LoadSettings();
             QuestBox?.LoadSettings();
@@ -717,6 +747,12 @@ namespace Client.Scenes
                 Visible = false,
             };
 
+            HeroBox = new HeroDialog
+            {
+                Parent = this,
+                Visible = false,
+            };
+
             MonsterBox = new MonsterDialog
             {
                 Parent = this,
@@ -794,6 +830,7 @@ namespace Client.Scenes
             StorageBox.LoadSettings();
             TradeBox.LoadSettings();
             CompanionBox.LoadSettings();
+            HeroBox.LoadSettings();
             CommunicationBox.LoadSettings();
             RankingBox.LoadSettings();
             QuestBox.LoadSettings();
@@ -870,6 +907,8 @@ namespace Client.Scenes
             CommunicationBox.Location = new Point((Size.Width - CommunicationBox.Size.Width) / 2, (Size.Height - CommunicationBox.Size.Height) / 2);
 
             CompanionBox.Location = new Point((Size.Width - CompanionBox.Size.Width) / 2, (Size.Height - CompanionBox.Size.Height) / 2);
+
+            HeroBox.Location = new Point((Size.Width - HeroBox.Size.Width) / 2, (Size.Height - HeroBox.Size.Height) / 2);
 
             MonsterBox.Location = new Point((Size.Width - MonsterBox.Size.Width) / 2, 50);
 
@@ -1236,6 +1275,9 @@ namespace Client.Scenes
                         break;
                     case KeyBindAction.CompanionWindow:
                         CompanionBox.Visible = !CompanionBox.Visible;
+                        break;
+                    case KeyBindAction.HeroWindow:
+                        HeroBox.Visible = !HeroBox.Visible;
                         break;
                     case KeyBindAction.FilterDropWindow:
                         FilterDropBox.Visible = !FilterDropBox.Visible;
@@ -3594,10 +3636,12 @@ namespace Client.Scenes
         private bool CanAttackTarget(MapObject ob)
         {
             if (ob == null || ob.Dead || !ob.Visible) return false;
+            if (ob is HeroObject hero && string.Equals(hero.OwnerName, User?.Name, StringComparison.OrdinalIgnoreCase)) return false;
 
             switch (ob.Race)
             {
                 case ObjectType.Player:
+                case ObjectType.Hero:
                     return true;
                 case ObjectType.Monster:
                     MonsterObject mob = (MonsterObject)ob;
@@ -4576,6 +4620,15 @@ namespace Client.Scenes
 
             if (Partner != null && Partner.ObjectID == objectID) return true;
 
+            if (MapControl?.Objects?.FirstOrDefault(x => x.ObjectID == objectID) is HeroObject hero)
+            {
+                if (string.Equals(hero.OwnerName, User.Name, StringComparison.OrdinalIgnoreCase)) return true;
+
+                foreach (ClientPlayerInfo member in GroupBox.Members)
+                    if (string.Equals(hero.OwnerName, member.Name, StringComparison.OrdinalIgnoreCase))
+                        return true;
+            }
+
             foreach (ClientPlayerInfo member in GroupBox.Members)
                 if (member.ObjectID == objectID) return true;
 
@@ -5002,6 +5055,14 @@ namespace Client.Scenes
                         CompanionBox.Dispose();
 
                     CompanionBox = null;
+                }
+
+                if (HeroBox != null)
+                {
+                    if (!HeroBox.IsDisposed)
+                        HeroBox.Dispose();
+
+                    HeroBox = null;
                 }
 
                 if (MonsterBox != null)

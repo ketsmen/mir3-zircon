@@ -142,6 +142,7 @@ namespace Client.UserModels
         QuestBox,
         QuestTrackerBox,
         CompanionBox,
+        HeroBox,
         CompanionFilterBox,
         BlockBox,
         MonsterBox,

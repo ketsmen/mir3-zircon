@@ -70,6 +70,32 @@ namespace Client.Envir
             SendDisconnect(p);
         }
 
+        private static void ApplyStartInformation(GameScene scene, StartInformation info)
+        {
+            scene.MapControl.MapInfo = Globals.MapInfoList.Binding.FirstOrDefault(x => x.Index == info.MapIndex);
+            scene.MapControl.InstanceInfo = Globals.InstanceInfoList.Binding.FirstOrDefault(x => x.Index == info.InstanceIndex);
+
+            GameScene.Game.QuestLog = info.Quests ?? new List<ClientUserQuest>();
+
+            GameScene.Game.NPCAdoptCompanionBox.AvailableCompanions = info.AvailableCompanions ?? new List<CompanionInfo>();
+            GameScene.Game.NPCAdoptCompanionBox.RefreshUnlockButton();
+
+            GameScene.Game.NPCCompanionStorageBox.Companions = info.Companions ?? new List<ClientUserCompanion>();
+            GameScene.Game.NPCCompanionStorageBox.Refresh();
+
+            GameScene.Game.Companion = GameScene.Game.NPCCompanionStorageBox.Companions.FirstOrDefault(x => x.Index == info.Companion);
+
+            GameScene.Game.Heroes = info.Heroes ?? new List<ClientHeroInformation>();
+            GameScene.Game.CurrentHero = info.CurrentHero;
+            GameScene.Game.CurrentHeroIndex = info.CurrentHeroIndex;
+            GameScene.Game.MaximumHeroCount = info.MaximumHeroCount;
+            GameScene.Game.HeroSpawnState = info.HeroSpawnState;
+            GameScene.Game.HeroBehaviour = info.HeroBehaviour;
+
+            GameScene.Game.StorageSize = info.StorageSize;
+            GameScene.Game.HeroBox.HeroChanged();
+        }
+
         public void Process(G.Disconnect p)
         {
             Disconnecting = true;
@@ -753,29 +779,16 @@ namespace Client.Envir
                         GameScene scene = new GameScene(Config.GameSize);
                         DXControl.ActiveScene = scene;
 
-                        scene.MapControl.MapInfo = Globals.MapInfoList.Binding.FirstOrDefault(x => x.Index == p.StartInformation.MapIndex);
-                        scene.MapControl.InstanceInfo = Globals.InstanceInfoList.Binding.FirstOrDefault(x => x.Index == p.StartInformation.InstanceIndex);
-
-                        GameScene.Game.QuestLog = p.StartInformation.Quests;
-
-                        GameScene.Game.NPCAdoptCompanionBox.AvailableCompanions = p.StartInformation.AvailableCompanions;
-                        GameScene.Game.NPCAdoptCompanionBox.RefreshUnlockButton();
-
-                        GameScene.Game.NPCCompanionStorageBox.Companions = p.StartInformation.Companions;
-                        GameScene.Game.NPCCompanionStorageBox.Refresh();
-
-                        GameScene.Game.Companion = GameScene.Game.NPCCompanionStorageBox.Companions.FirstOrDefault(x => x.Index == p.StartInformation.Companion);
-
+                        ApplyStartInformation(scene, p.StartInformation);
                         scene.User = new UserObject(p.StartInformation);
 
                         GameScene.Game.BuffBox.BuffsChanged();
                         GameScene.Game.ConfigBox.Observable = p.StartInformation.Observable;
 
-                        GameScene.Game.StorageSize = p.StartInformation.StorageSize;
-
                         if (!string.IsNullOrEmpty(p.Message)) DXMessageBox.Show(p.Message, "Start Game");
 
                         GameScene.Game.CompanionBox.RefreshFilter();
+                        GameScene.Game.HeroBox.HeroChanged();
 
                         GameScene.Game.CharacterBox.UpdateDiscipline();
 
@@ -842,6 +855,10 @@ namespace Client.Envir
         {
             new PlayerObject(p);
         }
+        public void Process(S.ObjectHero p)
+        {
+            new HeroObject(p);
+        }
         public void Process(S.ObjectItem p)
         {
             new ItemObject(p);
@@ -876,7 +893,7 @@ namespace Client.Envir
         {
             foreach (MapObject ob in GameScene.Game.MapControl.Objects)
             {
-                if (ob.Race != ObjectType.Player || ob.ObjectID != p.ObjectID) continue;
+                if ((ob.Race != ObjectType.Player && ob.Race != ObjectType.Hero) || ob.ObjectID != p.ObjectID) continue;
 
                 PlayerObject player = (PlayerObject)ob;
 
@@ -2067,6 +2084,12 @@ namespace Client.Envir
                 case GridType.CompanionEquipment:
                     fromCell = GameScene.Game.CompanionBox.EquipmentGrid[p.FromSlot];
                     break;
+                case GridType.HeroInventory:
+                    fromCell = GameScene.Game.HeroBox.InventoryGrid.Grid[p.FromSlot];
+                    break;
+                case GridType.HeroEquipment:
+                    fromCell = GameScene.Game.HeroBox.EquipmentGrid[p.FromSlot];
+                    break;
                 default: return;
             }
 
@@ -2093,6 +2116,12 @@ namespace Client.Envir
                 case GridType.CompanionEquipment:
                     toCell = GameScene.Game.CompanionBox.EquipmentGrid[p.ToSlot];
                     break;
+                case GridType.HeroInventory:
+                    toCell = GameScene.Game.HeroBox.InventoryGrid.Grid[p.ToSlot];
+                    break;
+                case GridType.HeroEquipment:
+                    toCell = GameScene.Game.HeroBox.EquipmentGrid[p.ToSlot];
+                    break;
                 default:
                     return;
             }
@@ -2102,6 +2131,8 @@ namespace Client.Envir
 
             if (!p.Success) return;
 
+            bool heroInvolved = p.FromGrid == GridType.HeroInventory || p.FromGrid == GridType.HeroEquipment ||
+                                p.ToGrid == GridType.HeroInventory || p.ToGrid == GridType.HeroEquipment;
 
             if (p.FromGrid != p.ToGrid)
             {
@@ -2161,6 +2192,9 @@ namespace Client.Envir
                     fromCell.Item = null;
                     toCell.RefreshItem();
 
+                    if (heroInvolved)
+                        GameScene.Game.HeroBox.UpdateLabels();
+
                     return;
                 }
 
@@ -2168,6 +2202,10 @@ namespace Client.Envir
                 toCell.Item.Count = toCell.Item.Info.StackSize;
                 fromCell.RefreshItem();
                 toCell.RefreshItem();
+
+                if (heroInvolved)
+                    GameScene.Game.HeroBox.UpdateLabels();
+
                 return;
             }
 
@@ -2175,6 +2213,9 @@ namespace Client.Envir
 
             toCell.Item = fromCell.Item;
             fromCell.Item = temp;
+
+            if (heroInvolved)
+                GameScene.Game.HeroBox.UpdateLabels();
 
             //if (p.ToGrid == GridType.GuildStorage || p.FromGrid == GridType.GuildStorage)
             //    GameScene.Game.GuildPanel.StorageControl.ItemCount = GameScene.Game.GuildStorage.Count(x => x != null);
@@ -2219,6 +2260,12 @@ namespace Client.Envir
                 case GridType.CompanionEquipment:
                     grid = GameScene.Game.CompanionBox.EquipmentGrid;
                     break;
+                case GridType.HeroInventory:
+                    grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
+                    break;
+                case GridType.HeroEquipment:
+                    grid = GameScene.Game.HeroBox.EquipmentGrid;
+                    break;
                 default:
                     throw new ArgumentOutOfRangeException();
             }
@@ -2230,6 +2277,11 @@ namespace Client.Envir
 
             if (!p.Success) return;
 
+            if (fromCell.Item == null)
+            {
+                fromCell.RefreshItem();
+                return;
+            }
 
             if (!fromCell.Item.Info.ShouldLinkInfo)
             {
@@ -2255,9 +2307,14 @@ namespace Client.Envir
                 fromCell.Item.Count = p.Link.Count;
 
             fromCell.RefreshItem();
+
+            if (p.Link.GridType == GridType.HeroInventory || p.Link.GridType == GridType.HeroEquipment)
+                GameScene.Game.HeroBox.UpdateLabels();
         }
         public void Process(S.ItemsChanged p)
         {
+            bool heroInvolved = false;
+
             foreach (CellLinkInfo cellLinkInfo in p.Links)
             {
                 DXItemCell[] grid;
@@ -2282,6 +2339,14 @@ namespace Client.Envir
                     case GridType.CompanionEquipment:
                         grid = GameScene.Game.CompanionBox.EquipmentGrid;
                         break;
+                    case GridType.HeroInventory:
+                        grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
+                        heroInvolved = true;
+                        break;
+                    case GridType.HeroEquipment:
+                        grid = GameScene.Game.HeroBox.EquipmentGrid;
+                        heroInvolved = true;
+                        break;
                     default:
                         throw new ArgumentOutOfRangeException();
                 }
@@ -2291,6 +2356,12 @@ namespace Client.Envir
                 fromCell.Selected = false;
 
                 if (!p.Success) continue;
+
+                if (fromCell.Item == null)
+                {
+                    fromCell.RefreshItem();
+                    continue;
+                }
 
                 if (!fromCell.Item.Info.ShouldLinkInfo)
                 {
@@ -2318,6 +2389,9 @@ namespace Client.Envir
             }
 
             DXItemCell.SelectedCell = null;
+
+            if (heroInvolved)
+                GameScene.Game.HeroBox.UpdateLabels();
         }
 
         public void Process(S.ItemStatsChanged p)
@@ -2343,6 +2417,12 @@ namespace Client.Envir
                     break;
                 case GridType.CompanionEquipment:
                     grid = GameScene.Game.CompanionBox.EquipmentGrid;
+                    break;
+                case GridType.HeroInventory:
+                    grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
+                    break;
+                case GridType.HeroEquipment:
+                    grid = GameScene.Game.HeroBox.EquipmentGrid;
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -2398,6 +2478,12 @@ namespace Client.Envir
                 case GridType.CompanionEquipment:
                     grid = GameScene.Game.CompanionBox.EquipmentGrid;
                     break;
+                case GridType.HeroInventory:
+                    grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
+                    break;
+                case GridType.HeroEquipment:
+                    grid = GameScene.Game.HeroBox.EquipmentGrid;
+                    break;
                 default:
                     throw new ArgumentOutOfRangeException();
             }
@@ -2430,6 +2516,12 @@ namespace Client.Envir
                     break;
                 case GridType.CompanionEquipment:
                     grid = GameScene.Game.CompanionBox.EquipmentGrid;
+                    break;
+                case GridType.HeroInventory:
+                    grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
+                    break;
+                case GridType.HeroEquipment:
+                    grid = GameScene.Game.HeroBox.EquipmentGrid;
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -2480,6 +2572,12 @@ namespace Client.Envir
                 case GridType.CompanionEquipment:
                     fromCell = GameScene.Game.CompanionBox.EquipmentGrid[p.Slot];
                     break;
+                case GridType.HeroInventory:
+                    fromCell = GameScene.Game.HeroBox.InventoryGrid.Grid[p.Slot];
+                    break;
+                case GridType.HeroEquipment:
+                    fromCell = GameScene.Game.HeroBox.EquipmentGrid[p.Slot];
+                    break;
                 default: return;
             }
 
@@ -2507,6 +2605,12 @@ namespace Client.Envir
                     break;
                 case GridType.CompanionEquipment:
                     toCell = GameScene.Game.CompanionBox.EquipmentGrid[p.NewSlot];
+                    break;
+                case GridType.HeroInventory:
+                    toCell = GameScene.Game.HeroBox.InventoryGrid.Grid[p.NewSlot];
+                    break;
+                case GridType.HeroEquipment:
+                    toCell = GameScene.Game.HeroBox.EquipmentGrid[p.NewSlot];
                     break;
                 default: return;
             }
@@ -2552,6 +2656,12 @@ namespace Client.Envir
                 case GridType.CompanionEquipment:
                     cell = GameScene.Game.CompanionBox.EquipmentGrid[p.Slot];
                     break;
+                case GridType.HeroInventory:
+                    cell = GameScene.Game.HeroBox.InventoryGrid.Grid[p.Slot];
+                    break;
+                case GridType.HeroEquipment:
+                    cell = GameScene.Game.HeroBox.EquipmentGrid[p.Slot];
+                    break;
                 default: return;
             }
 
@@ -2579,6 +2689,9 @@ namespace Client.Envir
                 case GridType.PartsStorage:
                     grid = GameScene.Game.StorageBox.PartGrid.Grid;
                     break;
+                case GridType.HeroInventory:
+                    grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
+                    break;
                 default:
                     return;
             }
@@ -2603,8 +2716,14 @@ namespace Client.Envir
                     case GridType.PartsStorage:
                         grid[item.Slot - Globals.PartsStorageOffset].Item = item;
                         break;
+                    case GridType.HeroInventory:
+                        grid[item.Slot].Item = item;
+                        break;
                 }
             }
+
+            if (p.Grid == GridType.HeroInventory)
+                GameScene.Game.HeroBox.HeroChanged();
         }
 
         public void Process(S.ItemDelete p)
@@ -2710,6 +2829,8 @@ namespace Client.Envir
         }
         public void Process(S.NPCRepair p)
         {
+            bool heroInvolved = false;
+
             foreach (CellLinkInfo cellLinkInfo in p.Links)
             {
 
@@ -2740,6 +2861,14 @@ namespace Client.Envir
                     case GridType.CompanionEquipment:
                         grid = GameScene.Game.CompanionBox.EquipmentGrid;
                         break;
+                    case GridType.HeroInventory:
+                        grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
+                        heroInvolved = true;
+                        break;
+                    case GridType.HeroEquipment:
+                        grid = GameScene.Game.HeroBox.EquipmentGrid;
+                        heroInvolved = true;
+                        break;
                     default:
                         throw new ArgumentOutOfRangeException();
                 }
@@ -2768,6 +2897,9 @@ namespace Client.Envir
 
                 cell.RefreshItem();
             }
+
+            if (heroInvolved)
+                GameScene.Game.HeroBox.UpdateLabels();
         }
         public void Process(S.NPCRefine p)
         {
@@ -3506,22 +3638,8 @@ namespace Client.Envir
             DXControl.ActiveScene = scene;
             GameScene.Game.Observer = true;
 
-            scene.MapControl.MapInfo = Globals.MapInfoList.Binding.FirstOrDefault(x => x.Index == p.StartInformation.MapIndex);
-            scene.MapControl.InstanceInfo = Globals.InstanceInfoList.Binding.FirstOrDefault(x => x.Index == p.StartInformation.InstanceIndex);
-
-            GameScene.Game.QuestLog = p.StartInformation.Quests;
-
-            GameScene.Game.NPCAdoptCompanionBox.AvailableCompanions = p.StartInformation.AvailableCompanions;
-            GameScene.Game.NPCAdoptCompanionBox.RefreshUnlockButton();
-
-            GameScene.Game.NPCCompanionStorageBox.Companions = p.StartInformation.Companions;
-            GameScene.Game.NPCCompanionStorageBox.Refresh();
-
-            GameScene.Game.Companion = GameScene.Game.NPCCompanionStorageBox.Companions.FirstOrDefault(x => x.Index == p.StartInformation.Companion);
-
+            ApplyStartInformation(scene, p.StartInformation);
             scene.User = new UserObject(p.StartInformation);
-
-            GameScene.Game.StorageSize = p.StartInformation.StorageSize;
 
             GameScene.Game.BuffBox.BuffsChanged();
 
@@ -3704,6 +3822,143 @@ namespace Client.Envir
             GameScene.Game.User.PetMode = p.Mode;
 
             GameScene.Game.ReceiveChat(GameScene.Game.MainPanel.PetModeLabel.Text, MessageType.System);
+        }
+
+        public void Process(S.NewHero p)
+        {
+            switch (p.Result)
+            {
+                case NewHeroResult.Success:
+                    if (p.Hero != null && GameScene.Game.Heroes.All(x => x.Index != p.Hero.Index))
+                        GameScene.Game.Heroes.Add(p.Hero);
+
+                    GameScene.Game.Heroes = GameScene.Game.Heroes.OrderBy(x => x.Slot).ToList();
+                    GameScene.Game.HeroBox.HeroChanged();
+                    GameScene.Game.ReceiveChat("英雄创建成功。", MessageType.System);
+                    return;
+                case NewHeroResult.Disabled:
+                    DXMessageBox.Show("当前服务器未开放创建英雄。", "创建英雄");
+                    return;
+                case NewHeroResult.LevelTooLow:
+                    DXMessageBox.Show("角色等级不足，暂时不能创建英雄。", "创建英雄");
+                    return;
+                case NewHeroResult.BadHeroName:
+                    DXMessageBox.Show("英雄名字不符合规则。", "创建英雄");
+                    return;
+                case NewHeroResult.BadGender:
+                    DXMessageBox.Show("英雄性别无效。", "创建英雄");
+                    return;
+                case NewHeroResult.BadClass:
+                    DXMessageBox.Show("英雄职业无效。", "创建英雄");
+                    return;
+                case NewHeroResult.MaxHeroes:
+                    DXMessageBox.Show("英雄数量已达到上限。", "创建英雄");
+                    return;
+                case NewHeroResult.AlreadyExists:
+                    DXMessageBox.Show("这个名字已经被使用。", "创建英雄");
+                    return;
+            }
+        }
+
+        public void Process(S.ChangeHero p)
+        {
+            GameScene.Game.CurrentHero = p.Hero;
+            GameScene.Game.CurrentHeroIndex = p.Hero?.Index ?? 0;
+            GameScene.Game.HeroSpawnState = p.State;
+            GameScene.Game.HeroBox.HeroChanged();
+        }
+
+        public void Process(S.ManageHeroes p)
+        {
+            GameScene.Game.Heroes = p.Heroes ?? new List<ClientHeroInformation>();
+            GameScene.Game.MaximumHeroCount = p.MaximumCount;
+            GameScene.Game.CurrentHeroIndex = p.CurrentHero?.Index ?? 0;
+            if (GameScene.Game.CurrentHeroIndex == 0 ||
+                GameScene.Game.Heroes.All(x => x.Index != GameScene.Game.CurrentHeroIndex) ||
+                GameScene.Game.CurrentHero?.Index != GameScene.Game.CurrentHeroIndex)
+                GameScene.Game.CurrentHero = null;
+            GameScene.Game.HeroSpawnState = p.State;
+            GameScene.Game.HeroBehaviour = p.Behaviour;
+            GameScene.Game.HeroBox.HeroChanged();
+        }
+
+        public void Process(S.HeroInformation p)
+        {
+            GameScene.Game.CurrentHero = p.Hero;
+            GameScene.Game.CurrentHeroIndex = p.Hero?.Index ?? 0;
+
+            if (p.Hero != null)
+            {
+                ClientHeroInformation summary = GameScene.Game.Heroes.FirstOrDefault(x => x.Index == p.Hero.Index);
+                if (summary != null)
+                {
+                    summary.Name = p.Hero.Name;
+                    summary.Class = p.Hero.Class;
+                    summary.Gender = p.Hero.Gender;
+                    summary.Level = p.Hero.Level;
+                }
+            }
+
+            GameScene.Game.HeroBox.HeroChanged();
+        }
+
+        public void Process(S.HeroHealthChanged p)
+        {
+            if (GameScene.Game.CurrentHero == null) return;
+
+            GameScene.Game.CurrentHero.CurrentHP = p.CurrentHP;
+            GameScene.Game.CurrentHero.CurrentMP = p.CurrentMP;
+            GameScene.Game.CurrentHero.MaxHP = p.MaxHP;
+            GameScene.Game.CurrentHero.MaxMP = p.MaxMP;
+            GameScene.Game.HeroBox.UpdateLabels();
+        }
+
+        public void Process(S.GainHeroExperience p)
+        {
+            if (GameScene.Game.CurrentHero == null) return;
+
+            GameScene.Game.CurrentHero.Experience = p.Experience;
+            GameScene.Game.CurrentHero.MaxExperience = p.MaxExperience;
+            GameScene.Game.HeroBox.UpdateLabels();
+        }
+
+        public void Process(S.HeroLevelChanged p)
+        {
+            if (GameScene.Game.CurrentHero == null) return;
+
+            GameScene.Game.CurrentHero.Level = p.Level;
+            GameScene.Game.CurrentHero.Experience = p.Experience;
+            GameScene.Game.CurrentHero.MaxExperience = p.MaxExperience;
+
+            ClientHeroInformation summary = GameScene.Game.Heroes.FirstOrDefault(x => x.Index == GameScene.Game.CurrentHero.Index);
+            if (summary != null)
+                summary.Level = p.Level;
+
+            GameScene.Game.HeroBox.UpdateLabels();
+        }
+
+        public void Process(S.UpdateHeroSpawnState p)
+        {
+            GameScene.Game.HeroSpawnState = p.State;
+            GameScene.Game.HeroBox.UpdateLabels();
+        }
+
+        public void Process(S.SetHeroBehaviour p)
+        {
+            GameScene.Game.HeroBehaviour = p.Behaviour;
+            GameScene.Game.HeroBox.UpdateLabels();
+        }
+
+        public void Process(S.SetHeroAutoPot p)
+        {
+            if (GameScene.Game.CurrentHero == null) return;
+
+            GameScene.Game.CurrentHero.AutoPot = p.AutoPot;
+            GameScene.Game.CurrentHero.HPItemIndex = p.HPItemIndex;
+            GameScene.Game.CurrentHero.MPItemIndex = p.MPItemIndex;
+            GameScene.Game.CurrentHero.AutoHPPercent = p.AutoHPPercent;
+            GameScene.Game.CurrentHero.AutoMPPercent = p.AutoMPPercent;
+            GameScene.Game.HeroBox.HeroChanged();
         }
 
         public void Process(S.WeightUpdate p)

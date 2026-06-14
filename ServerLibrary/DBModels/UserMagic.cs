@@ -40,6 +40,22 @@ namespace Server.DBModels
         }
         private CharacterInfo _Character;
 
+        [Association("Magics")]
+        public HeroInfo Hero
+        {
+            get { return _Hero; }
+            set
+            {
+                if (_Hero == value) return;
+
+                var oldValue = _Hero;
+                _Hero = value;
+
+                OnChanged(oldValue, value, "Hero");
+            }
+        }
+        private HeroInfo _Hero;
+
         public SpellKey Set1Key
         {
             get { return _Set1Key; }
@@ -171,6 +187,7 @@ namespace Server.DBModels
         {
             Info = null;
             Character = null;
+            Hero = null;
             Discipline = null;
 
             base.OnDeleted();

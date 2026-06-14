@@ -45,6 +45,22 @@ namespace Library
         None = 4,
     }
 
+    public enum HeroSpawnState : byte
+    {
+        None = 0,
+        Unsummoned = 1,
+        Summoned = 2,
+        Dead = 3,
+    }
+
+    public enum HeroBehaviour : byte
+    {
+        Attack = 0,
+        CounterAttack = 1,
+        Follow = 2,
+        Custom = 3,
+    }
+
     public enum MirDirection : byte
     {
         Up = 0,
@@ -213,7 +229,11 @@ namespace Library
         AccessoryRefineCombItems,
         PartsStorage,
         Bundle,
-        LootBox
+        LootBox,
+        HeroInventory,
+        HeroEquipment,
+        HeroHPItem,
+        HeroMPItem
     }
 
     public enum InventoryMode
@@ -381,7 +401,9 @@ namespace Library
         Item,
         NPC,
         Spell,
-        Monster
+        Monster,
+
+        Hero = 8,
     }
 
     public enum ItemType : byte
@@ -2201,6 +2223,18 @@ namespace Library
         BadArmourColour,
         ClassDisabled,
         MaxCharacters,
+        AlreadyExists,
+        Success
+    }
+
+    public enum NewHeroResult : byte
+    {
+        Disabled,
+        LevelTooLow,
+        BadHeroName,
+        BadGender,
+        BadClass,
+        MaxHeroes,
         AlreadyExists,
         Success
     }

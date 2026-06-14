@@ -1287,6 +1287,9 @@ namespace Client.Scenes.Views
                 GameScene.Game.InventoryBox.Visible = true;
                 GameScene.Game.CharacterBox.Visible = true;
                 GameScene.Game.StorageBox.Visible = true;
+
+                if (GameScene.Game.Heroes?.Count > 0)
+                    GameScene.Game.HeroBox.Visible = true;
             }
 
             if (!IsVisible)

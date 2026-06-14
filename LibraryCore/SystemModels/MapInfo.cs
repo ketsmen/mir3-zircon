@@ -210,6 +210,21 @@ namespace Library.SystemModels
         }
         private bool _AllowRecall;
 
+        public bool NoHero
+        {
+            get => _NoHero;
+            set
+            {
+                if (_NoHero == value) return;
+
+                bool oldValue = _NoHero;
+                _NoHero = value;
+
+                OnChanged(oldValue, value, "NoHero");
+            }
+        }
+        private bool _NoHero;
+
         public int MinimumLevel
         {
             get { return _MinimumLevel; }

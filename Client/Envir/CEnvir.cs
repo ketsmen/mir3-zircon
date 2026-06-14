@@ -607,6 +607,10 @@ namespace Client.Envir
                     bind.Category = "Windows";
                     bind.Key1 = Keys.U;
                     break;
+                case KeyBindAction.HeroWindow:
+                    bind.Category = "Windows";
+                    bind.Key1 = Keys.I;
+                    break;
                 case KeyBindAction.GroupWindow:
                     bind.Category = "Windows";
                     bind.Key1 = Keys.P;

@@ -143,9 +143,9 @@ namespace Client.Envir.Translations
         public override string CommonControlConfigWindowGameTabLabel { get; set; } = "游戏";
         public override string CommonControlConfigWindowNetworkTabLabel { get; set; } = "网络";
         public override string CommonControlConfigWindowUITabLabel { get; set; } = "UI";
-        public override string CommonControlConfigWindowGraphicsSectionDisplayLabel { get; set; } = "Display";
-        public override string CommonControlConfigWindowGraphicsSectionUsabilityLabel { get; set; } = "Usability";
-        public override string CommonControlConfigWindowGraphicsSectionEffectsLabel { get; set; } = "Effects";
+        public override string CommonControlConfigWindowGraphicsSectionDisplayLabel { get; set; } = "显示";
+        public override string CommonControlConfigWindowGraphicsSectionUsabilityLabel { get; set; } = "操作";
+        public override string CommonControlConfigWindowGraphicsSectionEffectsLabel { get; set; } = "效果";
         public override string CommonControlConfigWindowSoundsSectionOptionsLabel { get; set; } = "Options";
         public override string CommonControlConfigWindowSoundsSectionVolumeLabel { get; set; } = "Volume";
         public override string CommonControlConfigWindowGameSectionSettingsLabel { get; set; } = "Settings";
@@ -154,16 +154,18 @@ namespace Client.Envir.Translations
         public override string CommonControlConfigWindowUISectionColoursLabel { get; set; } = "Colours";
         public override string CommonControlConfigWindowUISectionTargetColoursLabel { get; set; } = "TargerColours";
         public override string CommonControlConfigWindowGraphicsTabFullScreenLabel { get; set; } = "全屏";
-        public override string CommonControlConfigWindowGraphicsTabBorderlessLabel { get; set; } = "Borderless";
+        public override string CommonControlConfigWindowGraphicsTabBorderlessLabel { get; set; } = "无边框";
         public override string CommonControlConfigWindowGraphicsTabGameSizeLabel { get; set; } = "分辨率";
-        public override string CommonControlConfigWindowGraphicsTabDefaultMonitorLabel { get; set; } = "Monitor";
-        public override string CommonControlConfigWindowGraphicsTabVSyncLabel { get; set; } = "V-Sync";
-        public override string CommonControlConfigWindowGraphicsTabLimitFPSLabel { get; set; } = "FPS限制";
+        public override string CommonControlConfigWindowGraphicsTabDefaultMonitorLabel { get; set; } = "显示器";
+        public override string CommonControlConfigWindowGraphicsTabMonitorDisplayName { get; set; } = "显示器 {0}{1} - {2} x {3}";
+        public override string CommonControlConfigWindowGraphicsTabPrimaryMonitorSuffix { get; set; } = "（主显示器）";
+        public override string CommonControlConfigWindowGraphicsTabVSyncLabel { get; set; } = "垂直同步";
+        public override string CommonControlConfigWindowGraphicsTabLimitFPSLabel { get; set; } = "限制帧率";
         public override string CommonControlConfigWindowGraphicsTabSmoothMoveLabel { get; set; } = "平滑移动";
-        public override string CommonControlConfigWindowGraphicsTabClipMouseLabel { get; set; } = "Clip Mouse";
+        public override string CommonControlConfigWindowGraphicsTabClipMouseLabel { get; set; } = "锁定鼠标";
         public override string CommonControlConfigWindowGraphicsTabDebugLabelLabel { get; set; } = "调试标签";
         public override string CommonControlConfigWindowGraphicsTabLanguageLabel { get; set; } = "语言";
-        public override string CommonControlConfigWindowGraphicsTabRenderingPipelineLabel { get; set; } = "Render Mode";
+        public override string CommonControlConfigWindowGraphicsTabRenderingPipelineLabel { get; set; } = "渲染模式";
         public override string CommonControlConfigWindowSoundTabBackgroundSoundLabel { get; set; } = "背景音乐";
         public override string CommonControlConfigWindowSoundTabSystemVolumeLabel { get; set; } = "系统音量";
         public override string CommonControlConfigWindowSoundTabMusicVolumeLabel { get; set; } = "音乐音量";
@@ -176,8 +178,8 @@ namespace Client.Envir.Translations
         public override string CommonControlConfigWindowGameTabUserHealthLabel { get; set; } = "玩家状态";
         public override string CommonControlConfigWindowGameTabMonsterHealthLabel { get; set; } = "怪物状态";
         public override string CommonControlConfigWindowGameTabDamageNumbersLabel { get; set; } = "Dmg Numbers";
-        public override string CommonControlConfigWindowGraphicsTabDrawParticlesLabel { get; set; } = "粒子绘制";
-        public override string CommonControlConfigWindowGraphicsTabDisplayHelmetLabel { get; set; } = "Display Helmet";
+        public override string CommonControlConfigWindowGraphicsTabDrawParticlesLabel { get; set; } = "绘制粒子";
+        public override string CommonControlConfigWindowGraphicsTabDisplayHelmetLabel { get; set; } = "显示头盔";
         public override string CommonControlConfigWindowUITabHideChatBarLabel { get; set; } = "隐藏聊天框";
         public override string CommonControlConfigWindowUITabEscapeCloseAllLabel { get; set; } = "ESC 关闭所有";
         public override string CommonControlConfigWindowUITabShiftOpenChatLabel { get; set; } = "Shift+1 打开聊天";
@@ -186,8 +188,8 @@ namespace Client.Envir.Translations
         public override string CommonControlConfigWindowGameTabRightClickDeTargetHint { get; set; } = "If turned on, Right clicking to move away will also remove monster target.";
         public override string CommonControlConfigWindowGameTabMonsterBoxVisibleLabel { get; set; } = "显示怪物信息";
         public override string CommonControlConfigWindowUITabLogChatLabel { get; set; } = "聊天日志";
-        public override string CommonControlConfigWindowGraphicsTabDrawEffectsLabel { get; set; } = "特效绘制";
-        public override string CommonControlConfigWindowGraphicsTabDrawWeatherLabel { get; set; } = "天气绘制";
+        public override string CommonControlConfigWindowGraphicsTabDrawEffectsLabel { get; set; } = "绘制特效";
+        public override string CommonControlConfigWindowGraphicsTabDrawWeatherLabel { get; set; } = "绘制天气";
         public override string CommonControlConfigWindowGameTabShowTargetOutlineLabel { get; set; } = "Target Outline";
         public override string CommonControlConfigWindowGameTabObservableLabel { get; set; } = "Observable";
         public override string CommonControlConfigWindowUITabKeyBindButtonLabel { get; set; } = "按键绑定";
@@ -595,6 +597,7 @@ namespace Client.Envir.Translations
         public override string MenuDialogStorageButtonLabel { get; set; } = "仓库";
         public override string MenuDialogRankingButtonLabel { get; set; } = "排行";
         public override string MenuDialogCompanionButtonLabel { get; set; } = "宠物";
+        public override string MenuDialogHeroButtonLabel { get; set; } = "英雄";
         public override string MenuDialogLeaveButtonLabel { get; set; } = "退出游戏";
 
         public override string MenuDialogSettingsButtonHint { get; set; } = "设置 [{0}]";
@@ -603,6 +606,7 @@ namespace Client.Envir.Translations
         public override string MenuDialogStorageButtonHint { get; set; } = "仓库 [{0}]";
         public override string MenuDialogRankingButtonHint { get; set; } = "排行 [{0}]";
         public override string MenuDialogCompanionButtonHint { get; set; } = "宠物 [{0}]";
+        public override string MenuDialogHeroButtonHint { get; set; } = "英雄 [{0}]";
         public override string MenuDialogLeaveButtonHint { get; set; } = "退出游戏 [{0}]";
 
         public override string MainPanelCharacterButtonHint { get; set; } = "角色 [{0}]";

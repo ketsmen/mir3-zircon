@@ -13,7 +13,7 @@ namespace Client.Scenes.Views
         public DXLabel TitleLabel;
 
         public DXButton CloseButton;
-        public DXButton SettingsButton, HelpButton, GuildButton, StorageButton, RankingButton, CompanionButton, LeaveButton;
+        public DXButton SettingsButton, HelpButton, GuildButton, StorageButton, RankingButton, CompanionButton, HeroButton, LeaveButton;
 
         public WindowSetting Settings;
         public WindowType Type => WindowType.MenuBox;
@@ -170,9 +170,19 @@ namespace Client.Scenes.Views
             };
             CompanionButton.MouseClick += (o, e) => GameScene.Game.CompanionBox.Visible = !GameScene.Game.CompanionBox.Visible;
 
-            LeaveButton = new DXButton
+            HeroButton = new DXButton
             {
                 Location = new Point(26, 220),
+                Size = new Size(100, DefaultHeight),
+                Parent = this,
+                Label = { Text = CEnvir.Language.MenuDialogHeroButtonLabel },
+                Hint = string.Format(CEnvir.Language.MenuDialogHeroButtonHint, CEnvir.GetKeyBindLabel(KeyBindAction.HeroWindow)),
+            };
+            HeroButton.MouseClick += (o, e) => GameScene.Game.HeroBox.Visible = !GameScene.Game.HeroBox.Visible;
+
+            LeaveButton = new DXButton
+            {
+                Location = new Point(26, 250),
                 Size = new Size(100, DefaultHeight),
                 Parent = this,
                 Label = { Text = CEnvir.Language.MenuDialogLeaveButtonLabel },
@@ -251,6 +261,14 @@ namespace Client.Scenes.Views
                         CompanionButton.Dispose();
 
                     CompanionButton = null;
+                }
+
+                if (HeroButton != null)
+                {
+                    if (!HeroButton.IsDisposed)
+                        HeroButton.Dispose();
+
+                    HeroButton = null;
                 }
 
                 if (LeaveButton != null)

@@ -56,6 +56,7 @@ namespace Server.Envir
 
         public static bool AllowNewCharacter { get; set; } = true;
         public static bool AllowDeleteCharacter { get; set; } = true;
+        public static bool AllowNewHero { get; set; } = true;
         public static bool AllowStartGame { get; set; }
         public static TimeSpan RelogDelay { get; set; } = TimeSpan.FromSeconds(10);
         public static bool AllowWarrior { get; set; } = true;
@@ -97,6 +98,9 @@ namespace Server.Envir
         public static TimeSpan ShoutDelay { get; set; } = TimeSpan.FromSeconds(10);
         public static TimeSpan GlobalDelay { get; set; } = TimeSpan.FromSeconds(60);
         public static int MaxLevel { get; set; } = 10;
+        public static int HeroRequiredLevel { get; set; } = 1;
+        public static int HeroMaxCount { get; set; } = Globals.HeroMaximumCount;
+        public static TimeSpan HeroReviveDelay { get; set; } = TimeSpan.FromSeconds(10);
         public static int DayCycleCount { get; set; } = 3;
         public static int SkillExp { get; set; } = 3;
         public static bool AllowObservation { get; set; } = true;
@@ -142,6 +146,7 @@ namespace Server.Envir
         public static int GoldRate { get; set; } = 0;
         public static int SkillRate { get; set; } = 0;
         public static int CompanionRate { get; set; } = 0;
+        public static int HeroExperienceRate { get; set; } = 0;
 
         [ConfigSection("Fishing")]
         public static bool FishEnablePerfectCatch { get; set; } = true;

@@ -690,7 +690,7 @@ namespace Client.Scenes.Views
                 }
 
                 if (User.Horse == HorseType.None && User.LibraryWeaponShape == Globals.ShurikenLibraryWeaponShape && MapObject.TargetObject != null &&
-                    (MapObject.TargetObject.Race == ObjectType.Monster || MapObject.TargetObject.Race == ObjectType.Player))
+                    (MapObject.TargetObject.Race == ObjectType.Monster || MapObject.TargetObject.Race == ObjectType.Player || MapObject.TargetObject.Race == ObjectType.Hero))
                 {
 
                     if (CEnvir.Now < User.AttackTime)
@@ -1058,7 +1058,7 @@ namespace Client.Scenes.Views
             }
 
             if (MapObject.TargetObject == null || MapObject.TargetObject.Dead) return;
-            if ((MapObject.TargetObject.Race == ObjectType.Player || !string.IsNullOrEmpty(MapObject.TargetObject.PetOwner)) && !CEnvir.Shift) return;
+            if ((MapObject.TargetObject.Race == ObjectType.Player || MapObject.TargetObject.Race == ObjectType.Hero || !string.IsNullOrEmpty(MapObject.TargetObject.PetOwner)) && !CEnvir.Shift) return;
             if (Functions.InRange(MapObject.TargetObject.CurrentLocation, MapObject.User.CurrentLocation, 1)) return;
 
             direction = Functions.DirectionFromPoint(MapObject.User.CurrentLocation, MapObject.TargetObject.CurrentLocation);
@@ -1261,10 +1261,12 @@ namespace Client.Scenes.Views
         public bool CanAttack(MapObject ob)
         {
             if (ob == null || ob == User) return false;
+            if (ob is HeroObject hero && string.Equals(hero.OwnerName, User?.Name, StringComparison.OrdinalIgnoreCase)) return false;
 
             switch (ob.Race)
             {
                 case ObjectType.Player:
+                case ObjectType.Hero:
                     break;
                 case ObjectType.Monster:
                     MonsterObject mob = (MonsterObject)ob;

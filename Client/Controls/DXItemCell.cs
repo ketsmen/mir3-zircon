@@ -132,7 +132,7 @@ namespace Client.Controls
         {
             get
             {
-                if (GridType == GridType.Belt || GridType == GridType.AutoPotion)
+                if (GridType == GridType.Belt || GridType == GridType.AutoPotion || GridType == GridType.HeroHPItem || GridType == GridType.HeroMPItem)
                 {
                     if (QuickInfo != null)
                         return QuickInfoItem;
@@ -794,16 +794,27 @@ namespace Client.Controls
         }
         public void RefreshItem()
         {
-            if ((GridType == GridType.Inventory || GridType == GridType.CompanionInventory) && GameScene.Game.BeltBox?.Grid != null)
+            if ((GridType == GridType.Inventory || GridType == GridType.CompanionInventory || GridType == GridType.HeroInventory) && GameScene.Game.BeltBox?.Grid != null)
                 foreach (DXItemCell cell in GameScene.Game.BeltBox.Grid.Grid)
                     cell.RefreshItem();
 
-            if ((GridType == GridType.Inventory || GridType == GridType.CompanionInventory) && GameScene.Game.AutoPotionBox?.Rows != null)
+            if ((GridType == GridType.Inventory || GridType == GridType.CompanionInventory || GridType == GridType.HeroInventory) && GameScene.Game.AutoPotionBox?.Rows != null)
                 foreach (AutoPotionRow row in GameScene.Game.AutoPotionBox.Rows)
                     row.ItemCell.RefreshItem();
 
-            if ((GridType == GridType.Belt || GridType == GridType.AutoPotion) && QuickInfo != null)
-                QuickInfoItem.Count = GameScene.Game.Inventory.Where(x => x?.Info == QuickInfo).Sum(x => x.Count) + (GameScene.Game.Companion?.InventoryArray.Where(x => x?.Info == QuickInfo).Sum(x => x.Count) ?? 0);
+            if (GridType == GridType.HeroInventory && GameScene.Game.HeroBox != null)
+            {
+                GameScene.Game.HeroBox.HPItemCell?.RefreshItem();
+                GameScene.Game.HeroBox.MPItemCell?.RefreshItem();
+            }
+
+            if ((GridType == GridType.Belt || GridType == GridType.AutoPotion || GridType == GridType.HeroHPItem || GridType == GridType.HeroMPItem) && QuickInfo != null)
+            {
+                if (GridType == GridType.HeroHPItem || GridType == GridType.HeroMPItem)
+                    QuickInfoItem.Count = GameScene.Game.CurrentHero?.InventoryArray.Where(x => x?.Info == QuickInfo).Sum(x => x.Count) ?? 0;
+                else
+                    QuickInfoItem.Count = GameScene.Game.Inventory.Where(x => x?.Info == QuickInfo).Sum(x => x.Count) + (GameScene.Game.Companion?.InventoryArray.Where(x => x?.Info == QuickInfo).Sum(x => x.Count) ?? 0);
+            }
 
             if (MouseControl == this)
             {
@@ -873,6 +884,19 @@ namespace Client.Controls
 
                     SelectedCell = null;
                     return;
+                case GridType.HeroEquipment:
+                    if (GridType == GridType.HeroEquipment)
+                    {
+                        return;
+                    }
+
+                    if (Item == null || (SelectedCell.Item.Info == Item.Info && SelectedCell.Item.Count < SelectedCell.Item.Info.StackSize))
+                        SelectedCell.MoveItem(this);
+                    else
+                        SelectedCell.MoveItem(HostGrid);
+
+                    SelectedCell = null;
+                    return;
             }
 
             switch (GridType) //To Grid
@@ -892,6 +916,11 @@ namespace Client.Controls
                     if (!Functions.CorrectSlot(SelectedCell.Item.Info.ItemType, (CompanionSlot)Slot) || SelectedCell.GridType == GridType.Belt) return;
 
                     ToCompanionEquipment(SelectedCell);
+                    return;
+                case GridType.HeroEquipment:
+                    if (!Functions.CorrectSlot(SelectedCell.Item.Info.ItemType, (EquipmentSlot)Slot) || SelectedCell.GridType == GridType.Belt) return;
+
+                    ToHeroEquipment(SelectedCell);
                     return;
             }
 
@@ -939,6 +968,37 @@ namespace Client.Controls
             if (fromCell == SelectedCell) SelectedCell = null;
 
             if (!GameScene.Game.CanCompanionWearItem(fromCell.Item, (CompanionSlot)Slot)) return;
+
+            C.ItemMove packet = new C.ItemMove
+            {
+                FromGrid = fromCell.GridType,
+                ToGrid = GridType,
+                FromSlot = fromCell.Slot,
+                ToSlot = Slot
+            };
+
+            if (Item != null && Item.Info == fromCell.Item.Info && Item.Count < Item.Info.StackSize &&
+                (Item.Flags & UserItemFlags.Bound) == (fromCell.Item.Flags & UserItemFlags.Bound) &&
+                (Item.Flags & UserItemFlags.Worthless) == (fromCell.Item.Flags & UserItemFlags.Worthless) &&
+                (Item.Flags & UserItemFlags.NonRefinable) == (fromCell.Item.Flags & UserItemFlags.NonRefinable) &&
+                (Item.Flags & UserItemFlags.Expirable) == (fromCell.Item.Flags & UserItemFlags.Expirable) &&
+                Item.AddedStats.Compare(fromCell.Item.AddedStats) &&
+                Item.ExpireTime == fromCell.Item.ExpireTime)
+                packet.MergeItem = true;
+
+            Locked = true;
+            fromCell.Locked = true;
+            CEnvir.Enqueue(packet);
+        }
+        public void ToHeroEquipment(DXItemCell fromCell)
+        {
+            if (Locked || ReadOnly) return;
+
+            if (Item != null && (Item.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage) return;
+
+            if (fromCell == SelectedCell) SelectedCell = null;
+
+            if (!Functions.CorrectSlot(fromCell.Item.Info.ItemType, (EquipmentSlot)Slot)) return;
 
             C.ItemMove packet = new C.ItemMove
             {
@@ -1022,6 +1082,30 @@ namespace Client.Controls
 
             #endregion
 
+            #region Hero Auto Potion
+
+            if (toCell.GridType == GridType.HeroHPItem || toCell.GridType == GridType.HeroMPItem)
+            {
+                if (Item == null) return;
+                if (GridType != GridType.HeroInventory && GridType != GridType.HeroHPItem && GridType != GridType.HeroMPItem) return;
+                if (Item.Info.ItemType != ItemType.Consumable || Item.Info.Shape != 0 || !Item.Info.CanAutoPot) return;
+
+                Stat stat = toCell.GridType == GridType.HeroHPItem ? Stat.Health : Stat.Mana;
+                if (Item.Info.Stats[stat] <= 0)
+                {
+                    GameScene.Game.ReceiveChat(toCell.GridType == GridType.HeroHPItem ? "请选择可以恢复生命的药品。" : "请选择可以恢复魔法的药品。", MessageType.System);
+                    return;
+                }
+
+                if (Selected) SelectedCell = null;
+
+                toCell.QuickInfo = Item.Info;
+                GameScene.Game.HeroBox.UpdatePotionFromCell(toCell);
+                return;
+            }
+
+            #endregion
+
             if (GridType == GridType.Belt)
             {
                 QuickInfo = null;
@@ -1039,6 +1123,15 @@ namespace Client.Controls
                 QuickInfo = null;
 
                 GameScene.Game.AutoPotionBox.Rows[toCell.Slot].SendUpdate();
+                if (Selected) SelectedCell = null;
+                return;
+            }
+
+            if (GridType == GridType.HeroHPItem || GridType == GridType.HeroMPItem)
+            {
+                QuickInfo = null;
+                GameScene.Game.HeroBox.UpdatePotionFromCell(this);
+
                 if (Selected) SelectedCell = null;
                 return;
             }
@@ -1518,9 +1611,85 @@ namespace Client.Controls
             return true;
         }
 
+        public bool UseHeroItem()
+        {
+            switch (Item.Info.ItemType)
+            {
+                case ItemType.Weapon:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Weapon].ToHeroEquipment(this);
+                    break;
+                case ItemType.Armour:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Armour].ToHeroEquipment(this);
+                    break;
+                case ItemType.Torch:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Torch].ToHeroEquipment(this);
+                    break;
+                case ItemType.Helmet:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Helmet].ToHeroEquipment(this);
+                    break;
+                case ItemType.Necklace:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Necklace].ToHeroEquipment(this);
+                    break;
+                case ItemType.Bracelet:
+                    if (GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.BraceletL].Item == null)
+                        GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.BraceletL].ToHeroEquipment(this);
+                    else
+                        GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.BraceletR].ToHeroEquipment(this);
+                    break;
+                case ItemType.Ring:
+                    if (GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.RingL].Item == null)
+                        GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.RingL].ToHeroEquipment(this);
+                    else
+                        GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.RingR].ToHeroEquipment(this);
+                    break;
+                case ItemType.Shoes:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Shoes].ToHeroEquipment(this);
+                    break;
+                case ItemType.Poison:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Poison].ToHeroEquipment(this);
+                    break;
+                case ItemType.Amulet:
+                case ItemType.DarkStone:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Amulet].ToHeroEquipment(this);
+                    break;
+                case ItemType.Flower:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Flower].ToHeroEquipment(this);
+                    break;
+                case ItemType.Emblem:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Emblem].ToHeroEquipment(this);
+                    break;
+                case ItemType.Shield:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Shield].ToHeroEquipment(this);
+                    break;
+                case ItemType.Costume:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Costume].ToHeroEquipment(this);
+                    break;
+                case ItemType.Hook:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Hook].ToHeroEquipment(this);
+                    break;
+                case ItemType.Float:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Float].ToHeroEquipment(this);
+                    break;
+                case ItemType.Bait:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Bait].ToHeroEquipment(this);
+                    break;
+                case ItemType.Finder:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Finder].ToHeroEquipment(this);
+                    break;
+                case ItemType.Reel:
+                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Reel].ToHeroEquipment(this);
+                    break;
+                default:
+                    return false;
+            }
+
+            return true;
+        }
+
         public bool UseItem()
         {
-            if (Item == null || Locked || ReadOnly || SelectedCell == this || (!Linked && Link != null) || !GameScene.Game.CanUseItem(Item) || GameScene.Game.Observer || GameScene.Game.MapControl.FishingState != FishingState.None) return false;
+            if (Item == null || Locked || ReadOnly || SelectedCell == this || (!Linked && Link != null) || GameScene.Game.Observer || GameScene.Game.MapControl.FishingState != FishingState.None) return false;
+            if (GridType != GridType.HeroInventory && GridType != GridType.HeroEquipment && !GameScene.Game.CanUseItem(Item)) return false;
 
             if (GridType == GridType.Belt || GridType == GridType.Belt)
             {
@@ -1535,6 +1704,17 @@ namespace Client.Controls
                     cell = GameScene.Game.InventoryBox.Grid.Grid.FirstOrDefault(x => x?.Item == QuickItem);
 
                 return cell?.UseItem() == true;
+            }
+
+            if (GridType == GridType.HeroInventory)
+                return UseHeroItem();
+
+            if (GridType == GridType.HeroEquipment)
+            {
+                if (!MoveItem(GameScene.Game.HeroBox.InventoryGrid))
+                    GameScene.Game.ReceiveChat("英雄背包没有空位。", MessageType.System);
+
+                return true;
             }
 
             switch (Item.Info.ItemType)
@@ -1844,7 +2024,7 @@ namespace Client.Controls
                     }
                     if (CEnvir.Shift)
                     {
-                        if (Item == null || (GridType != GridType.Inventory && GridType != GridType.Storage && GridType != GridType.PartsStorage && GridType != GridType.GuildStorage && GridType != GridType.CompanionInventory) || Item.Count <= 1) return;
+                        if (Item == null || (GridType != GridType.Inventory && GridType != GridType.Storage && GridType != GridType.PartsStorage && GridType != GridType.GuildStorage && GridType != GridType.CompanionInventory && GridType != GridType.HeroInventory) || Item.Count <= 1) return;
 
                         DXItemAmountWindow window = new DXItemAmountWindow("Item Split", Item);
 
@@ -1881,6 +2061,13 @@ namespace Client.Controls
                             if (Item == null) return;
 
                             UseItem(); //Try Use Item
+                            break;
+                        case GridType.HeroHPItem:
+                        case GridType.HeroMPItem:
+                            if (QuickInfo == null) return;
+
+                            QuickInfo = null;
+                            GameScene.Game.HeroBox.UpdatePotionFromCell(this);
                             break;
                         case GridType.Inventory:
                             if (Item == null) return;
@@ -2139,6 +2326,13 @@ namespace Client.Controls
                                 return;
                             }
 
+                            if (GameScene.Game.HeroBox.IsVisible)
+                            {
+                                if (!MoveItem(GameScene.Game.HeroBox.InventoryGrid))
+                                    GameScene.Game.ReceiveChat("英雄背包没有空位。", MessageType.System);
+                                return;
+                            }
+
                             UseItem(); //Try Use Item
                             break;
                         case GridType.CompanionInventory:
@@ -2272,6 +2466,22 @@ namespace Client.Controls
                             {
                                 if (!MoveItem(GameScene.Game.GuildBox.StorageGrid))
                                     GameScene.Game.ReceiveChat(CEnvir.Language.UnableToStoreInGuildStorage, MessageType.System);
+                                return;
+                            }
+
+                            if (!MoveItem(GameScene.Game.InventoryBox.Grid))
+                                GameScene.Game.ReceiveChat(CEnvir.Language.NoFreeSpaceInInventory, MessageType.System);
+
+                            break;
+                        case GridType.HeroInventory:
+                            if (Item == null) return;
+
+                            if (GameScene.Game.NPCRepairBox.Visible)
+                            {
+                                if (Item.CurrentDurability >= Item.MaxDurability || !Item.Info.CanRepair)
+                                    GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.UnableToRepairFullyRepaired, Item.Info.ItemName), MessageType.System);
+                                else if (!MoveItem(GameScene.Game.NPCRepairBox.Grid))
+                                    GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.UnableToRepairHere, Item.Info.ItemName), MessageType.System);
                                 return;
                             }
 
@@ -2469,6 +2679,23 @@ namespace Client.Controls
                                 GameScene.Game.ReceiveChat(CEnvir.Language.NoFreeSpaceInInventory, MessageType.System);
 
                             break;
+                        case GridType.HeroEquipment:
+
+                            if (Item == null) return;
+
+                            if (GameScene.Game.NPCRepairBox.Visible)
+                            {
+                                if (Item.CurrentDurability >= Item.MaxDurability || !Item.Info.CanRepair)
+                                    GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.UnableToRepairFullyRepaired, Item.Info.ItemName), MessageType.System);
+                                else if (!MoveItem(GameScene.Game.NPCRepairBox.Grid))
+                                    GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.UnableToRepairHere, Item.Info.ItemName), MessageType.System);
+                                return;
+                            }
+
+                            if (!MoveItem(GameScene.Game.HeroBox.InventoryGrid))
+                                GameScene.Game.ReceiveChat("英雄背包没有空位。", MessageType.System);
+
+                            break;
                         default:
                             throw new ArgumentOutOfRangeException();
                     }
@@ -2494,6 +2721,8 @@ namespace Client.Controls
                 case GridType.Inventory:
                 case GridType.CompanionInventory:
                 case GridType.CompanionEquipment:
+                case GridType.HeroInventory:
+                case GridType.HeroEquipment:
 
                     UseItem();
                     return;

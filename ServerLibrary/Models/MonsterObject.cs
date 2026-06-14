@@ -67,6 +67,7 @@ namespace Server.Models
             }
         }
         private PlayerObject _EXPOwner;
+        public HeroObject HeroEXPOwner;
         public virtual void OnEXPOwnerChanged(PlayerObject oValue, PlayerObject nValue)
         {
             oValue?.TaggedMonsters.Remove(this);
@@ -1006,6 +1007,7 @@ namespace Server.Models
             SpawnInfo = null;
 
             EXPOwner = null;
+            HeroEXPOwner = null;
         }
 
         public void UnTame()
@@ -1321,6 +1323,42 @@ namespace Server.Models
                     //Are any Pets attacking target or any player's pets attacking pets
 
                     return true;
+                case ObjectType.Hero:
+                    HeroObject hero = (HeroObject)ob;
+
+                    if (hero.Owner?.Node == null || hero.Owner.GameMaster) return false;
+
+                    if (PetOwner == null) return true;
+                    if (PetOwner == hero.Owner) return false;
+
+                    if (InSafeZone || hero.InSafeZone) return false;
+
+                    switch (PetOwner.PetMode)
+                    {
+                        case PetMode.Move:
+                        case PetMode.None:
+                            return false;
+                    }
+
+                    switch (PetOwner.AttackMode)
+                    {
+                        case AttackMode.Peace:
+                            return false;
+                        case AttackMode.Group:
+                            if (PetOwner.InGroup(hero.Owner))
+                                return false;
+                            break;
+                        case AttackMode.Guild:
+                            if (PetOwner.InGuild(hero.Owner))
+                                return false;
+                            break;
+                        case AttackMode.WarRedBrown:
+                            if (hero.Owner.Stats[Stat.Brown] == 0 && hero.Owner.Stats[Stat.PKPoint] < Config.RedPoint && !PetOwner.AtWar(hero.Owner))
+                                return false;
+                            break;
+                    }
+
+                    return true;
                 case ObjectType.Monster:
                     MonsterObject mob = (MonsterObject)ob;
 
@@ -1516,6 +1554,8 @@ namespace Server.Models
                         {
                             case ObjectType.Player:
                                 return x.Target == player;
+                            case ObjectType.Hero:
+                                return ((HeroObject)x.Target).Owner == player;
                             case ObjectType.Monster:
                                 return ((MonsterObject)x.Target).PetOwner == player;
                             default:
@@ -1531,6 +1571,78 @@ namespace Server.Models
                         {
                             case ObjectType.Player:
                                 return x.Target == PetOwner;
+                            case ObjectType.Hero:
+                                return ((HeroObject)x.Target).Owner == PetOwner;
+                            case ObjectType.Monster:
+                                return ((MonsterObject)x.Target).PetOwner == PetOwner;
+                            default:
+                                throw new ArgumentOutOfRangeException();
+                        }
+                    })) return true;
+
+                    return false;
+                case ObjectType.Hero:
+                    HeroObject hero = (HeroObject)ob;
+
+                    if (hero.Owner?.Node == null || hero.Owner.GameMaster) return false;
+
+                    if (PetOwner == null) return true;
+                    if (PetOwner == hero.Owner) return false;
+
+                    if (InSafeZone || hero.InSafeZone) return false;
+
+                    switch (PetOwner.PetMode)
+                    {
+                        case PetMode.Move:
+                        case PetMode.None:
+                            return false;
+                    }
+
+                    switch (PetOwner.AttackMode)
+                    {
+                        case AttackMode.Peace:
+                            return false;
+                        case AttackMode.Group:
+                            if (PetOwner.InGroup(hero.Owner))
+                                return false;
+                            break;
+                        case AttackMode.Guild:
+                            if (PetOwner.InGuild(hero.Owner))
+                                return false;
+                            break;
+                        case AttackMode.WarRedBrown:
+                            if (hero.Owner.Stats[Stat.Brown] == 0 && hero.Owner.Stats[Stat.PKPoint] < Config.RedPoint && !PetOwner.AtWar(hero.Owner))
+                                return false;
+                            break;
+                    }
+
+                    if (PetOwner.Pets.Any(x =>
+                    {
+                        if (x.Target == null) return false;
+
+                        switch (x.Target.Race)
+                        {
+                            case ObjectType.Player:
+                                return x.Target == hero.Owner;
+                            case ObjectType.Hero:
+                                return ((HeroObject)x.Target).Owner == hero.Owner;
+                            case ObjectType.Monster:
+                                return ((MonsterObject)x.Target).PetOwner == hero.Owner;
+                            default:
+                                throw new ArgumentOutOfRangeException();
+                        }
+                    })) return true;
+
+                    if (hero.Owner.Pets.Any(x =>
+                    {
+                        if (x.Target == null) return false;
+
+                        switch (x.Target.Race)
+                        {
+                            case ObjectType.Player:
+                                return x.Target == PetOwner;
+                            case ObjectType.Hero:
+                                return ((HeroObject)x.Target).Owner == PetOwner;
                             case ObjectType.Monster:
                                 return ((MonsterObject)x.Target).PetOwner == PetOwner;
                             default:
@@ -1575,6 +1687,8 @@ namespace Server.Models
 
                         if (mob.Target.Race == ObjectType.Monster)
                             mobTarget = ((MonsterObject)mob.Target).PetOwner;
+                        else if (mob.Target.Race == ObjectType.Hero)
+                            mobTarget = ((HeroObject)mob.Target).Owner;
                         else
                             mobTarget = (PlayerObject)mob.Target;
 
@@ -1617,6 +1731,8 @@ namespace Server.Models
                         {
                             case ObjectType.Player:
                                 return x.Target == mob.PetOwner;
+                            case ObjectType.Hero:
+                                return ((HeroObject)x.Target).Owner == mob.PetOwner;
                             case ObjectType.Monster:
                                 return ((MonsterObject)x.Target).PetOwner == mob.PetOwner;
                             default:
@@ -1632,6 +1748,8 @@ namespace Server.Models
                         {
                             case ObjectType.Player:
                                 return x.Target == PetOwner;
+                            case ObjectType.Hero:
+                                return ((HeroObject)x.Target).Owner == PetOwner;
                             case ObjectType.Monster:
                                 return ((MonsterObject)x.Target).PetOwner == PetOwner;
                             default:
@@ -2372,6 +2490,12 @@ namespace Server.Models
                 case ObjectType.Monster:
                     player = ((MonsterObject)attacker).PetOwner;
                     break;
+                case ObjectType.Hero:
+                    HeroObject hero = (HeroObject)attacker;
+                    player = hero.Owner;
+                    HeroEXPOwner = hero;
+                    PlayerTagged = true;
+                    break;
                 default:
                     throw new NotImplementedException();
             }
@@ -2435,6 +2559,8 @@ namespace Server.Models
 
             if (attacker is PlayerObject playerAttacker)
                 playerAttacker.LogMilestone(MilestoneType.MonsterDamageDone, power, monster: MonsterInfo);
+            else if (attacker is HeroObject heroAttacker)
+                heroAttacker.Owner?.LogMilestone(MilestoneType.MonsterDamageDone, power, monster: MonsterInfo);
 
             if (Dead && PetOwner == null && attacker is MonsterObject { PetOwner: not null } petAttacker)
                 petAttacker.PetOwner.LogMilestone(MilestoneType.MonsterPetKill, 1, monster: MonsterInfo);
@@ -2454,7 +2580,7 @@ namespace Server.Models
             if (res && CanAttackTarget(p.Owner) && Target == null)
                 Target = p.Owner;
 
-            if (p.Owner.Race == ObjectType.Player)
+            if (p.Owner.Race == ObjectType.Player || p.Owner.Race == ObjectType.Hero)
                 PlayerTagged = true;
 
             return res;
@@ -2497,6 +2623,7 @@ namespace Server.Models
             SpawnInfo = null;
 
             EXPOwner = null;
+            HeroEXPOwner = null;
         }
 
         protected void YieldReward()
@@ -2602,6 +2729,9 @@ namespace Server.Models
 
                     EXPOwner.GainExperience(exp, PlayerTagged, Level);
 
+                    if (HeroEXPOwner?.Owner == EXPOwner && HeroEXPOwner.Node != null && HeroEXPOwner.CurrentMap == CurrentMap && Functions.InRange(HeroEXPOwner.CurrentLocation, CurrentLocation, Config.MaxViewRange))
+                        HeroEXPOwner.GainExperience(exp);
+
                     EXPOwner.LogMilestone(MilestoneType.MonsterKill, 1, monster: MonsterInfo);
 
                     if (GrowthLevel > 0)
@@ -2621,6 +2751,9 @@ namespace Server.Models
                         expfinal /= ExtraExperienceRate;
 
                     player.GainExperience(expfinal, PlayerTagged, Level);
+
+                    if (HeroEXPOwner?.Owner == player && HeroEXPOwner.Node != null && HeroEXPOwner.CurrentMap == CurrentMap && Functions.InRange(HeroEXPOwner.CurrentLocation, CurrentLocation, Config.MaxViewRange))
+                        HeroEXPOwner.GainExperience(expfinal);
 
                     player.LogMilestone(MilestoneType.MonsterKill, 1, monster: MonsterInfo);
 

@@ -154,6 +154,7 @@ namespace Server.Models
             PartsStorage = new UserItem[1000];
 
         public Companion Companion;
+        public HeroObject Hero;
 
         public MapObject LastHitter;
 
@@ -871,6 +872,13 @@ namespace Server.Models
 
                 Companion = Character.Companion?.Index ?? 0,
 
+                Heroes = Character.Heroes.Where(x => !x.Deleted).OrderBy(x => x.Slot).Select(x => x.ToClientInformation()).ToList(),
+                CurrentHero = Hero?.ToClientHero() ?? Character.CurrentHero?.ToClientHero(),
+                CurrentHeroIndex = Character.CurrentHero?.Index ?? 0,
+                MaximumHeroCount = GetMaximumHeroCount(),
+                HeroSpawnState = GetHeroSpawnState(),
+                HeroBehaviour = Character.HeroBehaviour,
+
                 StorageSize = Character.Account.StorageSize,
 
                 FiltersClass = Character.FiltersClass,
@@ -985,6 +993,7 @@ namespace Server.Models
             Connection.Observers.Clear();
 
             CompanionDespawn();
+            HeroDespawn(true);
 
             if (Character.Partner?.Player != null)
                 Character.Partner.Player.Enqueue(new S.MarriageOnlineChanged());
@@ -1017,6 +1026,8 @@ namespace Server.Models
             ShoutExpiry = SEnvir.Now.AddSeconds(10);
 
             //Broadcast Appearance(?)
+
+            HeroSetup();
 
             Enqueue(new S.StartGame { Result = StartGameResult.Success, StartInformation = GetStartInformation() });
             //Send Items
@@ -1087,6 +1098,9 @@ namespace Server.Models
             UpdateReviveTimers(Connection);
 
             CompanionSpawn();
+
+            if (Character.HeroSpawned)
+                HeroSpawn(true);
 
             Enqueue(GetMarriageInfo());
 
@@ -1347,6 +1361,8 @@ namespace Server.Models
             SetFP(0);
 
             Broadcast(new S.ObjectRevive { ObjectID = ObjectID, Location = CurrentLocation, Effect = true });
+
+            UpdateHeroAfterOwnerMove();
         }
 
         protected override void OnMapChanged()
@@ -1369,6 +1385,9 @@ namespace Server.Models
                 MapIndex = CurrentMap.Info.Index,
                 InstanceIndex = CurrentMap.Instance?.Index ?? -1
             });
+
+            if (CurrentMap.Info.NoHero && Hero?.Node != null)
+                HeroDespawn(true);
 
             if (!CurrentMap.Info.CanHorse)
                 RemoveMount();
@@ -1457,6 +1476,7 @@ namespace Server.Models
             Storage = null;
 
             Companion = null;
+            Hero = null;
 
             LastHitter = null;
 
@@ -2646,6 +2666,7 @@ namespace Server.Models
                 BuffRemove(BuffType.Cloak);
                 BuffRemove(BuffType.Transparency);
                 Companion?.Recall();
+                UpdateHeroAfterOwnerMove();
             }
 
             return res;
@@ -2957,6 +2978,471 @@ namespace Server.Models
                 Partner = new ClientPlayerInfo { Name = Character.Partner?.CharacterName, ObjectID = Character.Partner?.Player != null ? Character.Partner.Player.ObjectID : 0 }
             };
         }
+        #endregion
+
+        #region Heroes
+
+        private static bool IsHeroGrid(GridType grid)
+        {
+            return grid == GridType.HeroInventory || grid == GridType.HeroEquipment;
+        }
+
+        private static int GetMaximumHeroCount()
+        {
+            if (!Config.AllowNewHero) return 0;
+
+            return Math.Min(Globals.HeroMaximumCount, Math.Max(0, Config.HeroMaxCount));
+        }
+
+        private bool TryGetHeroItemArray(GridType grid, out UserItem[] array)
+        {
+            array = null;
+
+            if (!IsHeroGrid(grid)) return false;
+            if (Character?.CurrentHero == null || Character.CurrentHero.Deleted) return false;
+
+            HeroSetup();
+
+            if (Hero == null || Hero.Info != Character.CurrentHero) return false;
+
+            switch (grid)
+            {
+                case GridType.HeroInventory:
+                    array = Hero.Inventory;
+                    return true;
+                case GridType.HeroEquipment:
+                    array = Hero.Equipment;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private bool ValidateHeroItemOwnership(UserItem item, GridType grid, int slot)
+        {
+            if (item == null) return true;
+            if (!IsHeroGrid(grid)) return true;
+
+            if (Hero == null || item.Hero != Hero.Info)
+            {
+                SEnvir.Log($"[Hero Item Ownership] Invalid owner. Character: {Character?.CharacterName}, Hero: {Hero?.Info?.Name}, Item: {item.Info?.ItemName}, ItemIndex: {item.Index}, Grid: {grid}, Slot: {slot}");
+                return false;
+            }
+
+            int expectedSlot = grid == GridType.HeroEquipment ? slot + Globals.EquipmentOffSet : slot;
+            if (item.Slot == expectedSlot) return true;
+
+            SEnvir.Log($"[Hero Item Slot] Invalid slot. Character: {Character?.CharacterName}, Hero: {Hero.Info?.Name}, Item: {item.Info?.ItemName}, ItemIndex: {item.Index}, Grid: {grid}, ExpectedSlot: {expectedSlot}, ActualSlot: {item.Slot}");
+            return false;
+        }
+
+        private bool IsValidHeroPotionIndex(int itemIndex, bool health)
+        {
+            if (itemIndex <= 0) return false;
+            if (Character?.CurrentHero == null) return false;
+
+            HeroSetup();
+
+            if (Hero == null || Hero.Info != Character.CurrentHero) return false;
+
+            Stat stat = health ? Stat.Health : Stat.Mana;
+
+            return Hero.Inventory.Any(x => x?.Info.Index == itemIndex &&
+                                           x.Info.ItemType == ItemType.Consumable &&
+                                           x.Info.Shape == 0 &&
+                                           x.Info.CanAutoPot &&
+                                           x.Info.Stats[stat] > 0);
+        }
+
+        private void ValidateHeroAutoPotSettings()
+        {
+            HeroInfo info = Character?.CurrentHero;
+            if (info == null) return;
+
+            bool hpChanged = false, mpChanged = false;
+
+            if (info.HPItemIndex > 0 && !IsValidHeroPotionIndex(info.HPItemIndex, true))
+            {
+                info.HPItemIndex = 0;
+                hpChanged = true;
+            }
+
+            if (info.MPItemIndex > 0 && !IsValidHeroPotionIndex(info.MPItemIndex, false))
+            {
+                info.MPItemIndex = 0;
+                mpChanged = true;
+            }
+
+            if (!hpChanged && !mpChanged) return;
+
+            Enqueue(new S.SetHeroAutoPot
+            {
+                AutoPot = info.AutoPot,
+                HPItemIndex = info.HPItemIndex,
+                MPItemIndex = info.MPItemIndex,
+                AutoHPPercent = info.AutoHPPercent,
+                AutoMPPercent = info.AutoMPPercent,
+            });
+
+            string potionType = hpChanged && mpChanged ? "HP/MP" : hpChanged ? "HP" : "MP";
+            Connection?.ReceiveChat($"英雄{potionType}自动喝药药品已不在背包中，设置已清空。", MessageType.System);
+        }
+
+        public void HeroSetup()
+        {
+            if (Character.CurrentHero?.Deleted == true)
+                Character.CurrentHero = null;
+
+            if (Character.CurrentHero == null)
+            {
+                Hero = null;
+                return;
+            }
+
+            if (Hero?.Info == Character.CurrentHero) return;
+
+            Hero = HeroObject.Create(Character.CurrentHero, this);
+        }
+
+        public void HeroSpawn(bool preserveSpawnStateOnFail = false)
+        {
+            HeroSetup();
+
+            if (Hero == null)
+            {
+                Character.HeroSpawned = false;
+                Enqueue(new S.UpdateHeroSpawnState { State = HeroSpawnState.None });
+                return;
+            }
+
+            if (Dead || CurrentMap?.Info?.NoHero == true)
+            {
+                if (!preserveSpawnStateOnFail)
+                    Character.HeroSpawned = false;
+
+                Enqueue(new S.UpdateHeroSpawnState { State = HeroSpawnState.Unsummoned });
+                return;
+            }
+
+            if (Hero.Node != null)
+            {
+                Enqueue(new S.UpdateHeroSpawnState { State = Hero.Dead ? HeroSpawnState.Dead : HeroSpawnState.Summoned });
+                return;
+            }
+
+            if (!Hero.Summon())
+            {
+                if (!preserveSpawnStateOnFail)
+                    Character.HeroSpawned = false;
+
+                Enqueue(new S.UpdateHeroSpawnState { State = HeroSpawnState.Unsummoned });
+            }
+        }
+
+        public void HeroDespawn(bool preserveSpawnState = false)
+        {
+            bool spawned = Character?.HeroSpawned == true;
+
+            if (Hero?.Node != null)
+            {
+                spawned = !Hero.Dead;
+                Hero.Recall();
+            }
+
+            if (Character != null)
+                Character.HeroSpawned = preserveSpawnState && spawned;
+
+            Hero = null;
+        }
+
+        public void UpdateHeroAfterOwnerMove()
+        {
+            if (Character?.CurrentHero == null)
+            {
+                HeroDespawn();
+                Enqueue(new S.UpdateHeroSpawnState { State = HeroSpawnState.None });
+                return;
+            }
+
+            bool wanted = Character.HeroSpawned && Hero?.Dead != true;
+
+            if (Hero?.Node != null)
+                HeroDespawn(true);
+
+            Character.HeroSpawned = wanted;
+            HeroSetup();
+
+            if (!wanted)
+            {
+                Enqueue(new S.UpdateHeroSpawnState { State = GetHeroSpawnState() });
+                return;
+            }
+
+            if (Dead || CurrentMap?.Info?.NoHero == true)
+            {
+                Enqueue(new S.UpdateHeroSpawnState { State = HeroSpawnState.Unsummoned });
+                return;
+            }
+
+            HeroSpawn(true);
+        }
+
+        public HeroSpawnState GetHeroSpawnState()
+        {
+            if (Character.CurrentHero == null) return HeroSpawnState.None;
+            if (Hero?.Node == null) return HeroSpawnState.Unsummoned;
+            return Hero.Dead ? HeroSpawnState.Dead : HeroSpawnState.Summoned;
+        }
+
+        public void SendHeroManage()
+        {
+            Enqueue(new S.ManageHeroes
+            {
+                Heroes = Character.Heroes.Where(x => !x.Deleted).OrderBy(x => x.Slot).Select(x => x.ToClientInformation()).ToList(),
+                CurrentHero = Character.CurrentHero?.ToClientInformation(),
+                MaximumCount = GetMaximumHeroCount(),
+                State = GetHeroSpawnState(),
+                Behaviour = Character.HeroBehaviour,
+            });
+        }
+
+        public void NewHero(C.NewHero p)
+        {
+            S.NewHero result = new S.NewHero();
+            Enqueue(result);
+
+            if (!Config.AllowNewHero)
+            {
+                result.Result = NewHeroResult.Disabled;
+                return;
+            }
+
+            if (Level < Config.HeroRequiredLevel)
+            {
+                result.Result = NewHeroResult.LevelTooLow;
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(p.Name) || !Globals.CharacterReg.IsMatch(p.Name))
+            {
+                result.Result = NewHeroResult.BadHeroName;
+                return;
+            }
+
+            switch (p.Gender)
+            {
+                case MirGender.Male:
+                case MirGender.Female:
+                    break;
+                default:
+                    result.Result = NewHeroResult.BadGender;
+                    return;
+            }
+
+            switch (p.Class)
+            {
+                case MirClass.Warrior:
+                case MirClass.Wizard:
+                case MirClass.Taoist:
+                case MirClass.Assassin:
+                    break;
+                default:
+                    result.Result = NewHeroResult.BadClass;
+                    return;
+            }
+
+            int maximum = GetMaximumHeroCount();
+
+            if (Character.Heroes.Count(x => !x.Deleted) >= maximum)
+            {
+                result.Result = NewHeroResult.MaxHeroes;
+                return;
+            }
+
+            if (Character.Heroes.Any(x => !x.Deleted && string.Compare(x.Name, p.Name, StringComparison.OrdinalIgnoreCase) == 0))
+            {
+                result.Result = NewHeroResult.AlreadyExists;
+                return;
+            }
+
+            for (int i = 0; i < SEnvir.HeroInfoList.Count; i++)
+            {
+                HeroInfo info = SEnvir.HeroInfoList[i];
+
+                if (info.Deleted) continue;
+                if (string.Compare(info.Name, p.Name, StringComparison.OrdinalIgnoreCase) != 0) continue;
+
+                result.Result = NewHeroResult.AlreadyExists;
+                return;
+            }
+
+            for (int i = 0; i < SEnvir.CharacterInfoList.Count; i++)
+            {
+                CharacterInfo info = SEnvir.CharacterInfoList[i];
+
+                if (info.Deleted) continue;
+                if (string.Compare(info.CharacterName, p.Name, StringComparison.OrdinalIgnoreCase) != 0) continue;
+
+                result.Result = NewHeroResult.AlreadyExists;
+                return;
+            }
+
+            int slot = 0;
+            HashSet<int> usedSlots = Character.Heroes.Where(x => !x.Deleted).Select(x => x.Slot).ToHashSet();
+
+            while (usedSlots.Contains(slot) && slot < maximum)
+                slot++;
+
+            HeroInfo hero = SEnvir.HeroInfoList.CreateNewObject();
+            hero.Character = Character;
+            hero.Name = p.Name;
+            hero.Class = p.Class;
+            hero.Gender = p.Gender;
+            hero.Level = 1;
+            hero.CreationDate = SEnvir.Now;
+            hero.Slot = slot;
+            hero.AutoHPPercent = 50;
+            hero.AutoMPPercent = 50;
+
+            result.Result = NewHeroResult.Success;
+            result.Hero = hero.ToClientInformation();
+
+            if (Character.CurrentHero == null)
+            {
+                Character.CurrentHero = hero;
+                Character.HeroSpawned = false;
+                HeroSetup();
+                Enqueue(new S.ChangeHero { Hero = Hero?.ToClientHero() ?? hero.ToClientHero(), State = GetHeroSpawnState() });
+            }
+
+            SendHeroManage();
+        }
+
+        public void ChangeHero(C.ChangeHero p)
+        {
+            HeroInfo info = Character.Heroes.FirstOrDefault(x => !x.Deleted && x.Index == p.Index);
+
+            if (info == null) return;
+
+            if (Hero?.Node != null)
+                Hero.Recall();
+
+            Character.CurrentHero = info;
+            Character.HeroSpawned = false;
+
+            HeroSetup();
+
+            Enqueue(new S.ChangeHero { Hero = Hero?.ToClientHero() ?? info.ToClientHero(), State = GetHeroSpawnState() });
+            SendHeroManage();
+        }
+
+        public void ToggleHeroSpawn()
+        {
+            HeroSetup();
+
+            if (Hero == null)
+            {
+                Connection.ReceiveChat("当前没有可召唤的英雄。", MessageType.System);
+                return;
+            }
+
+            if (Hero.Node != null)
+            {
+                string heroName = Hero.Name;
+                Hero.Recall();
+                Character.HeroSpawned = false;
+                Connection.ReceiveChat($"{heroName}已收回。", MessageType.System);
+                return;
+            }
+
+            if (Dead)
+            {
+                Connection.ReceiveChat("死亡状态下不能召唤英雄。", MessageType.System);
+                return;
+            }
+
+            if (CurrentMap?.Info?.NoHero == true)
+            {
+                Connection.ReceiveChat("当前地图禁止召唤英雄。", MessageType.System);
+                return;
+            }
+
+            HeroSpawn();
+
+            if (Hero?.Node != null)
+                Connection.ReceiveChat(Hero.Dead ? GetHeroReviveMessage() : $"{Hero.Name}已召唤。", MessageType.System);
+            else
+                Connection.ReceiveChat("英雄召唤失败。", MessageType.System);
+        }
+
+        private string GetHeroReviveMessage()
+        {
+            if (Hero?.ReviveTime > SEnvir.Now && Hero.ReviveTime < DateTime.MaxValue)
+                return $"{Hero.Name}仍处于死亡状态，约{FormatHeroDuration(Hero.ReviveTime - SEnvir.Now)}后复活。";
+
+            return $"{Hero?.Name ?? "英雄"}仍处于死亡状态，等待复活。";
+        }
+
+        private static string FormatHeroDuration(TimeSpan duration)
+        {
+            if (duration <= TimeSpan.Zero) return "即将";
+            if (duration.TotalHours >= 1) return $"{Math.Ceiling(duration.TotalHours)}小时";
+            if (duration.TotalMinutes >= 1) return $"{Math.Ceiling(duration.TotalMinutes)}分钟";
+
+            return $"{Math.Ceiling(duration.TotalSeconds)}秒";
+        }
+
+        public void SetHeroBehaviour(C.SetHeroBehaviour p)
+        {
+            switch (p.Behaviour)
+            {
+                case HeroBehaviour.Attack:
+                case HeroBehaviour.CounterAttack:
+                case HeroBehaviour.Follow:
+                case HeroBehaviour.Custom:
+                    Character.HeroBehaviour = p.Behaviour;
+                    if (Hero != null && (p.Behaviour == HeroBehaviour.Follow || p.Behaviour == HeroBehaviour.CounterAttack))
+                        Hero.Target = null;
+                    Enqueue(new S.SetHeroBehaviour { Behaviour = p.Behaviour });
+                    Connection.ReceiveChat($"英雄模式已切换为{HeroBehaviourName(p.Behaviour)}。", MessageType.System);
+                    break;
+            }
+        }
+
+        private static string HeroBehaviourName(HeroBehaviour behaviour)
+        {
+            return behaviour switch
+            {
+                HeroBehaviour.Attack => "主动",
+                HeroBehaviour.CounterAttack => "反击",
+                HeroBehaviour.Follow => "跟随",
+                HeroBehaviour.Custom => "自定义",
+                _ => behaviour.ToString()
+            };
+        }
+
+        public void SetHeroAutoPot(C.SetHeroAutoPot p)
+        {
+            if (Character.CurrentHero == null) return;
+
+            Character.CurrentHero.AutoPot = p.AutoPot;
+            Character.CurrentHero.HPItemIndex = IsValidHeroPotionIndex(p.HPItemIndex, true) ? p.HPItemIndex : 0;
+            Character.CurrentHero.MPItemIndex = IsValidHeroPotionIndex(p.MPItemIndex, false) ? p.MPItemIndex : 0;
+            Character.CurrentHero.AutoHPPercent = (byte)Math.Min(100, Math.Max(1, (int)p.AutoHPPercent));
+            Character.CurrentHero.AutoMPPercent = (byte)Math.Min(100, Math.Max(1, (int)p.AutoMPPercent));
+
+            Enqueue(new S.SetHeroAutoPot
+            {
+                AutoPot = Character.CurrentHero.AutoPot,
+                HPItemIndex = Character.CurrentHero.HPItemIndex,
+                MPItemIndex = Character.CurrentHero.MPItemIndex,
+                AutoHPPercent = Character.CurrentHero.AutoHPPercent,
+                AutoMPPercent = Character.CurrentHero.AutoMPPercent,
+            });
+
+            Hero?.SendInformation();
+        }
+
         #endregion
 
         #region Companions
@@ -5730,6 +6216,7 @@ namespace Server.Models
             item.Auction = null;
             item.Companion = null;
             item.Guild = null;
+            item.Hero = null;
 
             /*item.GuildInfo = null;
             item.SaleInfo = null;*/
@@ -5928,6 +6415,12 @@ namespace Server.Models
 
                     fromArray = Companion.Equipment;
                     break;
+                case GridType.HeroInventory:
+                    if (!TryGetHeroItemArray(link.GridType, out fromArray)) return;
+                    break;
+                case GridType.HeroEquipment:
+                    if (!TryGetHeroItemArray(link.GridType, out fromArray)) return;
+                    break;
                 default:
                     return;
             }
@@ -5937,6 +6430,13 @@ namespace Server.Models
             UserItem item = fromArray[link.Slot];
 
             if (item == null) return;
+            if (!ValidateHeroItemOwnership(item, link.GridType, link.Slot)) return;
+
+            if (IsHeroGrid(link.GridType))
+            {
+                Enqueue(new S.ItemChanged { Link = new CellLinkInfo { GridType = link.GridType, Slot = link.Slot } });
+                return;
+            }
 
             if (SEnvir.Now < AutoPotionTime && item.Info.ItemEffect != ItemEffect.ElixirOfPurification)
             {
@@ -7076,6 +7576,12 @@ namespace Server.Models
 
                     fromArray = Companion.Equipment;
                     break;
+                case GridType.HeroInventory:
+                    if (!TryGetHeroItemArray(p.FromGrid, out fromArray)) return;
+                    break;
+                case GridType.HeroEquipment:
+                    if (!TryGetHeroItemArray(p.FromGrid, out fromArray)) return;
+                    break;
                 default:
                     return;
             }
@@ -7086,6 +7592,7 @@ namespace Server.Models
 
             if (fromItem == null) return;
             if ((fromItem.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage) return;
+            if (!ValidateHeroItemOwnership(fromItem, p.FromGrid, p.FromSlot)) return;
 
             switch (p.ToGrid)
             {
@@ -7151,6 +7658,12 @@ namespace Server.Models
 
                     toArray = Companion.Equipment;
                     break;
+                case GridType.HeroInventory:
+                    if (!TryGetHeroItemArray(p.ToGrid, out toArray)) return;
+                    break;
+                case GridType.HeroEquipment:
+                    if (!TryGetHeroItemArray(p.ToGrid, out toArray)) return;
+                    break;
                 default:
                     return;
             }
@@ -7160,6 +7673,9 @@ namespace Server.Models
             UserItem toItem = toArray[p.ToSlot];
 
             if (toItem != null && (toItem.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage) return;
+            if (!ValidateHeroItemOwnership(toItem, p.ToGrid, p.ToSlot)) return;
+
+            bool heroInvolved = IsHeroGrid(p.FromGrid) || IsHeroGrid(p.ToGrid);
 
             if (p.FromGrid == GridType.Equipment)
             {
@@ -7184,6 +7700,13 @@ namespace Server.Models
                 }
             }
 
+            if (p.FromGrid == GridType.HeroEquipment)
+            {
+                if (p.ToGrid == GridType.HeroEquipment) return;
+
+                if (!p.MergeItem && toItem != null) return;
+            }
+
             if (p.ToGrid == GridType.Equipment)
             {
                 if (!CanWearItem(fromItem, (EquipmentSlot)p.ToSlot)) return;
@@ -7200,6 +7723,11 @@ namespace Server.Models
 
                     if (p.ToSlot >= Companion.Stats[Stat.CompanionInventory] + space) return;
                 }
+            }
+
+            if (p.ToGrid == GridType.HeroEquipment)
+            {
+                if (!Hero.CanWearItem(fromItem, (EquipmentSlot)p.ToSlot)) return;
             }
 
             if (p.ToGrid == GridType.CompanionInventory && p.FromGrid != GridType.CompanionInventory)
@@ -7240,6 +7768,44 @@ namespace Server.Models
                 }
             }
 
+            if (p.ToGrid == GridType.HeroInventory && p.FromGrid != GridType.HeroInventory)
+            {
+                int weight = 0;
+
+                switch (fromItem.Info.ItemType)
+                {
+                    case ItemType.Poison:
+                    case ItemType.Amulet:
+                        if (p.MergeItem) break;
+                        weight = fromItem.Weight;
+
+                        if (toItem != null)
+                            weight -= toItem.Weight;
+
+                        break;
+                    default:
+                        if (p.MergeItem)
+                        {
+                            if (toItem != null && toItem.Count < toItem.Info.StackSize)
+                                weight = (int)(Math.Min(fromItem.Count, toItem.Info.StackSize - toItem.Count) * fromItem.Info.Weight);
+                        }
+                        else
+                        {
+                            weight = fromItem.Weight;
+
+                            if (toItem != null)
+                                weight -= toItem.Weight;
+                        }
+                        break;
+                }
+
+                if (Hero.BagWeight + weight > Hero.Stats[Stat.BagWeight])
+                {
+                    Connection.ReceiveChatWithObservers(con => "英雄背包负重不足。", MessageType.System);
+                    return;
+                }
+            }
+
             if (p.FromGrid == GridType.CompanionInventory && p.ToGrid != GridType.CompanionInventory && toItem != null && !p.MergeItem)
             {
                 int weight = toItem.Weight;
@@ -7249,6 +7815,19 @@ namespace Server.Models
                 if (Companion.BagWeight + weight > Companion.Stats[Stat.CompanionBagWeight])
                 {
                     Connection.ReceiveChatWithObservers(con => con.Language.CompanionNoRoom, MessageType.System);
+                    return;
+                }
+            }
+
+            if (p.FromGrid == GridType.HeroInventory && p.ToGrid != GridType.HeroInventory && toItem != null && !p.MergeItem)
+            {
+                int weight = toItem.Weight;
+
+                weight -= fromItem.Weight;
+
+                if (Hero.BagWeight + weight > Hero.Stats[Stat.BagWeight])
+                {
+                    Connection.ReceiveChatWithObservers(con => "英雄背包负重不足。", MessageType.System);
                     return;
                 }
             }
@@ -7287,6 +7866,12 @@ namespace Server.Models
                 result.Success = true;
                 RefreshWeight();
                 Companion?.RefreshWeight();
+                Hero?.RefreshWeight();
+                if (heroInvolved)
+                {
+                    ValidateHeroAutoPotSettings();
+                    Hero?.SendInformation();
+                }
 
                 if (p.ToGrid == GridType.GuildStorage || p.FromGrid == GridType.GuildStorage)
                 {
@@ -7373,7 +7958,7 @@ namespace Server.Models
 
             fromArray[p.FromSlot] = toItem;
             toArray[p.ToSlot] = fromItem;
-            bool sendShape = false, sendCompanionShape = false;
+            bool sendShape = false, sendCompanionShape = false, sendHeroShape = false;
 
             switch (p.FromGrid)
             {
@@ -7395,6 +7980,16 @@ namespace Server.Models
                     break;
                 case GridType.CompanionEquipment:
                     sendCompanionShape = true;
+                    if (toItem == null) break;
+                    throw new Exception("Shitty Move Item Logic");
+                case GridType.HeroInventory:
+                    if (toItem == null) break;
+
+                    toItem.Slot = p.FromSlot;
+                    toItem.Hero = Hero.Info;
+                    break;
+                case GridType.HeroEquipment:
+                    sendHeroShape = true;
                     if (toItem == null) break;
                     throw new Exception("Shitty Move Item Logic");
                 case GridType.PartsStorage:
@@ -7483,6 +8078,15 @@ namespace Server.Models
                     fromItem.Slot = p.ToSlot + Globals.EquipmentOffSet;
                     fromItem.Companion = Companion.UserCompanion;
                     break;
+                case GridType.HeroInventory:
+                    fromItem.Slot = p.ToSlot;
+                    fromItem.Hero = Hero.Info;
+                    break;
+                case GridType.HeroEquipment:
+                    sendHeroShape = true;
+                    fromItem.Slot = p.ToSlot + Globals.EquipmentOffSet;
+                    fromItem.Hero = Hero.Info;
+                    break;
                 case GridType.PartsStorage:
                     fromItem.Slot = p.ToSlot + Globals.PartsStorageOffset;
                     fromItem.Account = Character.Account;
@@ -7532,11 +8136,20 @@ namespace Server.Models
 
             if (sendShape) SendShapeUpdate();
             if (sendCompanionShape) Companion?.SendShapeUpdate();
+            if (sendHeroShape) Hero?.SendShapeUpdate();
 
             if (p.ToGrid == GridType.CompanionEquipment || p.ToGrid == GridType.CompanionInventory || p.FromGrid == GridType.CompanionEquipment || p.FromGrid == GridType.CompanionInventory)
             {
                 Companion.SearchTime = DateTime.MinValue;
                 Companion.RefreshStats();
+            }
+
+            if (p.ToGrid == GridType.HeroEquipment || p.ToGrid == GridType.HeroInventory || p.FromGrid == GridType.HeroEquipment || p.FromGrid == GridType.HeroInventory)
+            {
+                Hero.SearchTime = DateTime.MinValue;
+                Hero.RefreshStats();
+                ValidateHeroAutoPotSettings();
+                Hero.SendInformation();
             }
         }
         public void ItemSort(C.ItemSort p)
@@ -7556,6 +8169,9 @@ namespace Server.Models
                 case GridType.PartsStorage:
                     array = PartsStorage;
                     break;
+                case GridType.HeroInventory:
+                    if (!TryGetHeroItemArray(p.Grid, out array)) return;
+                    break;
                 default:
                     return;
             }
@@ -7572,6 +8188,7 @@ namespace Server.Models
                 var item = array[i];
 
                 if (item == null) continue;
+                if (!ValidateHeroItemOwnership(item, p.Grid, i)) return;
 
                 items.Add(item);
 
@@ -7648,6 +8265,9 @@ namespace Server.Models
                         case GridType.Storage:
                             newItem.Account = Character.Account;
                             break;
+                        case GridType.HeroInventory:
+                            newItem.Hero = Hero.Info;
+                            break;
                     }
 
                     index++;
@@ -7669,6 +8289,12 @@ namespace Server.Models
             };
 
             Enqueue(result);
+
+            if (p.Grid == GridType.HeroInventory)
+            {
+                Hero.RefreshWeight();
+                Hero.SendInformation();
+            }
         }
         public void ItemDelete(C.ItemDelete p)
         {
@@ -7810,6 +8436,12 @@ namespace Server.Models
 
                     itemArray = Companion.Equipment;
                     break;
+                case GridType.HeroInventory:
+                    if (!TryGetHeroItemArray(p.GridType, out itemArray)) return;
+                    break;
+                case GridType.HeroEquipment:
+                    if (!TryGetHeroItemArray(p.GridType, out itemArray)) return;
+                    break;
                 default:
                     return;
             }
@@ -7820,6 +8452,7 @@ namespace Server.Models
             UserItem fromItem = itemArray[p.SlotIndex];
 
             if (fromItem == null) return;
+            if (!ValidateHeroItemOwnership(fromItem, p.GridType, p.SlotIndex)) return;
 
             if (p.Locked)
                 fromItem.Flags |= UserItemFlags.Locked;
@@ -7875,6 +8508,9 @@ namespace Server.Models
 
                     array = Companion.Inventory;
                     break;
+                case GridType.HeroInventory:
+                    if (!TryGetHeroItemArray(p.Grid, out array)) return;
+                    break;
                 default:
                     return;
             }
@@ -7884,10 +8520,14 @@ namespace Server.Models
             UserItem item = array[p.Slot];
 
             if (item == null || item.Count <= p.Count || item.Info.StackSize < p.Count) return;
+            if (!ValidateHeroItemOwnership(item, p.Grid, p.Slot)) return;
 
             int length = array.Length;
             if (p.Grid == GridType.CompanionInventory)
                 length = Math.Min(array.Length, Companion.Stats[Stat.CompanionInventory]);
+
+            if (p.Grid == GridType.HeroInventory)
+                length = array.Length;
 
             if (p.Grid == GridType.Storage)
                 length = Math.Min(array.Length, Character.Account.StorageSize);
@@ -7927,6 +8567,9 @@ namespace Server.Models
                     case GridType.CompanionInventory:
                         newItem.Companion = Companion.UserCompanion;
                         break;
+                    case GridType.HeroInventory:
+                        newItem.Hero = Hero.Info;
+                        break;
                     case GridType.GuildStorage:
                         newItem.Guild = Character.Account.GuildMember.Guild;
 
@@ -7953,6 +8596,12 @@ namespace Server.Models
                             });
                         }
                         break;
+                }
+
+                if (p.Grid == GridType.HeroInventory)
+                {
+                    Hero.RefreshWeight();
+                    Hero.SendInformation();
                 }
 
                 return;
@@ -10914,6 +11563,10 @@ namespace Server.Models
 
                         array = Companion.Inventory;
                         break;
+                    case GridType.HeroInventory:
+                    case GridType.HeroEquipment:
+                        if (!TryGetHeroItemArray(link.GridType, out array)) return;
+                        break;
                     default:
                         return;
                 }
@@ -10922,6 +11575,7 @@ namespace Server.Models
                 UserItem item = array[link.Slot];
 
                 if (item == null || !item.Info.CanRepair || item.Info.Durability == 0) return;
+                if (!ValidateHeroItemOwnership(item, link.GridType, link.Slot)) return;
                 if ((item.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage) return;
 
                 switch (item.Info.ItemType)
@@ -10991,6 +11645,7 @@ namespace Server.Models
             }
 
             bool refresh = false;
+            bool heroRefresh = false;
             foreach (CellLinkInfo link in p.Links)
             {
                 UserItem[] array = null;
@@ -11012,12 +11667,19 @@ namespace Server.Models
                     case GridType.CompanionInventory:
                         array = Companion.Inventory;
                         break;
+                    case GridType.HeroInventory:
+                    case GridType.HeroEquipment:
+                        if (!TryGetHeroItemArray(link.GridType, out array)) return;
+                        break;
                 }
 
                 UserItem item = array[link.Slot];
 
                 if (item.CurrentDurability == 0 && link.GridType == GridType.Equipment)
                     refresh = true;
+
+                if (item.CurrentDurability == 0 && link.GridType == GridType.HeroEquipment)
+                    heroRefresh = true;
 
                 if (p.Special)
                 {
@@ -11056,6 +11718,13 @@ namespace Server.Models
 
             if (refresh)
                 RefreshStats();
+
+            if (heroRefresh)
+            {
+                Hero?.RefreshStats();
+                Hero?.SendShapeUpdate();
+                Hero?.SendInformation();
+            }
         }
         public void NPCRefinementStone(C.NPCRefinementStone p)
         {
@@ -14391,6 +15060,8 @@ namespace Server.Models
 
             if (damage <= 0) return;
 
+            Hero?.OwnerEngagedTarget(ob);
+
             CheckBrown(ob);
 
             DamageItem(GridType.Equipment, (int)EquipmentSlot.Weapon, SEnvir.Random.Next(2) + 1);
@@ -14565,6 +15236,8 @@ namespace Server.Models
 
             if (damage <= 0) return damage;
 
+            Hero?.OwnerEngagedTarget(ob);
+
             if (shock > 0)
             {
                 DateTime shockTime = SEnvir.Now.AddSeconds(shock);
@@ -14705,7 +15378,7 @@ namespace Server.Models
 
             if (element != Element.None)
             {
-                if (SEnvir.Random.Next(attacker.Race == ObjectType.Player ? 200 : 100) <= Stats[Stat.EvasionChance])// 4 + magic.Level * 2)
+                if (SEnvir.Random.Next(attacker.Race == ObjectType.Player || attacker.Race == ObjectType.Hero ? 200 : 100) <= Stats[Stat.EvasionChance])// 4 + magic.Level * 2)
                 {
                     if (Buffs.Any(x => x.Type == BuffType.Evasion) && GetMagic(MagicType.Evasion, out Evasion evasion))
                         LevelMagic(evasion.Magic);
@@ -14729,7 +15402,7 @@ namespace Server.Models
             }
             else
             {
-                if (SEnvir.Random.Next(attacker.Race == ObjectType.Player ? 200 : 100) <= Stats[Stat.BlockChance])
+                if (SEnvir.Random.Next(attacker.Race == ObjectType.Player || attacker.Race == ObjectType.Hero ? 200 : 100) <= Stats[Stat.BlockChance])
                 {
                     DisplayMiss = true;
                     return 0;
@@ -14751,11 +15424,17 @@ namespace Server.Models
 
             CombatTime = SEnvir.Now;
 
-            if (attacker.Race == ObjectType.Player)
+            if (attacker.Race == ObjectType.Player || attacker.Race == ObjectType.Hero)
             {
                 PvPTime = SEnvir.Now;
-                ((PlayerObject)attacker).PvPTime = SEnvir.Now;
+
+                if (attacker is PlayerObject player)
+                    player.PvPTime = SEnvir.Now;
+                else if (attacker is HeroObject hero)
+                    hero.Owner.PvPTime = SEnvir.Now;
             }
+
+            Hero?.OwnerAttacked(attacker);
 
             if (Stats[Stat.Comfort] < 20)
                 RegenTime = SEnvir.Now + RegenDelay;
@@ -14770,7 +15449,7 @@ namespace Server.Models
             {
                 if (!canReflect)
                     power = (int)(power * 1.2F);
-                else if (attacker.Race == ObjectType.Player)
+                else if (attacker.Race == ObjectType.Player || attacker.Race == ObjectType.Hero)
                     power = (int)(power * 1.3F);
                 else
                     power += power;
@@ -14887,6 +15566,17 @@ namespace Server.Models
                             conquest.PvPDamageDealt += power;
 
                         break;
+                    case ObjectType.Hero:
+                        HeroObject hero = (HeroObject)attacker;
+
+                        conquest.PvPDamageTaken += power;
+
+                        conquest = SEnvir.GetConquestStats(hero.Owner);
+
+                        if (conquest != null)
+                            conquest.PvPDamageDealt += power;
+
+                        break;
                     case ObjectType.Monster:
                         MonsterObject mob = (MonsterObject)attacker;
 
@@ -14932,10 +15622,15 @@ namespace Server.Models
                 LogMilestone(MilestoneType.PlayerDamageTake, power, player: playerAttacker.Character);
                 playerAttacker.LogMilestone(MilestoneType.PlayerDamageDone, power, player: Character);
             }
+            else if (attacker is HeroObject heroAttacker)
+            {
+                LogMilestone(MilestoneType.PlayerDamageTake, power, player: heroAttacker.Owner.Character);
+                heroAttacker.Owner.LogMilestone(MilestoneType.PlayerDamageDone, power, player: Character);
+            }
 
             LastHitter = null;
 
-            if (canReflect && CanAttackTarget(attacker) && attacker.Race != ObjectType.Player)
+            if (canReflect && CanAttackTarget(attacker) && attacker.Race != ObjectType.Player && attacker.Race != ObjectType.Hero)
             {
                 attacker.Attacked(this, power * Stats[Stat.ReflectDamage] / 100, Element.None, false);
 
@@ -14949,7 +15644,7 @@ namespace Server.Models
                 int damagePvP = Math.Min(50, GetMC() / 5 + GetElementPower(ObjectType.Monster, Stat.LightningAttack) / 2);
 
                 Broadcast(new S.ObjectEffect { ObjectID = attacker.ObjectID, Effect = Effect.ThunderBolt });
-                ActionList.Add(new DelayedAction(SEnvir.Now.AddMilliseconds(300), ActionType.DelayedAttackDamage, attacker, attacker.Race == ObjectType.Player ? damagePvP : damagePvE, Element.Lightning, false, false, true, true));
+                ActionList.Add(new DelayedAction(SEnvir.Now.AddMilliseconds(300), ActionType.DelayedAttackDamage, attacker, attacker.Race == ObjectType.Player || attacker.Race == ObjectType.Hero ? damagePvP : damagePvE, Element.Lightning, false, false, true, true));
 
                 if (Buffs.Any(x => x.Type == BuffType.JudgementOfHeaven) && GetMagic(MagicType.JudgementOfHeaven, out JudgementOfHeaven judgementOfHeaven))
                     LevelMagic(judgementOfHeaven.Magic);
@@ -15035,6 +15730,32 @@ namespace Server.Models
                             break;
                         case AttackMode.WarRedBrown:
                             if (player.Stats[Stat.Brown] == 0 && player.Stats[Stat.PKPoint] < Config.RedPoint && !AtWar(player))
+                                return false;
+                            break;
+                    }
+
+                    return true;
+                case ObjectType.Hero:
+                    HeroObject hero = (HeroObject)ob;
+
+                    if (hero.Owner?.Node == null || hero.Owner == this || hero.Owner.GameMaster) return false;
+
+                    if (InSafeZone || hero.InSafeZone) return false;
+
+                    switch (AttackMode)
+                    {
+                        case AttackMode.Peace:
+                            return false;
+                        case AttackMode.Group:
+                            if (InGroup(hero.Owner))
+                                return false;
+                            break;
+                        case AttackMode.Guild:
+                            if (InGuild(hero.Owner))
+                                return false;
+                            break;
+                        case AttackMode.WarRedBrown:
+                            if (hero.Owner.Stats[Stat.Brown] == 0 && hero.Owner.Stats[Stat.PKPoint] < Config.RedPoint && !AtWar(hero.Owner))
                                 return false;
                             break;
                     }
@@ -15211,6 +15932,8 @@ namespace Server.Models
 
                 if (p.Owner != null && p.Owner.Race == ObjectType.Player)
                     ((PlayerObject)p.Owner).CheckBrown(this);
+                else if (p.Owner != null && p.Owner.Race == ObjectType.Hero)
+                    ((HeroObject)p.Owner).Owner?.CheckBrown(this);
             }
 
             return res;
@@ -15241,6 +15964,8 @@ namespace Server.Models
 
             Pets.Clear();
 
+            HeroDespawn();
+
             if (Buffs.Any(x => x.Type == BuffType.SoulResonance))
                 SoulResonance.Activate(this);
 
@@ -15260,6 +15985,16 @@ namespace Server.Models
                         conquest.PvPDeathCount++;
 
                         conquest = SEnvir.GetConquestStats((PlayerObject)LastHitter);
+
+                        if (conquest != null)
+                            conquest.PvPKillCount++;
+                        break;
+                    case ObjectType.Hero:
+                        HeroObject hero = (HeroObject)LastHitter;
+
+                        conquest.PvPDeathCount++;
+
+                        conquest = SEnvir.GetConquestStats(hero.Owner);
 
                         if (conquest != null)
                             conquest.PvPKillCount++;
@@ -15304,6 +16039,12 @@ namespace Server.Models
                         LogMilestone(MilestoneType.PlayerDeath, 1, player: playerAttacker.Character);
                         attacker.LogMilestone(MilestoneType.PlayerKill, 1, player: Character);
                         break;
+                    case ObjectType.Hero:
+                        var heroAttacker = (HeroObject)LastHitter;
+                        attacker = heroAttacker.Owner;
+                        LogMilestone(MilestoneType.PlayerDeath, 1, player: heroAttacker.Owner.Character);
+                        attacker?.LogMilestone(MilestoneType.PlayerKill, 1, player: Character);
+                        break;
                     case ObjectType.Monster:
                         var monsterAttacker = (MonsterObject)LastHitter;
                         attacker = monsterAttacker.PetOwner;
@@ -15313,7 +16054,7 @@ namespace Server.Models
                 }
             }
 
-            if (Stats[Stat.Rebirth] > 0 && (LastHitter == null || LastHitter.Race != ObjectType.Player))
+            if (Stats[Stat.Rebirth] > 0 && (LastHitter == null || LastHitter.Race != ObjectType.Player && LastHitter.Race != ObjectType.Hero))
             {
                 //Level = Math.Max(Level - Stats[Stat.Rebirth] * 3, 1);
                 decimal expbonus = Experience;
@@ -15614,6 +16355,9 @@ namespace Server.Models
                     break;
                 case ObjectType.Monster:
                     player = ((MonsterObject)ob).PetOwner;
+                    break;
+                case ObjectType.Hero:
+                    player = ((HeroObject)ob).Owner;
                     break;
                 default:
                     return;

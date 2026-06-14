@@ -158,6 +158,8 @@ namespace Client.Envir.Translations
         public override string CommonControlConfigWindowGraphicsTabBorderlessLabel { get; set; } = "Borderless";
         public override string CommonControlConfigWindowGraphicsTabGameSizeLabel { get; set; } = "Game Size";
         public override string CommonControlConfigWindowGraphicsTabDefaultMonitorLabel { get; set; } = "Monitor";
+        public override string CommonControlConfigWindowGraphicsTabMonitorDisplayName { get; set; } = "Monitor {0}{1} - {2} x {3}";
+        public override string CommonControlConfigWindowGraphicsTabPrimaryMonitorSuffix { get; set; } = " (Primary)";
         public override string CommonControlConfigWindowGraphicsTabVSyncLabel { get; set; } = "V-Sync";
         public override string CommonControlConfigWindowGraphicsTabLimitFPSLabel { get; set; } = "Limit FPS";
         public override string CommonControlConfigWindowGraphicsTabSmoothMoveLabel { get; set; } = "Smooth Move";
@@ -596,6 +598,7 @@ namespace Client.Envir.Translations
         public override string MenuDialogStorageButtonLabel { get; set; } = "Storage";
         public override string MenuDialogRankingButtonLabel { get; set; } = "Ranking";
         public override string MenuDialogCompanionButtonLabel { get; set; } = "Companion";
+        public override string MenuDialogHeroButtonLabel { get; set; } = "Hero";
         public override string MenuDialogLeaveButtonLabel { get; set; } = "Exit Game";
 
         public override string MenuDialogSettingsButtonHint { get; set; } = "Settings [{0}]";
@@ -604,6 +607,7 @@ namespace Client.Envir.Translations
         public override string MenuDialogStorageButtonHint { get; set; } = "Storage [{0}]";
         public override string MenuDialogRankingButtonHint { get; set; } = "Ranking [{0}]";
         public override string MenuDialogCompanionButtonHint { get; set; } = "Companion [{0}]";
+        public override string MenuDialogHeroButtonHint { get; set; } = "Hero [{0}]";
         public override string MenuDialogLeaveButtonHint { get; set; } = "Exit Game [{0}]";
 
         public override string MainPanelCharacterButtonHint { get; set; } = "Character [{0}]";

@@ -347,6 +347,43 @@ namespace Library.Network.ServerPackets
 
         public ClientCompanionObject CompanionObject { get; set; }
     }
+    public sealed class ObjectHero : Packet
+    {
+        public int Index { get; set; }
+
+        public uint ObjectID { get; set; }
+        public string Name { get; set; }
+        public string OwnerName { get; set; }
+
+        public string Caption { get; set; }
+        public Color NameColour { get; set; }
+        public string GuildName { get; set; }
+
+        public MirDirection Direction { get; set; }
+        public Point Location { get; set; }
+
+        public MirClass Class { get; set; }
+        public MirGender Gender { get; set; }
+
+        public int HairType { get; set; }
+        public Color HairColour { get; set; }
+        public int Weapon { get; set; }
+        public int Shield { get; set; }
+        public int Armour { get; set; }
+        public int Costume { get; set; }
+        public Color ArmourColour { get; set; }
+        public ExteriorEffect ArmourEffect { get; set; }
+        public ExteriorEffect EmblemEffect { get; set; }
+        public ExteriorEffect WeaponEffect { get; set; }
+        public ExteriorEffect ShieldEffect { get; set; }
+
+        public int Light { get; set; }
+        public bool Dead { get; set; }
+        public PoisonType Poison { get; set; }
+        public Dictionary<BuffType, int> Buffs { get; set; }
+        public int Helmet { get; set; }
+        public bool HideHead { get; set; }
+    }
 
     public sealed class ObjectNPC : Packet
     {
@@ -899,6 +936,73 @@ namespace Library.Network.ServerPackets
     public sealed class ChangePetMode : Packet
     {
         public PetMode Mode { get; set; }
+    }
+
+    public sealed class NewHero : Packet
+    {
+        public NewHeroResult Result { get; set; }
+        public ClientHeroInformation Hero { get; set; }
+    }
+
+    public sealed class ChangeHero : Packet
+    {
+        public ClientUserHero Hero { get; set; }
+        public HeroSpawnState State { get; set; }
+    }
+
+    public sealed class ManageHeroes : Packet
+    {
+        public List<ClientHeroInformation> Heroes { get; set; }
+        public ClientHeroInformation CurrentHero { get; set; }
+        public int MaximumCount { get; set; }
+        public HeroSpawnState State { get; set; }
+        public HeroBehaviour Behaviour { get; set; }
+    }
+
+    public sealed class HeroInformation : Packet
+    {
+        public ClientUserHero Hero { get; set; }
+    }
+
+    public sealed class HeroHealthChanged : Packet
+    {
+        public int CurrentHP { get; set; }
+        public int CurrentMP { get; set; }
+        public int MaxHP { get; set; }
+        public int MaxMP { get; set; }
+    }
+
+    public sealed class GainHeroExperience : Packet
+    {
+        public decimal Amount { get; set; }
+        public decimal Experience { get; set; }
+        public decimal MaxExperience { get; set; }
+    }
+
+    public sealed class HeroLevelChanged : Packet
+    {
+        public int Level { get; set; }
+        public decimal Experience { get; set; }
+        public decimal MaxExperience { get; set; }
+    }
+
+    public sealed class UpdateHeroSpawnState : Packet
+    {
+        public HeroSpawnState State { get; set; }
+    }
+
+    public sealed class SetHeroBehaviour : Packet
+    {
+        public HeroBehaviour Behaviour { get; set; }
+    }
+
+    public sealed class SetHeroAutoPot : Packet
+    {
+        public bool AutoPot { get; set; }
+        public int HPItemIndex { get; set; }
+        public int MPItemIndex { get; set; }
+        public byte AutoHPPercent { get; set; }
+        public byte AutoMPPercent { get; set; }
     }
 
     public sealed class CurrencyChanged : Packet

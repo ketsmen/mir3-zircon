@@ -229,6 +229,22 @@ namespace Server.DBModels
         }
         private UserCompanion _Companion;
 
+        [Association("Items")]
+        public HeroInfo Hero
+        {
+            get { return _Hero; }
+            set
+            {
+                if (_Hero == value) return;
+
+                var oldValue = _Hero;
+                _Hero = value;
+
+                OnChanged(oldValue, value, "Hero");
+            }
+        }
+        private HeroInfo _Hero;
+
 
         [Association("Refine")]
         public RefineInfo Refine
@@ -346,6 +362,7 @@ namespace Server.DBModels
                         Mail = null;
                         Guild = null;
                         Companion = null;
+                        Hero = null;
                     }
                     break;
                 case "Character":
@@ -357,6 +374,7 @@ namespace Server.DBModels
                         Mail = null;
                         Guild = null;
                         Companion = null;
+                        Hero = null;
                     }
                     break;
                 case "Refine":
@@ -368,6 +386,7 @@ namespace Server.DBModels
                         Mail = null;
                         Guild = null;
                         Companion = null;
+                        Hero = null;
                     }
                     break;
                 case "Auction":
@@ -379,6 +398,7 @@ namespace Server.DBModels
                         Mail = null;
                         Guild = null;
                         Companion = null;
+                        Hero = null;
                     }
                     break;
                 case "Mail":
@@ -390,6 +410,7 @@ namespace Server.DBModels
                         Auction = null;
                         Guild = null;
                         Companion = null;
+                        Hero = null;
                     }
                     break;
                 case "Guild":
@@ -401,6 +422,7 @@ namespace Server.DBModels
                         Auction = null;
                         Mail = null;
                         Companion = null;
+                        Hero = null;
                     }
                     break;
                 case "Companion":
@@ -412,6 +434,19 @@ namespace Server.DBModels
                         Auction = null;
                         Mail = null;
                         Guild = null;
+                        Hero = null;
+                    }
+                    break;
+                case "Hero":
+                    if (Hero != null)
+                    {
+                        Character = null;
+                        Account = null;
+                        Refine = null;
+                        Auction = null;
+                        Mail = null;
+                        Guild = null;
+                        Companion = null;
                     }
                     break;
 
@@ -426,6 +461,7 @@ namespace Server.DBModels
             Account = null;
             Guild = null;
             Companion = null;
+            Hero = null;
             Refine = null;
             Auction = null;
             Mail = null;

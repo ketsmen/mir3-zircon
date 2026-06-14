@@ -480,6 +480,36 @@ namespace Library.Network.ClientPackets
         public PetMode Mode { get; set; }
     }
 
+    public sealed class NewHero : Packet
+    {
+        public string Name { get; set; }
+        public MirClass Class { get; set; }
+        public MirGender Gender { get; set; }
+    }
+
+    public sealed class ChangeHero : Packet
+    {
+        public int Index { get; set; }
+    }
+
+    public sealed class ToggleHeroSpawn : Packet
+    {
+    }
+
+    public sealed class SetHeroBehaviour : Packet
+    {
+        public HeroBehaviour Behaviour { get; set; }
+    }
+
+    public sealed class SetHeroAutoPot : Packet
+    {
+        public bool AutoPot { get; set; }
+        public int HPItemIndex { get; set; }
+        public int MPItemIndex { get; set; }
+        public byte AutoHPPercent { get; set; }
+        public byte AutoMPPercent { get; set; }
+    }
+
     public sealed class GameGoldRecharge : Packet
     { }
 

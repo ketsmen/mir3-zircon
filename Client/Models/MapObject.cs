@@ -701,7 +701,7 @@ namespace Client.Models
 
             MovingOffSet = new Point(x, y);
 
-            if (Race == ObjectType.Player && CurrentAction == MirAction.Pushed)
+            if ((Race == ObjectType.Player || Race == ObjectType.Hero) && CurrentAction == MirAction.Pushed)
                 frame = 0;
 
             FrameIndex = frame;
@@ -3394,7 +3394,7 @@ namespace Client.Models
                     switch (MagicType)
                     {
                         case MagicType.None:
-                            if (Race != ObjectType.Player || CurrentAnimation != MirAnimation.Combat3 || AttackElement == Element.None) break;
+                            if ((Race != ObjectType.Player && Race != ObjectType.Hero) || CurrentAnimation != MirAnimation.Combat3 || AttackElement == Element.None) break;
 
                             Effects.Add(new MirEffect(1090, 6, TimeSpan.FromMilliseconds(100), LibraryFile.MagicEx, 10, 50, attackColour)
                             {

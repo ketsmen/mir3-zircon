@@ -288,6 +288,9 @@ namespace Library
                          EquipmentSize = 22,
                          CompanionInventorySize = 30,
                          CompanionEquipmentSize = 4,
+                         HeroInventorySize = 42,
+                         HeroBeltSize = 2,
+                         HeroMaximumCount = 9,
                          EquipmentOffSet = 1000,
                          StorageSize = 100,
                          PartsStorageOffset = 2000;
@@ -423,6 +426,13 @@ namespace Library
 
         public int Companion { get; set; }
 
+        public List<ClientHeroInformation> Heroes { get; set; }
+        public ClientUserHero CurrentHero { get; set; }
+        public int CurrentHeroIndex { get; set; }
+        public int MaximumHeroCount { get; set; }
+        public HeroSpawnState HeroSpawnState { get; set; }
+        public HeroBehaviour HeroBehaviour { get; set; }
+
         public int StorageSize { get; set; }
 
         public string FiltersClass { get; set; }
@@ -438,6 +448,71 @@ namespace Library
         {
             foreach (int index in CompanionUnlocks)
                 AvailableCompanions.Add(Globals.CompanionInfoList.Binding.First(x => x.Index == index));
+        }
+    }
+
+    public sealed class ClientHeroInformation
+    {
+        public int Index { get; set; }
+        public string Name { get; set; }
+        public MirClass Class { get; set; }
+        public MirGender Gender { get; set; }
+        public int Level { get; set; }
+        public int Slot { get; set; }
+    }
+
+    public sealed class ClientUserHero
+    {
+        public int Index { get; set; }
+        public string Name { get; set; }
+        public MirClass Class { get; set; }
+        public MirGender Gender { get; set; }
+        public int Level { get; set; }
+        public int HairType { get; set; }
+        public Color HairColour { get; set; }
+        public byte Grade { get; set; }
+
+        public decimal Experience { get; set; }
+        public decimal MaxExperience { get; set; }
+
+        public int CurrentHP { get; set; }
+        public int CurrentMP { get; set; }
+        public int MaxHP { get; set; }
+        public int MaxMP { get; set; }
+        public Stats Stats { get; set; }
+
+        public bool AutoPot { get; set; }
+        public int HPItemIndex { get; set; }
+        public int MPItemIndex { get; set; }
+        public byte AutoHPPercent { get; set; }
+        public byte AutoMPPercent { get; set; }
+
+        public List<ClientUserItem> Items { get; set; }
+        public List<ClientUserMagic> Magics { get; set; }
+
+        public ClientUserItem[] InventoryArray = new ClientUserItem[Globals.HeroInventorySize];
+        public ClientUserItem[] EquipmentArray = new ClientUserItem[Globals.EquipmentSize];
+
+        [CompleteObject]
+        public void OnComplete()
+        {
+            Items ??= new List<ClientUserItem>();
+            Magics ??= new List<ClientUserMagic>();
+
+            foreach (ClientUserItem item in Items)
+            {
+                if (item.Slot < Globals.EquipmentOffSet)
+                {
+                    if (item.Slot >= 0 && item.Slot < InventoryArray.Length)
+                        InventoryArray[item.Slot] = item;
+
+                    continue;
+                }
+
+                int slot = item.Slot - Globals.EquipmentOffSet;
+                if (slot >= 0 && slot < EquipmentArray.Length)
+                    EquipmentArray[slot] = item;
+            }
         }
     }
 

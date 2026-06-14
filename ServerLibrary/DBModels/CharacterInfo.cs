@@ -613,6 +613,52 @@ namespace Server.DBModels
         }
         private DateTime _NextDeathDropChange;
 
+        [Association("CurrentHero")]
+        public HeroInfo CurrentHero
+        {
+            get { return _CurrentHero; }
+            set
+            {
+                if (_CurrentHero == value) return;
+
+                var oldValue = _CurrentHero;
+                _CurrentHero = value;
+
+                OnChanged(oldValue, value, "CurrentHero");
+            }
+        }
+        private HeroInfo _CurrentHero;
+
+        public bool HeroSpawned
+        {
+            get { return _HeroSpawned; }
+            set
+            {
+                if (_HeroSpawned == value) return;
+
+                bool oldValue = _HeroSpawned;
+                _HeroSpawned = value;
+
+                OnChanged(oldValue, value, "HeroSpawned");
+            }
+        }
+        private bool _HeroSpawned;
+
+        public HeroBehaviour HeroBehaviour
+        {
+            get { return _HeroBehaviour; }
+            set
+            {
+                if (_HeroBehaviour == value) return;
+
+                HeroBehaviour oldValue = _HeroBehaviour;
+                _HeroBehaviour = value;
+
+                OnChanged(oldValue, value, "HeroBehaviour");
+            }
+        }
+        private HeroBehaviour _HeroBehaviour = HeroBehaviour.Attack;
+
         [Association("Companion")]
         public UserCompanion Companion
         {
@@ -647,6 +693,9 @@ namespace Server.DBModels
 
         [Association("Items", true)]
         public DBBindingList<UserItem> Items { get; set; }
+
+        [Association("Heroes", true)]
+        public DBBindingList<HeroInfo> Heroes { get; set; }
 
         [Association("BeltLinks", true)]
         public DBBindingList<CharacterBeltLink> BeltLinks { get; set; }
@@ -776,6 +825,7 @@ namespace Server.DBModels
         protected override void OnDeleted()
         {
             Account = null;
+            CurrentHero = null;
             Companion = null;
             Partner = null;
 

@@ -212,10 +212,20 @@ namespace Server.Diagnostics
 
             AddOwnership<CharacterBeltLink, CharacterInfo>(result, collections, nameof(CharacterBeltLink.Character), nameof(CharacterInfo.BeltLinks));
             AddOwnership<AutoPotionLink, CharacterInfo>(result, collections, nameof(AutoPotionLink.Character), nameof(CharacterInfo.AutoPotionLinks));
+            AddOwnership<UserItem, CharacterInfo>(result, collections, nameof(UserItem.Character), nameof(CharacterInfo.Items));
+            AddOwnership<UserItem, AccountInfo>(result, collections, nameof(UserItem.Account), nameof(AccountInfo.Items));
+            AddOwnership<UserItem, GuildInfo>(result, collections, nameof(UserItem.Guild), nameof(GuildInfo.Items));
+            AddOwnership<UserItem, UserCompanion>(result, collections, nameof(UserItem.Companion), nameof(UserCompanion.Items));
+            AddOwnership<UserItem, HeroInfo>(result, collections, nameof(UserItem.Hero), nameof(HeroInfo.Items));
+            AddOwnership<UserItem, MailInfo>(result, collections, nameof(UserItem.Mail), nameof(MailInfo.Items));
+            AddOwnership<UserItem, RefineInfo>(result, collections, nameof(UserItem.Refine), nameof(RefineInfo.Weapon));
+            AddOwnership<UserItem, AuctionInfo>(result, collections, nameof(UserItem.Auction), nameof(AuctionInfo.Item));
             AddOwnership<UserMagic, CharacterInfo>(result, collections, nameof(UserMagic.Character), nameof(CharacterInfo.Magics));
+            AddOwnership<UserMagic, HeroInfo>(result, collections, nameof(UserMagic.Hero), nameof(HeroInfo.Magics));
             AddOwnership<UserMagic, UserDiscipline>(result, collections, nameof(UserMagic.Discipline), nameof(UserDiscipline.Magics));
             AddOwnership<UserDiscipline, CharacterInfo>(result, collections, nameof(UserDiscipline.Character), nameof(CharacterInfo.Discipline));
             AddOwnership<UserCompanion, CharacterInfo>(result, collections, nameof(UserCompanion.Character), nameof(CharacterInfo.Companion));
+            AddOwnership<HeroInfo, CharacterInfo>(result, collections, nameof(HeroInfo.Character), nameof(CharacterInfo.Heroes));
             AddOwnership<BuffInfo, CharacterInfo>(result, collections, nameof(BuffInfo.Character), nameof(CharacterInfo.Buffs));
             AddOwnership<BuffInfo, AccountInfo>(result, collections, nameof(BuffInfo.Account), nameof(AccountInfo.Buffs));
             AddOwnership<RefineInfo, CharacterInfo>(result, collections, nameof(RefineInfo.Character), nameof(CharacterInfo.Refines));

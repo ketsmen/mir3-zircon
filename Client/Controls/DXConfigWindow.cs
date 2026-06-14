@@ -80,6 +80,13 @@ namespace Client.Controls
 
         #endregion
 
+        private static string GetMonitorDisplayName(DisplayMonitorInfo monitor)
+        {
+            string primaryText = monitor.Primary ? CEnvir.Language.CommonControlConfigWindowGraphicsTabPrimaryMonitorSuffix : string.Empty;
+
+            return string.Format(CEnvir.Language.CommonControlConfigWindowGraphicsTabMonitorDisplayName, monitor.Index + 1, primaryText, monitor.Bounds.Width, monitor.Bounds.Height);
+        }
+
         public override void OnVisibleChanged(bool oValue, bool nValue)
         {
             base.OnVisibleChanged(oValue, nValue);
@@ -447,7 +454,7 @@ namespace Client.Controls
                 new DXListBoxItem
                 {
                     Parent = DefaultMonitorComboBox.ListBox,
-                    Label = { Text = monitor.DisplayName },
+                    Label = { Text = GetMonitorDisplayName(monitor) },
                     Item = monitor
                 };
 
