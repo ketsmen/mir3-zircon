@@ -743,7 +743,7 @@ namespace Server.Models.Monsters
         }
         public void GainItem(params UserItem[] items)
         {
-            CompanionOwner.Enqueue(new S.CompanionItemsGained { Items = items.Where(x => x.Info.ItemEffect != ItemEffect.Experience).Select(x => x.ToClientInfo()).ToList() });
+            CompanionOwner.QueueCompanionItemsGained(items.Where(x => x.Info.ItemEffect != ItemEffect.Experience).Select(x => x.ToClientInfo()).ToList());
 
             HashSet<UserQuest> changedQuests = new HashSet<UserQuest>();
 

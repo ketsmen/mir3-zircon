@@ -1881,23 +1881,7 @@ namespace Client.Envir
         public void Process(S.ItemsGained p)
         {
             foreach (ClientUserItem item in p.Items)
-            {
-                ItemInfo displayInfo = item.Info;
-
-                if (item.Info.ItemEffect == ItemEffect.ItemPart)
-                    displayInfo = Globals.ItemInfoList.Binding.First(x => x.Index == item.AddedStats[Stat.ItemIndex]);
-
-                item.New = true;
-                string text = item.Count > 1 ? string.Format(CEnvir.Language.ItemsGained, displayInfo.ItemName, item.Count) : string.Format(CEnvir.Language.ItemGained, displayInfo.ItemName);
-
-                if ((item.Flags & UserItemFlags.QuestItem) == UserItemFlags.QuestItem)
-                    text += " (Quest)";
-
-                if (item.Info.ItemEffect == ItemEffect.ItemPart)
-                    text += " [Part]";
-
-                GameScene.Game.ReceiveChat(text, MessageType.Combat);
-            }
+                GameScene.Game.ReceiveItemGained(item, false);
 
             GameScene.Game.AddItems(p.Items);
         }
@@ -2071,10 +2055,10 @@ namespace Client.Envir
 
             currency.Amount = p.Amount;
 
-            GameScene.Game.CurrencyChanged();
-
             if (currency.Info.Type == CurrencyType.Gold)
-                DXSoundManager.Play(SoundIndex.GoldGained);
+                GameScene.Game.QueueCurrencyRefresh(true);
+            else
+                GameScene.Game.CurrencyChanged();
         }
 
         public void Process(S.ItemChanged p)
@@ -4341,23 +4325,7 @@ namespace Client.Envir
         public void Process(S.CompanionItemsGained p)
         {
             foreach (ClientUserItem item in p.Items)
-            {
-                ItemInfo displayInfo = item.Info;
-
-                if (item.Info.ItemEffect == ItemEffect.ItemPart)
-                    displayInfo = Globals.ItemInfoList.Binding.First(x => x.Index == item.AddedStats[Stat.ItemIndex]);
-
-                item.New = true;
-                string text = item.Count > 1 ? string.Format(CEnvir.Language.CompanionItemsGained, displayInfo.ItemName, item.Count) : string.Format(CEnvir.Language.CompanionItemGained, displayInfo.ItemName);
-
-                if ((item.Flags & UserItemFlags.QuestItem) == UserItemFlags.QuestItem)
-                    text += " (Quest)";
-
-                if (item.Info.ItemEffect == ItemEffect.ItemPart)
-                    text += " [Part]";
-
-                GameScene.Game.ReceiveChat(text, MessageType.Combat);
-            }
+                GameScene.Game.ReceiveItemGained(item, true);
 
             GameScene.Game.AddCompanionItems(p.Items);
         }

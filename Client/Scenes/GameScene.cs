@@ -110,6 +110,15 @@ namespace Client.Scenes
 
         public ClientUserCurrency CurrencyPickedUp = null;
 
+        private const int GoldGainChatBatchDelay = 150;
+        private const int CurrencyRefreshBatchDelay = 75;
+        private long PendingGoldGained;
+        private long PendingCompanionGoldGained;
+        private DateTime GoldGainChatFlushTime;
+        private bool CurrencyRefreshPending;
+        private bool GoldGainSoundPending;
+        private DateTime CurrencyRefreshTime;
+
         public MapObject MagicObject, MouseObject, TargetObject, FocusObject;
         public DXControl ItemLabel, MagicLabel, FameLabel;
 
@@ -1122,6 +1131,9 @@ namespace Client.Scenes
         public override void Process()
         {
             base.Process();
+
+            FlushPendingGoldGainChat();
+            FlushPendingCurrencyRefresh();
 
             if (CEnvir.Now >= MoveTime)
             {
@@ -4237,6 +4249,105 @@ namespace Client.Scenes
                 InventoryBox.Grid.Grid[item.Slot].Item = item;
             }
         }
+
+        public void ReceiveItemGained(ClientUserItem item, bool companion)
+        {
+            if (item == null) return;
+
+            item.New = true;
+
+            if (item.Info == Globals.GoldInfo && (item.Flags & UserItemFlags.QuestItem) != UserItemFlags.QuestItem)
+            {
+                QueueGoldGainChat(item.Count, companion);
+                return;
+            }
+
+            ReceiveChat(FormatItemGainedText(item, companion), MessageType.Combat);
+        }
+
+        private string FormatItemGainedText(ClientUserItem item, bool companion)
+        {
+            ItemInfo displayInfo = item.Info;
+
+            if (item.Info.ItemEffect == ItemEffect.ItemPart)
+                displayInfo = Globals.ItemInfoList.Binding.First(x => x.Index == item.AddedStats[Stat.ItemIndex]);
+
+            string text;
+            if (companion)
+                text = item.Count > 1 ? string.Format(CEnvir.Language.CompanionItemsGained, displayInfo.ItemName, item.Count) : string.Format(CEnvir.Language.CompanionItemGained, displayInfo.ItemName);
+            else
+                text = item.Count > 1 ? string.Format(CEnvir.Language.ItemsGained, displayInfo.ItemName, item.Count) : string.Format(CEnvir.Language.ItemGained, displayInfo.ItemName);
+
+            if ((item.Flags & UserItemFlags.QuestItem) == UserItemFlags.QuestItem)
+                text += " (Quest)";
+
+            if (item.Info.ItemEffect == ItemEffect.ItemPart)
+                text += " [Part]";
+
+            return text;
+        }
+
+        private void QueueGoldGainChat(long amount, bool companion)
+        {
+            if (amount <= 0) return;
+
+            if (companion)
+                PendingCompanionGoldGained += amount;
+            else
+                PendingGoldGained += amount;
+
+            if (GoldGainChatFlushTime < CEnvir.Now)
+                GoldGainChatFlushTime = CEnvir.Now.AddMilliseconds(GoldGainChatBatchDelay);
+        }
+
+        private void FlushPendingGoldGainChat()
+        {
+            if (GoldGainChatFlushTime == DateTime.MinValue || CEnvir.Now < GoldGainChatFlushTime) return;
+
+            if (PendingGoldGained > 0)
+            {
+                ReceiveChat(
+                    PendingGoldGained > 1 ? string.Format(CEnvir.Language.ItemsGained, Globals.GoldInfo.ItemName, PendingGoldGained) : string.Format(CEnvir.Language.ItemGained, Globals.GoldInfo.ItemName),
+                    MessageType.Combat);
+                PendingGoldGained = 0;
+            }
+
+            if (PendingCompanionGoldGained > 0)
+            {
+                ReceiveChat(
+                    PendingCompanionGoldGained > 1 ? string.Format(CEnvir.Language.CompanionItemsGained, Globals.GoldInfo.ItemName, PendingCompanionGoldGained) : string.Format(CEnvir.Language.CompanionItemGained, Globals.GoldInfo.ItemName),
+                    MessageType.Combat);
+                PendingCompanionGoldGained = 0;
+            }
+
+            GoldGainChatFlushTime = DateTime.MinValue;
+        }
+
+        public void QueueCurrencyRefresh(bool playGoldSound)
+        {
+            if (playGoldSound)
+                GoldGainSoundPending = true;
+
+            if (!CurrencyRefreshPending)
+            {
+                CurrencyRefreshPending = true;
+                CurrencyRefreshTime = CEnvir.Now.AddMilliseconds(CurrencyRefreshBatchDelay);
+            }
+        }
+
+        private void FlushPendingCurrencyRefresh()
+        {
+            if (!CurrencyRefreshPending || CEnvir.Now < CurrencyRefreshTime) return;
+
+            CurrencyRefreshPending = false;
+            CurrencyChanged();
+
+            if (!GoldGainSoundPending) return;
+
+            GoldGainSoundPending = false;
+            DXSoundManager.Play(SoundIndex.GoldGained);
+        }
+
         public void AddItems(List<ClientUserItem> items)
         {
             foreach (ClientUserItem item in items)
@@ -4249,10 +4360,7 @@ namespace Client.Scenes
                 {
                     currency.Amount += item.Count;
 
-                    GameScene.Game.CurrencyChanged();
-
-                    if (currency.Info.Type == CurrencyType.Gold)
-                        DXSoundManager.Play(SoundIndex.GoldGained);
+                    QueueCurrencyRefresh(currency.Info.Type == CurrencyType.Gold);
 
                     continue;
                 }
@@ -4307,10 +4415,7 @@ namespace Client.Scenes
                 {
                     currency.Amount += item.Count;
 
-                    GameScene.Game.CurrencyChanged();
-
-                    if (currency.Info.Type == CurrencyType.Gold)
-                        DXSoundManager.Play(SoundIndex.GoldGained);
+                    QueueCurrencyRefresh(currency.Info.Type == CurrencyType.Gold);
 
                     continue;
                 }

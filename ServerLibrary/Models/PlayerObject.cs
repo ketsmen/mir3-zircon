@@ -94,6 +94,10 @@ namespace Server.Models
 
         public int BagWeight, WearWeight, HandWeight;
 
+        private readonly List<ClientUserItem> CompanionItemsGainedQueue = new List<ClientUserItem>();
+        private DateTime CompanionItemsGainedFlushTime;
+        private static readonly TimeSpan CompanionItemsGainedBatchDelay = TimeSpan.FromMilliseconds(150);
+
         public int HairType
         {
             get { return Character.HairType; }
@@ -341,6 +345,8 @@ namespace Server.Models
             ProcessItemExpire();
 
             ProcessQuests();
+
+            ProcessCompanionItemsGainedQueue();
 
             ProcessGroup();
         }
@@ -6354,6 +6360,42 @@ namespace Server.Models
 
             return true;
         }
+
+        public void QueueCompanionItemsGained(List<ClientUserItem> items)
+        {
+            if (items == null || items.Count == 0) return;
+
+            bool scheduleFlush = CompanionItemsGainedQueue.Count == 0;
+
+            foreach (ClientUserItem item in items)
+            {
+                if (item == null) continue;
+
+                if (item.Info != null && SEnvir.IsCurrencyItem(item.Info))
+                {
+                    ClientUserItem existing = CompanionItemsGainedQueue.FirstOrDefault(x => x.Info == item.Info && SEnvir.IsCurrencyItem(x.Info));
+                    if (existing != null)
+                    {
+                        existing.Count += item.Count;
+                        continue;
+                    }
+                }
+
+                CompanionItemsGainedQueue.Add(item);
+            }
+
+            if (scheduleFlush)
+                CompanionItemsGainedFlushTime = SEnvir.Now + CompanionItemsGainedBatchDelay;
+        }
+
+        private void ProcessCompanionItemsGainedQueue()
+        {
+            if (CompanionItemsGainedQueue.Count == 0 || SEnvir.Now < CompanionItemsGainedFlushTime) return;
+
+            Enqueue(new S.CompanionItemsGained { Items = CompanionItemsGainedQueue.ToList() });
+            CompanionItemsGainedQueue.Clear();
+        }
+
         public void GainItem(params UserItem[] items)
         {
             Enqueue(new S.ItemsGained { Items = items.Where(x => x.Info.ItemEffect != ItemEffect.Experience).Select(x => x.ToClientInfo()).ToList() });
