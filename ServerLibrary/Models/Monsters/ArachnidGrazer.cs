@@ -7,6 +7,7 @@ namespace Server.Models.Monsters
     public class ArachnidGrazer : MonsterObject
     {
         public override bool CanMove => false;
+        public int MinionsCount = 1;
 
         protected override bool InAttackRange()
         {
@@ -24,7 +25,7 @@ namespace Server.Models.Monsters
             switch (action.Type)
             {
                 case ActionType.Function:
-                    SpawnMinions(1, 0, Target);
+                    SpawnMinions(MinionsCount, 0, Target);
                     break;
             }
 

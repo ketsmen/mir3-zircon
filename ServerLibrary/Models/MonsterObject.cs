@@ -108,11 +108,13 @@ namespace Server.Models
         }
 
         public PoisonType PoisonType;
+        public bool PoisonStackable = false;
         public int PoisonRate = 10;
         public int PoisonTicks = 5;
         public int PoisonFrequency = 2;
 
         public bool IgnoreShield;
+        public bool IgnoreArmour;
 
         public bool EasterEventMob, HalloweenEventMob, ChristmasEventMob;
 
@@ -637,6 +639,114 @@ namespace Server.Models
                         PoisonRate = 15,
                     };
 
+                case 135:
+                    return new JinchonDevil { MonsterInfo = monsterInfo, CastDelay = TimeSpan.FromSeconds(8), DeathCloudDurationMin = 2000, DeathCloudDurationRandom = 5000 };
+                case 136:
+                    return new KingsSpawner
+                    {
+                        MonsterInfo = monsterInfo,
+                        MonsterSpawnInfo = SEnvir.MonsterInfoList.Binding.First(x => x.Flag == MonsterFlag.KingsSpider),
+                        NumberToSpawn = 2
+                    };
+                case 137:
+                    return new KingsSpawner
+                    {
+                        MonsterInfo = monsterInfo,
+                        MonsterSpawnInfo = SEnvir.MonsterInfoList.Binding.First(x => x.Flag == MonsterFlag.KingsSalamander),
+                        NumberToSpawn = 2
+                    };
+                case 139:
+                    return new InfernalSoldier
+                    {
+                        MonsterInfo = monsterInfo,
+                    };
+                case 140:
+                    return new DarkKing
+                    {
+                        MonsterInfo = monsterInfo,
+                    };
+                case 141:
+                    return new DemonicLunatic
+                    {
+                        MonsterInfo = monsterInfo,
+                        MonsterSpawnInfo = SEnvir.MonsterInfoList.Binding.First(x => x.Flag == MonsterFlag.DemonicLunatic),
+                        count = 9
+                    };
+                case 142:
+                    return new DemonicLunaticMirror
+                    {
+                        MonsterInfo = monsterInfo,
+                    };
+                case 143:
+                    return new Ent
+                    {
+                        MonsterInfo = monsterInfo,
+                        PoisonType = PoisonType.StrongGreen,
+                        PoisonTicks = 10,
+                        PoisonFrequency = 1,
+                        PoisonRate = 0,
+                        IgnoreArmour = true,
+                    };
+                case 144:
+                    return new ArachnidGrazer
+                    {
+                        MonsterInfo = monsterInfo,
+                        SpawnList = { [SEnvir.MonsterInfoList.Binding.First(x => x.Flag == MonsterFlag.SuperLarva)] = 1 },
+                        MinionsCount = 3,
+                        MaxMinions = 1000
+                    };
+                case 145:
+                    return new StrongBoss
+                    {
+                        MonsterInfo = monsterInfo
+                    };
+                case 146:
+                    return new Ent
+                    {
+                        MonsterInfo = monsterInfo,
+                        PoisonType = PoisonType.StrongGreen,
+                        PoisonTicks = 20,
+                        PoisonFrequency = 1,
+                        PoisonRate = 0,
+                        PoisonStackable = true,
+                        IgnoreArmour = true,
+                        IgnoreShield = true,
+                    };
+                case 147:
+                    return new Tachinid
+                    {
+                        MonsterInfo = monsterInfo
+                    };
+                case 148:
+                    return new HellBringer
+                    {
+                        MonsterInfo = monsterInfo,
+                        BatInfo = SEnvir.MonsterInfoList.Binding.FirstOrDefault(x => x.Flag == MonsterFlag.HellishBat),
+                    };
+                case 149:
+                    return new DuelHitMonster { MonsterInfo = monsterInfo };
+                case 150:
+                    return new CrawlerSlave { MonsterInfo = monsterInfo };
+                case 151:
+                    return new CursedSlave { MonsterInfo = monsterInfo };
+                case 152:
+                    return new EvilCursedSlave { MonsterInfo = monsterInfo };
+                case 153:
+                    return new PoisonousGolem { MonsterInfo = monsterInfo, PoisonType = PoisonType.Green, PoisonTicks = 20, PoisonRate = 5 };
+                case 154:
+                    return new GardenSoldier { MonsterInfo = monsterInfo };
+                case 155:
+                    return new GardenDefender { MonsterInfo = monsterInfo };
+                case 156:
+                    return new RedBlossom { MonsterInfo = monsterInfo };
+                case 157:
+                    return new BlueBlossom { MonsterInfo = monsterInfo };
+                case 158:
+                    return new FireBird { MonsterInfo = monsterInfo };
+                case 159:
+                    return new 章鱼BOSS { MonsterInfo = monsterInfo };
+                case 999:
+                    return new TestAI { MonsterInfo = monsterInfo };
                 case 1001:
                     return new CastleFlag { MonsterInfo = monsterInfo };
                 case 1002:
@@ -2331,6 +2441,45 @@ namespace Server.Models
                 if (cell.Objects == null)
                 {
                     if (SEnvir.Random.Next(30) == 0)
+                        locations.Add(cell.Location);
+
+                    continue;
+                }
+
+                foreach (MapObject ob in cell.Objects)
+                {
+                    if (SEnvir.Random.Next(4) == 0) continue;
+                    if (!CanAttackTarget(ob)) continue;
+
+                    targetIDs.Add(ob.ObjectID);
+
+                    ActionList.Add(new DelayedAction(
+                        SEnvir.Now.AddMilliseconds(500),
+                        ActionType.DelayAttack,
+                        ob,
+                        GetDC(),
+                        Element.Wind));
+                }
+            }
+        }
+
+        public void MassCyclone(MagicType type, int chance = 30)
+        {
+            Direction = Functions.DirectionFromPoint(CurrentLocation, Target.CurrentLocation);
+
+            List<uint> targetIDs = new List<uint>();
+            List<Point> locations = new List<Point>();
+
+            Broadcast(new S.ObjectMagic { ObjectID = ObjectID, Direction = Direction, CurrentLocation = CurrentLocation, Cast = true, Type = type, Targets = targetIDs, Locations = locations });
+
+            UpdateAttackTime();
+
+            List<Cell> cells = CurrentMap.GetCells(CurrentLocation, 0, Config.MaxViewRange);
+            foreach (Cell cell in cells)
+            {
+                if (cell.Objects == null)
+                {
+                    if (SEnvir.Random.Next(chance) == 0)
                         locations.Add(cell.Location);
 
                     continue;

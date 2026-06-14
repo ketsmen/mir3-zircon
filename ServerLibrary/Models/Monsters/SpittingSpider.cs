@@ -34,9 +34,14 @@ namespace Server.Models.Monsters
 
         protected void LineAttack(int distance)
         {
+            LineAttack(distance, Direction);
+        }
+
+        protected void LineAttack(int distance, MirDirection direction)
+        {
             for (int i = 1; i <= distance; i++)
             {
-                Point target = Functions.Move(CurrentLocation, Direction, i);
+                Point target = Functions.Move(CurrentLocation, direction, i);
 
                 if (target == Target.CurrentLocation)
                 {

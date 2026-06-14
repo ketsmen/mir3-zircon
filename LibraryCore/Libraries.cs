@@ -228,6 +228,8 @@ namespace Library
             [LibraryFile.MonMagicEx7] = @"Data\MonMagicEx7.Zl", //
             [LibraryFile.MonMagicEx8] = @"Data\MonMagicEx8.Zl", //
             [LibraryFile.MonMagicEx9] = @"Data\MonMagicEx9.Zl", //
+            [LibraryFile.MonMagicEx13] = @"Data\MonMagicEx13.Zl", //
+            [LibraryFile.MonMagicEx14] = @"Data\MonMagicEx14.Zl", //
             [LibraryFile.MonMagicEx19] = @"Data\MonMagicEx19.Zl", //
             [LibraryFile.MonMagicEx20] = @"Data\MonMagicEx20.Zl", //
             [LibraryFile.MonMagicEx21] = @"Data\MonMagicEx21.Zl", //
@@ -297,6 +299,12 @@ namespace Library
             [LibraryFile.Mon_55] = @"Data\Mon-55.Zl",
             [LibraryFile.Mon_56] = @"Data\Mon-56.Zl",
             [LibraryFile.Mon_57] = @"Data\Mon-57.Zl",
+            [LibraryFile.Mon_58] = @"Data\Mon-58.Zl",
+            [LibraryFile.Mon_59] = @"Data\Mon-59.Zl",
+            [LibraryFile.Mon_60] = @"Data\Mon-60.Zl",
+            [LibraryFile.Mon_61] = @"Data\Mon-61.Zl",
+            [LibraryFile.Mon_62] = @"Data\Mon-62.Zl",
+            [LibraryFile.Mon_63] = @"Data\Mon-63.Zl",
 
             [LibraryFile.Magic] = @"Data\Magic.Zl",
             [LibraryFile.MagicEx] = @"Data\MagicEx.Zl",
@@ -676,6 +684,8 @@ namespace Library
         MonMagicEx7,
         MonMagicEx8,
         MonMagicEx9,
+        MonMagicEx13,
+        MonMagicEx14,
         MonMagicEx19,
         MonMagicEx20,
         MonMagicEx21,
@@ -745,6 +755,12 @@ namespace Library
         Mon_55,
         Mon_56,
         Mon_57,
+        Mon_58,
+        Mon_59,
+        Mon_60,
+        Mon_61,
+        Mon_62,
+        Mon_63,
 
         Magic,
         MagicEx,

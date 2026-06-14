@@ -845,6 +845,11 @@ namespace Library
 
         PinkFireBall = 530,
         GreenSludgeBall = 540,
+
+        HellBringerBats = 550,
+        PoisonousGolemLineAoE = 551,
+        IgyuScorchedEarth = 552,
+        IgyuCyclone = 553,
     }
 
     public enum MagicProperty
@@ -1385,6 +1390,68 @@ namespace Library
 
         //Mon59
 
+        //Custom monsters from legacy project.
+        DarkChampion = 574,
+        DarkGuard,
+        DarkKing,
+
+        TempleGuardian,
+        DemonicBlack,
+        ForestTree,
+        DarkForestTree,
+        TempleKnight,
+        LavaGod,
+        LavaScorp,
+
+        TempleSnake,
+        Tachinid,
+        SnailKing,
+        Turtle,
+        WarBeast,
+
+        Ent,
+        VenusFlytrap1,
+        VenusFlytrap2,
+        PoisonusTreant,
+
+        [Description("海怪1")]
+        SeaFloor0,
+        [Description("海怪2")]
+        SeaFloor1,
+        [Description("海怪3")]
+        SeaFloor2,
+        [Description("海怪4")]
+        SeaFloor3,
+        [Description("海怪5")]
+        SeaFloor4,
+        [Description("海怪6")]
+        SeaFloorSub,
+        [Description("海怪7")]
+        SeaFloor6,
+        [Description("海怪8")]
+        SeaFloorBoss,
+
+        CrazedPrimate,
+        HellBringer,
+        YurinMon0,
+        YurinMon1,
+        WhiteBeardedTiger,
+        BlackBeardedTiger,
+        HardenedRhino,
+        Mammoth,
+        CursedSlave1,
+        CursedSlave2,
+        CursedSlave3,
+        PoisonousGolem,
+
+        GardenSoldier,
+        GardenDefender,
+        RedBlossom,
+        BlueBlossom,
+        FireBird,
+
+        [Description("诺玛教主")]
+        NumaKing,
 
         //Flag
         CastleFlag = 1000
@@ -1506,6 +1573,7 @@ namespace Library
         Chain = 1 << 13,        //Tick damage, limits movement, displays effect
         Hemorrhage = 1 << 14,   //Tick damage, stops recovery, displays effect
         Binding = 1 << 15,      //Tick damage, stops movement, displays effect
+        StrongGreen = 1 << 16,
     }
 
     public enum SpellEffect
@@ -2066,6 +2134,7 @@ namespace Library
         Blocker = 20,
 
         Larva = 100,
+        SuperLarva = 101,
 
         LesserWedgeMoth = 110,
 
@@ -2113,7 +2182,11 @@ namespace Library
         QuartzMiniTurtle = 204,
         QuartzTurtleSub = 205,
 
-        Sacrifice = 210
+        KingsSpider = 206,
+        KingsSalamander = 207,
+        DemonicLunatic = 209,
+        Sacrifice = 210,
+        HellishBat = 211
     }
 
     public enum FishingState : byte
@@ -3333,6 +3406,76 @@ namespace Library
         TerracottaBossAttack2,
         TerracottaBossStruck,
         TerracottaBossDie,
+
+        CrazedPrimateAttack,
+        CrazedPrimateStruck,
+        CrazedPrimateDie,
+
+        HellBringerAttack,
+        HellBringerAttack2,
+        HellBringerAttack3,
+        HellBringerStruck,
+        HellBringerDie,
+
+        YurinHoundAttack,
+        YurinHoundStruck,
+        YurinHoundDie,
+
+        YurinTigerAttack,
+        YurinTigerStruck,
+        YurinTigerDie,
+
+        HardenedRhinoAttack,
+        HardenedRhinoStruck,
+        HardenedRhinoDie,
+
+        MammothAttack,
+        MammothStruck,
+        MammothDie,
+
+        CursedSlave1Attack,
+        CursedSlave1Attack2,
+        CursedSlave1Struck,
+        CursedSlave1Die,
+
+        CursedSlave2Attack,
+        CursedSlave2Struck,
+        CursedSlave2Die,
+
+        CursedSlave3Attack,
+        CursedSlave3Attack2,
+        CursedSlave3Struck,
+        CursedSlave3Die,
+
+        PoisonousGolemAttack,
+        PoisonousGolemAttack2,
+        PoisonousGolemStruck,
+        PoisonousGolemDie,
+
+        GardenSoldierAttack,
+        GardenSoldierAttack2,
+        GardenSoldierStruck,
+        GardenSoldierDie,
+
+        GardenDefenderAttack,
+        GardenDefenderAttack2,
+        GardenDefenderStruck,
+        GardenDefenderDie,
+
+        RedBlossomAttack,
+        RedBlossomAttack2,
+        RedBlossomStruck,
+        RedBlossomDie,
+
+        BlueBlossomAttack,
+        BlueBlossomStruck,
+        BlueBlossomDie,
+
+        FireBirdAttack,
+        FireBirdAttack2,
+        FireBirdAttack3,
+        FireBirdStruck,
+        FireBirdDie,
 
         #endregion
     }
