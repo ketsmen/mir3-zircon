@@ -9,7 +9,10 @@
 	<AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-    <OutputPath>..\..\Debug\ServerCore\</OutputPath>
+    <OutputPath>$(Mir3OutputRoot)Debug\ServerCore\</OutputPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <OutputPath>$(Mir3OutputRoot)Release\ServerCore\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="autofac" Version="8.1.1" />
