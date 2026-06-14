@@ -2050,6 +2050,7 @@ namespace Server.Models
             LogMilestone(MilestoneType.Level, Level, true);
 
             ApplyGuildBuff();
+            Hero?.ProcessExperience();
         }
 
         public void RefreshWeight()
@@ -12638,6 +12639,7 @@ namespace Server.Models
             }
 
             RefreshStats();
+            Hero?.ApplyLevelLimit();
         }
 
         public void PromoteFame()

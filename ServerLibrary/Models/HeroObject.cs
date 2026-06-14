@@ -68,6 +68,7 @@ namespace Server.Models
         public byte Grade => Info.Grade;
 
         public HeroBehaviour Behaviour => Owner?.Character?.HeroBehaviour ?? HeroBehaviour.Attack;
+        private int MaxAllowedLevel => Math.Max(1, Math.Min(Config.MaxLevel, Owner?.Level ?? Config.MaxLevel));
 
         public override string Name
         {
@@ -124,8 +125,10 @@ namespace Server.Models
             Direction = owner?.Direction ?? (MirDirection)SEnvir.Random.Next(8);
             NameColour = Color.MediumPurple;
 
+            ApplyLevelLimit(false);
             LoadItems();
             RefreshStats();
+            ProcessExperience();
 
             bool reviveRecorded = Info.ReviveTime > DateTime.MinValue;
             if (CurrentHP <= 0 && reviveRecorded && SEnvir.Now < Info.ReviveTime)
@@ -892,20 +895,49 @@ namespace Server.Models
             Info.Experience += amount;
             Owner?.Enqueue(new S.GainHeroExperience { Amount = amount, Experience = Info.Experience, MaxExperience = MaxExperience });
 
-            while (MaxExperience > 0 && Info.Experience >= MaxExperience && Level < Config.MaxLevel)
+            ProcessExperience();
+        }
+
+        public void ProcessExperience()
+        {
+            ApplyLevelLimit();
+
+            while (MaxExperience > 0 && Info.Experience >= MaxExperience && Level < MaxAllowedLevel)
             {
                 Info.Experience -= MaxExperience;
                 Level++;
 
-                RefreshStats();
-                SetHP(Stats[Stat.Health]);
-                SetMP(Stats[Stat.Mana]);
-
-                Broadcast(new S.ObjectLeveled { ObjectID = ObjectID });
-                Owner?.Enqueue(new S.HeroLevelChanged { Level = Level, Experience = Info.Experience, MaxExperience = MaxExperience });
-                Owner?.Enqueue(new S.HeroInformation { Hero = ToClientHero() });
-                Owner?.Connection?.ReceiveChat($"{Name}升到了 {Level} 级。", MessageType.System);
+                HeroLevelUp();
             }
+        }
+
+        public void ApplyLevelLimit(bool notify = true)
+        {
+            if (Level <= MaxAllowedLevel) return;
+
+            Level = MaxAllowedLevel;
+
+            if (!notify) return;
+
+            RefreshStats();
+
+            if (CurrentHP > Stats[Stat.Health]) SetHP(Stats[Stat.Health]);
+            if (CurrentMP > Stats[Stat.Mana]) SetMP(Stats[Stat.Mana]);
+
+            Owner?.Enqueue(new S.HeroLevelChanged { Level = Level, Experience = Info.Experience, MaxExperience = MaxExperience });
+            Owner?.Enqueue(new S.HeroInformation { Hero = ToClientHero() });
+        }
+
+        private void HeroLevelUp()
+        {
+            RefreshStats();
+            SetHP(Stats[Stat.Health]);
+            SetMP(Stats[Stat.Mana]);
+
+            Broadcast(new S.ObjectLeveled { ObjectID = ObjectID });
+            Owner?.Enqueue(new S.HeroLevelChanged { Level = Level, Experience = Info.Experience, MaxExperience = MaxExperience });
+            Owner?.Enqueue(new S.HeroInformation { Hero = ToClientHero() });
+            Owner?.Connection?.ReceiveChat($"{Name}升到了 {Level} 级。", MessageType.System);
         }
 
         public override void ProcessHPMP()
