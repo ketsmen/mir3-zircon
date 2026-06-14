@@ -73,26 +73,14 @@ namespace Server.Models.Monsters
                     return;
                 }
 
-                for (int i = CurrentMap.Objects.Count - 1; i >= 0; i--)
+                for (int i = CurrentMap.Players.Count - 1; i >= 0; i--)
                 {
-                    MapObject ob = CurrentMap.Objects[i];
+                    PlayerObject player = CurrentMap.Players[i];
 
-                    if (ob == this) continue;
+                    if (player.InSafeZone) continue;
+                    if (player.Dead || !Functions.InRange(player.CurrentLocation, CurrentLocation, MonsterInfo.ViewRange)) continue;
 
-                    if (ob is Guard) continue;
-
-                    switch (ob.Race)
-                    {
-                        case ObjectType.Player:
-                            if (ob.InSafeZone) continue;
-
-                            if (ob.Dead || !Functions.InRange(ob.CurrentLocation, CurrentLocation, MonsterInfo.ViewRange)) continue;
-
-                            ob.Teleport(map, SEnvir.LairMapRegion.PointList[SEnvir.Random.Next(SEnvir.LairMapRegion.PointList.Count)]);
-                            break;
-                        default:
-                            continue;
-                    }
+                    player.Teleport(map, SEnvir.LairMapRegion.PointList[SEnvir.Random.Next(SEnvir.LairMapRegion.PointList.Count)]);
 
                 }
             }

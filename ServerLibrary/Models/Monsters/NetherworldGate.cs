@@ -71,6 +71,16 @@ namespace Server.Models.Monsters
                     return;
                 }
 
+                for (int i = CurrentMap.Players.Count - 1; i >= 0; i--)
+                {
+                    PlayerObject player = CurrentMap.Players[i];
+
+                    if (player.InSafeZone) continue;
+                    if (player.Dead || !Functions.InRange(player.CurrentLocation, CurrentLocation, MonsterInfo.ViewRange)) continue;
+
+                    player.Teleport(map, SEnvir.MysteryShipMapRegion.PointList[SEnvir.Random.Next(SEnvir.MysteryShipMapRegion.PointList.Count)]);
+                }
+
                 for (int i = CurrentMap.Objects.Count - 1; i >= 0; i--)
                 {
                     MapObject ob = CurrentMap.Objects[i];
@@ -79,20 +89,12 @@ namespace Server.Models.Monsters
 
                     if (ob is Guard) continue;
 
-                    switch (ob.Race)
-                    {
-                        case ObjectType.Player:
-                        case ObjectType.Monster:
-                            if (ob.InSafeZone) continue;
+                    if (ob.Race != ObjectType.Monster) continue;
+                    if (ob.InSafeZone) continue;
 
-                            if (ob.Dead || !Functions.InRange(ob.CurrentLocation, CurrentLocation, MonsterInfo.ViewRange)) continue;
+                    if (ob.Dead || !Functions.InRange(ob.CurrentLocation, CurrentLocation, MonsterInfo.ViewRange)) continue;
 
-
-                            ob.Teleport(map, SEnvir.MysteryShipMapRegion.PointList[SEnvir.Random.Next(SEnvir.MysteryShipMapRegion.PointList.Count)]);
-                            break;
-                        default:
-                            continue;
-                    }
+                    ob.Teleport(map, SEnvir.MysteryShipMapRegion.PointList[SEnvir.Random.Next(SEnvir.MysteryShipMapRegion.PointList.Count)]);
 
                 }
             }
@@ -108,7 +110,7 @@ namespace Server.Models.Monsters
             if (Activated) return;
 
             Activated = true;
-            SEnvir.ActiveObjects.Add(this);
+            SEnvir.AddActiveObject(this);
         }
         public override void DeActivate()
         {

@@ -318,7 +318,7 @@ namespace Server.Models
             if (Effect == SpellEffect.SafeZone) return;
 
             Activated = true;
-            SEnvir.ActiveObjects.Add(this);
+            SEnvir.AddActiveObject(this);
         }
         public override void DeActivate()
         {

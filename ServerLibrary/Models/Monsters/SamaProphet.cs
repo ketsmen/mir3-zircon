@@ -7,6 +7,9 @@ namespace Server.Models.Monsters
     class SamaProphet : MonsterObject
     {
         public DateTime CheckTime;
+        private DateTime ProtectionCheckTime;
+        private bool HasProtection;
+
         protected override bool InAttackRange()
         {
             if (Target.CurrentMap != CurrentMap) return false;
@@ -40,13 +43,13 @@ namespace Server.Models.Monsters
 
                 if (Functions.InRange(mob.CurrentLocation, CurrentLocation, MonsterInfo.ViewRange - 3)) continue;
 
-                mob.Teleport(CurrentMap, CurrentMap.GetRandomLocation(Functions.Move(CurrentLocation, MirDirection.DownLeft, 2), 1));
+                TeleportObjectNear(mob, Functions.Move(CurrentLocation, MirDirection.DownLeft, 2), 1);
                 break;
             }
         }
         public override bool SpawnMinion(MonsterObject mob)
         {
-            return mob.Spawn(CurrentMap, CurrentMap.GetRandomLocation(Functions.Move(CurrentLocation, MirDirection.DownLeft, 5), 4));
+            return SpawnMinionNear(mob, Functions.Move(CurrentLocation, MirDirection.DownLeft, 5), 4);
         }
 
         public override void ProcessTarget()
@@ -56,23 +59,39 @@ namespace Server.Models.Monsters
             if (!CanAttack) return;
 
             if (SEnvir.Random.Next(5) == 0 && !Functions.InRange(Target.CurrentLocation, CurrentLocation, 5))
-                Target.Teleport(CurrentMap, CurrentMap.GetRandomLocation(Functions.Move(CurrentLocation, MirDirection.DownLeft, 2), 1));
+                TeleportObjectNear(Target, Functions.Move(CurrentLocation, MirDirection.DownLeft, 2), 1);
 
             RangeAttack();
         }
 
         public override int Attacked(MapObject attacker, int power, Element element, bool canReflect = true, bool ignoreShield = false, bool canCrit = true, bool canStruck = true)
         {
-            foreach (MapObject ob in CurrentMap.Objects) //Expensive.
+            if (ProtectedBySamaMonsters()) return 0;
+
+            return base.Attacked(attacker, power, element, canReflect, ignoreShield, canCrit);
+        }
+
+        private bool ProtectedBySamaMonsters()
+        {
+            if (SEnvir.Now < ProtectionCheckTime) return HasProtection;
+
+            ProtectionCheckTime = SEnvir.Now.AddSeconds(1);
+            HasProtection = false;
+
+            foreach (MapObject ob in CurrentMap.Objects)
             {
                 if (ob.Race != ObjectType.Monster) continue;
 
                 MonsterObject mob = (MonsterObject)ob;
 
-                if (mob.MonsterInfo.Flag == MonsterFlag.BloodStone || mob.MonsterInfo.Flag == MonsterFlag.SamaSorcerer) return 0;
+                if (mob.Dead) continue;
+                if (mob.MonsterInfo.Flag != MonsterFlag.BloodStone && mob.MonsterInfo.Flag != MonsterFlag.SamaSorcerer) continue;
+
+                HasProtection = true;
+                break;
             }
 
-            return base.Attacked(attacker, power, element, canReflect, ignoreShield, canCrit);
+            return HasProtection;
         }
 
         public virtual void RangeAttack()

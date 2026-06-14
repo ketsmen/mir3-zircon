@@ -57,7 +57,7 @@ namespace Server.Models.Monsters
 
                     if (mob.Level >= 300) continue;
 
-                    mob.Teleport(CurrentMap, CurrentMap.GetRandomLocation(CurrentLocation, 15));
+                    TeleportObjectNear(mob, CurrentLocation, 15);
                 }
             }
 

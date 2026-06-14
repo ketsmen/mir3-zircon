@@ -3300,7 +3300,7 @@ namespace Client.Models
 
                         foreach (uint target in targets)
                         {
-                            MapObject attackTarget = GameScene.Game.MapControl.Objects.FirstOrDefault(x => x.ObjectID == target);
+                            if (!GameScene.Game.MapControl.TryGetObject(target, out MapObject attackTarget)) continue;
 
                             Effects.Add(spell = new MirProjectile(1270, 3, TimeSpan.FromMilliseconds(100), LibraryFile.MagicEx, 1, 5, Globals.NoneColour, CurrentLocation)
                             {
@@ -3319,9 +3319,8 @@ namespace Client.Models
                     AttackTargets = new List<MapObject>();
                     foreach (uint target in targets)
                     {
-                        MapObject attackTarget = GameScene.Game.MapControl.Objects.FirstOrDefault(x => x.ObjectID == target);
-                        if (attackTarget == null) continue;
-                        AttackTargets.Add(attackTarget);
+                        if (GameScene.Game.MapControl.TryGetObject(target, out MapObject attackTarget))
+                            AttackTargets.Add(attackTarget);
                     }
                     break;
                 case MirAction.Struck:
@@ -3604,9 +3603,8 @@ namespace Client.Models
                     AttackTargets = new List<MapObject>();
                     foreach (uint target in targets)
                     {
-                        MapObject attackTarget = GameScene.Game.MapControl.Objects.FirstOrDefault(x => x.ObjectID == target);
-                        if (attackTarget == null) continue;
-                        AttackTargets.Add(attackTarget);
+                        if (GameScene.Game.MapControl.TryGetObject(target, out MapObject attackTarget))
+                            AttackTargets.Add(attackTarget);
                     }
                     MagicLocations = (List<Point>)action.Extra[2];
                     MagicCast = (bool)action.Extra[3];

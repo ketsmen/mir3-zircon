@@ -972,12 +972,22 @@ namespace Server.Models
                     ob.AddNearBy(this);
             }
 
-            foreach (PlayerObject ob in SEnvir.Players)
+            List<PlayerObject> dataPlayers = UsesGlobalDataVisibilityScan() ? SEnvir.Players : CurrentMap.Players;
+
+            foreach (PlayerObject ob in dataPlayers)
             {
                 if (CanDataBeSeenBy(ob))
                     ob.AddDataObject(this);
             }
         }
+
+        private bool UsesGlobalDataVisibilityScan()
+        {
+            if (Race == ObjectType.Player) return true;
+
+            return Race == ObjectType.Monster && this is MonsterObject mob && mob.MonsterInfo?.IsBoss == true;
+        }
+
         public virtual void RemoveAllObjects()
         {
             for (int i = SeenByPlayers.Count - 1; i >= 0; i--)
@@ -1008,7 +1018,7 @@ namespace Server.Models
             if (NearByPlayers.Count == 0) return;
 
             Activated = true;
-            SEnvir.ActiveObjects.Add(this);
+            SEnvir.AddActiveObject(this);
         }
         public virtual void DeActivate()
         {
@@ -1017,7 +1027,7 @@ namespace Server.Models
             if (NearByPlayers.Count > 0 && ActionList.Count == 0) return;
 
             Activated = false;
-            SEnvir.ActiveObjects.Remove(this);
+            SEnvir.RemoveActiveObject(this);
         }
 
         public virtual bool CanDataBeSeenBy(PlayerObject ob)
@@ -1118,7 +1128,7 @@ namespace Server.Models
             if (Activated)
             {
                 Activated = false;
-                SEnvir.ActiveObjects.Remove(this);
+                SEnvir.RemoveActiveObject(this);
             }
 
             OnDespawned();

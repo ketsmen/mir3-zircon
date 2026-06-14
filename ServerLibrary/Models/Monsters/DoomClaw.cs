@@ -39,23 +39,34 @@ namespace Server.Models.Monsters
 
             if (!CanAttack) return;
 
-            List<MapObject> rightTargets = GetTargets(CurrentMap, Functions.Move(CurrentLocation, MirDirection.Right, 5), 5);
-            List<MapObject> leftTargets = GetTargets(CurrentMap, Functions.Move(CurrentLocation, MirDirection.Down, 5), 5);
-            List<MapObject> middleTargets = GetTargets(CurrentMap, Functions.Move(CurrentLocation, MirDirection.DownRight, 5), Config.MaxViewRange);
+            List<MapObject> allTargets = GetTargets(CurrentMap, CurrentLocation, Config.MaxViewRange);
+            if (allTargets.Count == 0) return;
 
-            UpdateAttackTime();
+            Point rightLocation = Functions.Move(CurrentLocation, MirDirection.Right, 5);
+            Point leftLocation = Functions.Move(CurrentLocation, MirDirection.Down, 5);
+            List<MapObject> rightTargets = new List<MapObject>();
+            List<MapObject> leftTargets = new List<MapObject>();
+
+            foreach (MapObject target in allTargets)
+            {
+                if (Functions.InRange(target.CurrentLocation, rightLocation, 5))
+                    rightTargets.Add(target);
+
+                if (Functions.InRange(target.CurrentLocation, leftLocation, 5))
+                    leftTargets.Add(target);
+            }
+
+            List<MapObject> middleTargets = allTargets;
 
             if (SEnvir.Random.Next(20) == 0)
             {
-
-                List<MapObject> allTargerts = GetTargets(CurrentMap, CurrentLocation, Config.MaxViewRange);
-                if (allTargerts.Count == 0) return;
                 //Do Wave
-                Wave(allTargerts);
+                Wave(allTargets);
                 return;
             }
 
             int total = rightTargets.Count + leftTargets.Count + middleTargets.Count;
+            if (total == 0) return;
 
             int value = SEnvir.Random.Next(total);
 

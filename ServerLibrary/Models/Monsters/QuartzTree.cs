@@ -50,6 +50,7 @@ namespace Server.Models.Monsters
             if (SubBossInfo == null) return;
 
             MonsterObject mob = GetMonster(SubBossInfo);
+            if (mob == null) return;
 
             if (!SpawnMinion(mob)) return;
 
@@ -58,7 +59,7 @@ namespace Server.Models.Monsters
 
         public override bool SpawnMinion(MonsterObject mob)
         {
-            return mob.Spawn(CurrentMap, CurrentMap.GetRandomLocation(CurrentLocation, 5));
+            return SpawnMinionNear(mob, CurrentLocation, 5);
         }
 
         public override void ProcessRegen()

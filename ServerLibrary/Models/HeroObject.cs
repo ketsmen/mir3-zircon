@@ -198,7 +198,7 @@ namespace Server.Models
             if (Activated) return;
 
             Activated = true;
-            SEnvir.ActiveObjects.Add(this);
+            SEnvir.AddActiveObject(this);
         }
 
         public override void DeActivate()

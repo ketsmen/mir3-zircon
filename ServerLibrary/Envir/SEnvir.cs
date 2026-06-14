@@ -330,6 +330,7 @@ namespace Server.Envir
 
         public static LinkedList<MapObject> Objects = [];
         public static List<MapObject> ActiveObjects = [];
+        private static readonly Dictionary<MapObject, int> ActiveObjectIndices = [];
 
         public static List<PlayerObject> Players = [];
         public static List<ConquestWar> ConquestWars = [];
@@ -337,6 +338,37 @@ namespace Server.Envir
         public static List<SpawnInfo> Spawns = [];
 
         public static List<EventLog> EventLogs = [];
+
+        public static void AddActiveObject(MapObject ob)
+        {
+            if (ob == null || ActiveObjectIndices.ContainsKey(ob)) return;
+
+            ActiveObjectIndices[ob] = ActiveObjects.Count;
+            ActiveObjects.Add(ob);
+        }
+
+        public static void RemoveActiveObject(MapObject ob)
+        {
+            if (ob == null || !ActiveObjectIndices.TryGetValue(ob, out int index)) return;
+
+            int lastIndex = ActiveObjects.Count - 1;
+
+            if (index != lastIndex)
+            {
+                MapObject lastObject = ActiveObjects[lastIndex];
+                ActiveObjects[index] = lastObject;
+                ActiveObjectIndices[lastObject] = index;
+            }
+
+            ActiveObjects.RemoveAt(lastIndex);
+            ActiveObjectIndices.Remove(ob);
+        }
+
+        public static void ClearActiveObjects()
+        {
+            ActiveObjects.Clear();
+            ActiveObjectIndices.Clear();
+        }
 
         private static readonly Dictionary<TimeOfDay, TimeSpan> DayBoundries = new()
         {
@@ -1460,7 +1492,7 @@ namespace Server.Envir
                         }
                         catch (Exception ex)
                         {
-                            ActiveObjects.Remove(ob);
+                            RemoveActiveObject(ob);
                             ob.Activated = false;
 
                             Log(ex.Message);

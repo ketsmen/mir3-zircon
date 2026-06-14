@@ -40,7 +40,7 @@ namespace Server.Models.Monsters
                     {
                         cell = CurrentMap.GetCell(Functions.Move(Target.CurrentLocation, Functions.ShiftDirection(dir, i), 1));
 
-                        if (cell == null || cell.Movements != null)
+                        if (cell == null || cell.Movements != null || cell.IsBlocking(this, false))
                         {
                             cell = null;
                             continue;

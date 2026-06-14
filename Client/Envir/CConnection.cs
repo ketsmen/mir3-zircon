@@ -70,6 +70,12 @@ namespace Client.Envir
             SendDisconnect(p);
         }
 
+        private static bool TryGetMapObject(uint objectID, out MapObject ob)
+        {
+            ob = null;
+            return GameScene.Game?.MapControl?.TryGetObject(objectID, out ob) == true;
+        }
+
         private static void ApplyStartInformation(GameScene scene, StartInformation info)
         {
             scene.MapControl.MapInfo = Globals.MapInfoList.Binding.FirstOrDefault(x => x.Index == info.MapIndex);
@@ -842,14 +848,8 @@ namespace Client.Envir
             if (GameScene.Game.MonsterBox.Monster != null && GameScene.Game.MonsterBox.Monster.ObjectID == p.ObjectID)
                 GameScene.Game.MonsterBox.Monster = null;
 
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.Remove();
-                return;
-            }
-
         }
         public void Process(S.ObjectPlayer p)
         {
@@ -879,61 +879,54 @@ namespace Client.Envir
         }
         public void Process(S.ObjectSpellChanged p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
 
-                SpellObject spell = (SpellObject)ob;
-                spell.Power = p.Power;
-                spell.UpdateLibraries();
-                return;
-            }
+            SpellObject spell = (SpellObject)ob;
+            spell.Power = p.Power;
+            spell.UpdateLibraries();
         }
         public void Process(S.PlayerUpdate p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
+            if (ob.Race != ObjectType.Player && ob.Race != ObjectType.Hero) return;
+
+            PlayerObject player = (PlayerObject)ob;
+
+            player.LibraryWeaponShape = p.Weapon;
+
+            player.ArmourShape = p.Armour;
+            player.ArmourColour = p.ArmourColour;
+
+            player.CostumeShape = p.Costume;
+
+            player.HelmetShape = p.Helmet;
+            player.HorseShape = p.HorseArmour;
+
+            player.ShieldShape = p.Shield;
+
+            player.HideHead = p.HideHead;
+
+            player.ArmourEffect = p.ArmourEffect;
+            player.EmblemEffect = p.EmblemEffect;
+            player.WeaponEffect = p.WeaponEffect;
+            player.ShieldEffect = p.ShieldEffect;
+
+            player.Light = p.Light;
+            if (player == MapObject.User)
             {
-                if ((ob.Race != ObjectType.Player && ob.Race != ObjectType.Hero) || ob.ObjectID != p.ObjectID) continue;
+                player.Light = Math.Max(p.Light, 3);
 
-                PlayerObject player = (PlayerObject)ob;
-
-                player.LibraryWeaponShape = p.Weapon;
-
-                player.ArmourShape = p.Armour;
-                player.ArmourColour = p.ArmourColour;
-
-                player.CostumeShape = p.Costume;
-
-                player.HelmetShape = p.Helmet;
-                player.HorseShape = p.HorseArmour;
-
-                player.ShieldShape = p.Shield;
-
-                player.HideHead = p.HideHead;
-
-                player.ArmourEffect = p.ArmourEffect;
-                player.EmblemEffect = p.EmblemEffect;
-                player.WeaponEffect = p.WeaponEffect;
-                player.ShieldEffect = p.ShieldEffect;
-
-                player.Light = p.Light;
-                if (player == MapObject.User)
+                if (p.Light == 0)
                 {
-                    player.Light = Math.Max(p.Light, 3);
-
-                    if (p.Light == 0)
-                    {
-                        player.LightColour = Globals.PlayerLightColour;
-                    }
-                    else
-                    {
-                        player.LightColour = Globals.NoneColour;
-                    }
+                    player.LightColour = Globals.PlayerLightColour;
                 }
-
-                player.UpdateLibraries();
-                return;
+                else
+                {
+                    player.LightColour = Globals.NoneColour;
+                }
             }
+
+            player.UpdateLibraries();
         }
 
         public void Process(S.ObjectTurn p)
@@ -949,13 +942,8 @@ namespace Client.Envir
                 return;
             }
 
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.ActionQueue.Add(new ObjectAction(MirAction.Standing, p.Direction, p.Location));
-                return;
-            }
         }
         public void Process(S.ObjectHarvest p)
         {
@@ -969,44 +957,31 @@ namespace Client.Envir
                 return;
             }
 
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.ActionQueue.Add(new ObjectAction(MirAction.Harvest, p.Direction, p.Location));
-                return;
-            }
         }
         public void Process(S.ObjectShow p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-                if (ob.Race == ObjectType.Monster)
-                {
-                    switch (((MonsterObject)ob).Image)
-                    {
-                        case MonsterImage.VoraciousGhost:
-                        case MonsterImage.DevouringGhost:
-                        case MonsterImage.CorpseRaisingGhost:
-                            ob.Dead = false;
-                            break;
-                    }
-                }
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
 
-                ob.ActionQueue.Add(new ObjectAction(MirAction.Show, p.Direction, p.Location));
-                return;
+            if (ob.Race == ObjectType.Monster)
+            {
+                switch (((MonsterObject)ob).Image)
+                {
+                    case MonsterImage.VoraciousGhost:
+                    case MonsterImage.DevouringGhost:
+                    case MonsterImage.CorpseRaisingGhost:
+                        ob.Dead = false;
+                        break;
+                }
             }
+
+            ob.ActionQueue.Add(new ObjectAction(MirAction.Show, p.Direction, p.Location));
         }
         public void Process(S.ObjectHide p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.ActionQueue.Add(new ObjectAction(MirAction.Hide, p.Direction, p.Location));
-                return;
-            }
         }
         public void Process(S.ObjectMove p)
         {
@@ -1021,33 +996,18 @@ namespace Client.Envir
                 return;
             }
 
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.ActionQueue.Add(new ObjectAction(MirAction.Moving, p.Direction, p.Location, p.Distance, MagicType.None));
-                return;
-            }
         }
         public void Process(S.ObjectPushed p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.ActionQueue.Add(new ObjectAction(MirAction.Pushed, p.Direction, p.Location));
-                return;
-            }
         }
         public void Process(S.ObjectNameColour p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.NameColour = p.Colour;
-                return;
-            }
         }
         public void Process(S.ObjectMount p)
         {
@@ -1057,21 +1017,16 @@ namespace Client.Envir
                 MapObject.User.NextActionTime = CEnvir.Now + Globals.TurnTime;
             }
 
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
 
-                if (ob.Race != ObjectType.Player) return;
+            if (ob.Race != ObjectType.Player) return;
 
-                PlayerObject player = (PlayerObject)ob;
+            PlayerObject player = (PlayerObject)ob;
 
-                player.Horse = p.Horse;
+            player.Horse = p.Horse;
 
-                if (player.Interupt)
-                    player.FrameStart = DateTime.MinValue;
-
-                return;
-            }
+            if (player.Interupt)
+                player.FrameStart = DateTime.MinValue;
         }
         public void Process(S.MountFailed p)
         {
@@ -1081,39 +1036,34 @@ namespace Client.Envir
 
         public void Process(S.ObjectFishing p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
+
+            if (ob == MapObject.User)
             {
-                if (ob.ObjectID != p.ObjectID) continue;
+                MapObject.User.ServerTime = DateTime.MinValue;
 
-                if (ob == MapObject.User)
+                GameScene.Game.MapControl.FishingState = p.State;
+
+                MapObject.User.FishingState = p.State;
+                MapObject.User.FishFound = p.FishFound;
+                MapObject.User.FloatLocation = p.FloatLocation;
+
+                if (p.State == FishingState.Cancel)
+                    GameScene.Game.MapControl.FishingState = FishingState.None;
+
+                GameScene.Game.FishingCatchBox.Visible = p.State == FishingState.Cast;
+
+                if (p.State == FishingState.Reel)
                 {
-                    MapObject.User.ServerTime = DateTime.MinValue;
+                    if (GameScene.Game.FishingCatchBox.AutoCastCheckBox.Checked)
+                        GameScene.Game.MapControl.AutoCast = true;
 
-                    GameScene.Game.MapControl.FishingState = p.State;
-
-                    MapObject.User.FishingState = p.State;
-                    MapObject.User.FishFound = p.FishFound;
-                    MapObject.User.FloatLocation = p.FloatLocation;
-
-                    if (p.State == FishingState.Cancel)
-                        GameScene.Game.MapControl.FishingState = FishingState.None;
-
-                    GameScene.Game.FishingCatchBox.Visible = p.State == FishingState.Cast;
-
-                    if (p.State == FishingState.Reel)
-                    {
-                        if (GameScene.Game.FishingCatchBox.AutoCastCheckBox.Checked)
-                            GameScene.Game.MapControl.AutoCast = true;
-
-                        MapObject.User.ActionQueue.Add(new ObjectAction(MirAction.Fishing, p.Direction, MapObject.User.CurrentLocation, p.State, p.FloatLocation, p.FishFound));
-                    }
+                    MapObject.User.ActionQueue.Add(new ObjectAction(MirAction.Fishing, p.Direction, MapObject.User.CurrentLocation, p.State, p.FloatLocation, p.FishFound));
                 }
-                else
-                {
-                    ob.ActionQueue.Add(new ObjectAction(MirAction.Fishing, p.Direction, ob.CurrentLocation, p.State, p.FloatLocation, p.FishFound));
-                }
-
-                return;
+            }
+            else
+            {
+                ob.ActionQueue.Add(new ObjectAction(MirAction.Fishing, p.Direction, ob.CurrentLocation, p.State, p.FloatLocation, p.FishFound));
             }
         }
 
@@ -1124,52 +1074,48 @@ namespace Client.Envir
 
         public void Process(S.ObjectStruck p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
+
+            if (ob == MapObject.User)
             {
-                if (ob.ObjectID != p.ObjectID) continue;
+                if (MapObject.User.CurrentLocation != p.Location || MapObject.User.Direction != p.Direction)
+                    GameScene.Game.Displacement(p.Direction, p.Location);
 
-                if (ob == MapObject.User)
-                {
-                    if (MapObject.User.CurrentLocation != p.Location || MapObject.User.Direction != p.Direction)
-                        GameScene.Game.Displacement(p.Direction, p.Location);
+                if (GameScene.Game.MapControl.FishingState != FishingState.None)
+                    GameScene.Game.MapControl.FishingState = FishingState.Cancel;
 
-                    if (GameScene.Game.MapControl.FishingState != FishingState.None)
-                        GameScene.Game.MapControl.FishingState = FishingState.Cancel;
-
-                    GameScene.Game.CanRun = false;
-
-                    if (GameScene.Game.StruckEnabled)
-                    {
-                        MapObject.User.NextRunTime = CEnvir.Now.AddMilliseconds(600);
-                        MapObject.User.NextActionTime = CEnvir.Now.AddMilliseconds(300);
-
-                        if (MapObject.User.ServerTime > DateTime.MinValue) //fix desyncing attack timers and being struck
-                        {
-                            switch (MapObject.User.CurrentAction)
-                            {
-                                case MirAction.Attack:
-                                case MirAction.RangeAttack:
-                                    MapObject.User.AttackTime += TimeSpan.FromMilliseconds(300);
-                                    break;
-                                case MirAction.Spell:
-                                    MapObject.User.NextMagicTime += TimeSpan.FromMilliseconds(300);
-                                    break;
-                            }
-                        }
-                    }
-                }
+                GameScene.Game.CanRun = false;
 
                 if (GameScene.Game.StruckEnabled)
                 {
-                    Point loc = ob.ActionQueue.Count > 0 ? ob.ActionQueue[^1].Location : ob.CurrentLocation;
+                    MapObject.User.NextRunTime = CEnvir.Now.AddMilliseconds(600);
+                    MapObject.User.NextActionTime = CEnvir.Now.AddMilliseconds(300);
 
-                    ob.ActionQueue.Add(new ObjectAction(MirAction.Struck, p.Direction, loc, p.AttackerID, p.Element));
+                    if (MapObject.User.ServerTime > DateTime.MinValue) //fix desyncing attack timers and being struck
+                    {
+                        switch (MapObject.User.CurrentAction)
+                        {
+                            case MirAction.Attack:
+                            case MirAction.RangeAttack:
+                                MapObject.User.AttackTime += TimeSpan.FromMilliseconds(300);
+                                break;
+                            case MirAction.Spell:
+                                MapObject.User.NextMagicTime += TimeSpan.FromMilliseconds(300);
+                                break;
+                        }
+                    }
                 }
-                else
-                {
-                    ob.Struck(p.AttackerID, p.Element);
-                }
-                return;
+            }
+
+            if (GameScene.Game.StruckEnabled)
+            {
+                Point loc = ob.ActionQueue.Count > 0 ? ob.ActionQueue[^1].Location : ob.CurrentLocation;
+
+                ob.ActionQueue.Add(new ObjectAction(MirAction.Struck, p.Direction, loc, p.AttackerID, p.Element));
+            }
+            else
+            {
+                ob.Struck(p.AttackerID, p.Element);
             }
         }
 
@@ -1178,35 +1124,25 @@ namespace Client.Envir
             if (MapObject.User.ObjectID == p.ObjectID && !GameScene.Game.Observer)
                 MapObject.User.ServerTime = DateTime.MinValue;
 
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
+
+            if (p.Distance > 0)
             {
-                if (ob.ObjectID != p.ObjectID) continue;
+                ob.StanceTime = CEnvir.Now.AddSeconds(3);
 
-                if (p.Distance > 0)
-                {
-                    ob.StanceTime = CEnvir.Now.AddSeconds(3);
-
-                    for (int i = 1; i <= p.Distance; i++)
-                        ob.ActionQueue.Add(new ObjectAction(MirAction.Moving, p.Direction, Functions.Move(p.Location, p.Direction, i - p.Distance), 1, p.Magic));
-                }
-                else if (ob == MapObject.User)
-                {
-                    GameScene.Game.CanRun = false;
-                }
-
-                return;
+                for (int i = 1; i <= p.Distance; i++)
+                    ob.ActionQueue.Add(new ObjectAction(MirAction.Moving, p.Direction, Functions.Move(p.Location, p.Direction, i - p.Distance), 1, p.Magic));
+            }
+            else if (ob == MapObject.User)
+            {
+                GameScene.Game.CanRun = false;
             }
         }
 
         public void Process(S.ObjectIdle p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.ActionQueue.Add(new ObjectAction(MirAction.Idle, p.Direction, p.Location, p.Type));
-                return;
-            }
         }
 
         public void Process(S.ObjectAttack p)
@@ -1222,13 +1158,8 @@ namespace Client.Envir
                 return;
             }
 
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.ActionQueue.Add(new ObjectAction(MirAction.Attack, p.Direction, p.Location, p.TargetID, p.AttackMagic, p.AttackElement));
-                return;
-            }
         }
 
         public void Process(S.ObjectMining p)
@@ -1245,13 +1176,8 @@ namespace Client.Envir
                 return;
             }
 
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.ActionQueue.Add(new ObjectAction(MirAction.Mining, p.Direction, p.Location, p.Effect));
-                return;
-            }
         }
         public void Process(S.ObjectRangeAttack p)
         {
@@ -1264,13 +1190,8 @@ namespace Client.Envir
                 return;
             }
 
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.ActionQueue.Add(new ObjectAction(MirAction.RangeAttack, p.Direction, p.Location, p.Targets, p.AttackMagic, p.AttackElement));
-                return;
-            }
         }
         public void Process(S.ObjectMagic p)
         {
@@ -1285,11 +1206,8 @@ namespace Client.Envir
 
                 foreach (uint target in p.Targets)
                 {
-                    MapObject attackTarget = GameScene.Game.MapControl.Objects.FirstOrDefault(x => x.ObjectID == target);
-
-                    if (attackTarget == null) continue;
-
-                    MapObject.User.AttackTargets.Add(attackTarget);
+                    if (TryGetMapObject(target, out MapObject attackTarget))
+                        MapObject.User.AttackTargets.Add(attackTarget);
                 }
 
                 MapObject.User.MagicLocations = p.Locations;
@@ -1299,30 +1217,20 @@ namespace Client.Envir
                 return;
             }
 
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.ActionQueue.Add(new ObjectAction(MirAction.Spell, p.Direction, p.CurrentLocation, p.Type, p.Targets, p.Locations, p.Cast, p.AttackElement));
-                return;
-            }
         }
         public void Process(S.ObjectProjectile p)
         {
-            MapObject source = GameScene.Game.MapControl.Objects.FirstOrDefault(x => x.ObjectID == p.ObjectID);
-
-            if (source == null) return;
+            if (!TryGetMapObject(p.ObjectID, out MapObject source)) return;
 
             var targets = new List<MapObject>();
             var locations = p.Locations;
 
             foreach (uint target in p.Targets)
             {
-                MapObject attackTarget = GameScene.Game.MapControl.Objects.FirstOrDefault(x => x.ObjectID == target);
-
-                if (attackTarget == null) continue;
-
-                targets.Add(attackTarget);
+                if (TryGetMapObject(target, out MapObject attackTarget))
+                    targets.Add(attackTarget);
             }
 
             MirEffect spell;
@@ -1412,40 +1320,28 @@ namespace Client.Envir
 
         public void Process(S.ObjectDied p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
 
-                ob.Dead = true;
-                ob.ActionQueue.Add(new ObjectAction(MirAction.Die, p.Direction, p.Location));
+            ob.Dead = true;
+            ob.ActionQueue.Add(new ObjectAction(MirAction.Die, p.Direction, p.Location));
 
-                if (ob == MapObject.User)
-                    GameScene.Game.ReceiveChat(MessageAction.Revive);
-
-                return;
-            }
+            if (ob == MapObject.User)
+                GameScene.Game.ReceiveChat(MessageAction.Revive);
         }
         public void Process(S.ObjectHarvested p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
 
-                ob.Skeleton = true;
+            ob.Skeleton = true;
 
-                ob.ActionQueue.Add(new ObjectAction(MirAction.Dead, p.Direction, p.Location));
-
-                return;
-            }
+            ob.ActionQueue.Add(new ObjectAction(MirAction.Dead, p.Direction, p.Location));
         }
         public void Process(S.ObjectEffect p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
 
-                switch (p.Effect)
-                {
+            switch (p.Effect)
+            {
                     case Effect.TeleportOut:
                         ob.Effects.Add(new MirEffect(110, 10, TimeSpan.FromMilliseconds(100), LibraryFile.Magic, 30, 60, Color.White)
                         {
@@ -1646,8 +1542,6 @@ namespace Client.Envir
                         throw new ArgumentOutOfRangeException();
                 }
 
-                return;
-            }
         }
         public void Process(S.MapEffect p)
         {
@@ -1751,85 +1645,57 @@ namespace Client.Envir
         }
         public void Process(S.ObjectBuffAdd p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
 
-                if (!ob.VisibleBuffs.ContainsKey(p.Type))
-                    ob.VisibleBuffs[p.Type] = 0;
+            if (!ob.VisibleBuffs.ContainsKey(p.Type))
+                ob.VisibleBuffs[p.Type] = 0;
 
-                ob.VisibleBuffs[p.Type] = p.Extra;
+            ob.VisibleBuffs[p.Type] = p.Extra;
 
-                if (p.Type == BuffType.SuperiorMagicShield)
-                    ob.EndMagicEffect(MagicEffect.MagicShield);
+            if (p.Type == BuffType.SuperiorMagicShield)
+                ob.EndMagicEffect(MagicEffect.MagicShield);
 
-                if (p.Type == BuffType.ElementalSwords)
-                    ob.EndMagicEffect(MagicEffect.ElementalSwords);
-
-                return;
-            }
+            if (p.Type == BuffType.ElementalSwords)
+                ob.EndMagicEffect(MagicEffect.ElementalSwords);
         }
         public void Process(S.ObjectBuffRemove p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.VisibleBuffs.Remove(p.Type);
-                return;
-            }
         }
         public void Process(S.ObjectPoison p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.Poison = p.Poison;
-                return;
-            }
         }
         public void Process(S.ObjectPetOwnerChanged p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
 
-                if (ob.Race != ObjectType.Monster) return;
+            if (ob.Race != ObjectType.Monster) return;
 
-                MonsterObject mob = (MonsterObject)ob;
-                mob.PetOwner = p.PetOwner;
-                return;
-            }
+            MonsterObject mob = (MonsterObject)ob;
+            mob.PetOwner = p.PetOwner;
         }
         public void Process(S.ObjectStats p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
+
+            if (ob.Race == ObjectType.Monster)
             {
-                if (ob.ObjectID != p.ObjectID) continue;
-
-                if (ob.Race == ObjectType.Monster)
-                {
-                    MonsterObject mob = (MonsterObject)ob;
-                    p.Stats.Add(mob.MonsterInfo.Stats);
-                }
-
-                ob.Stats = p.Stats;
-                return;
+                MonsterObject mob = (MonsterObject)ob;
+                p.Stats.Add(mob.MonsterInfo.Stats);
             }
+
+            ob.Stats = p.Stats;
         }
         public void Process(S.HealthChanged p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
 
-                ob.CurrentHP += p.Change;
-                ob.DrawHealthTime = CEnvir.Now.AddSeconds(5);
-                ob.DamageList.Add(new DamageInfo { Value = p.Change, Block = p.Block, Critical = p.Critical, Miss = p.Miss });
-
-                return;
-            }
+            ob.CurrentHP += p.Change;
+            ob.DrawHealthTime = CEnvir.Now.AddSeconds(5);
+            ob.DamageList.Add(new DamageInfo { Value = p.Change, Block = p.Block, Critical = p.Critical, Miss = p.Miss });
         }
 
         public void Process(S.NewMagic p)
@@ -1927,26 +1793,14 @@ namespace Client.Envir
 
         public void Process(S.ManaChanged p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.CurrentMP += p.Change;
-                //ob.DamageList.Add(new DamageInfo(p.Change));
-                return;
-            }
         }
 
         public void Process(S.FocusChanged p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.CurrentFP += p.Change;
-
-                return;
-            }
         }
 
         public void Process(S.InformMaxExperience p)
@@ -1997,41 +1851,31 @@ namespace Client.Envir
 
         public void Process(S.ObjectLeveled p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
+
+            ob.Effects.Add(new MirEffect(2030, 16, TimeSpan.FromMilliseconds(100), LibraryFile.MagicEx, 50, 120, Color.DeepSkyBlue)
             {
-                if (ob.ObjectID != p.ObjectID) continue;
-
-                ob.Effects.Add(new MirEffect(2030, 16, TimeSpan.FromMilliseconds(100), LibraryFile.MagicEx, 50, 120, Color.DeepSkyBlue)
-                {
-                    Blend = true,
-                    DrawColour = Color.RosyBrown,
-                    Target = ob
-                });
-
-                return;
-            }
+                Blend = true,
+                DrawColour = Color.RosyBrown,
+                Target = ob
+            });
         }
         public void Process(S.ObjectRevive p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
 
-                ob.Dead = false;
+            ob.Dead = false;
 
-                ob.ActionQueue.Add(new ObjectAction(MirAction.Standing, ob.Direction, p.Location));
+            ob.ActionQueue.Add(new ObjectAction(MirAction.Standing, ob.Direction, p.Location));
 
-                if (p.Effect)
-                    ob.Effects.Add(new MirEffect(1110, 25, TimeSpan.FromMilliseconds(100), LibraryFile.MagicEx3, 50, 90, Color.White)
-                    {
-                        Blend = true,
-                        Target = ob
-                    });
+            if (p.Effect)
+                ob.Effects.Add(new MirEffect(1110, 25, TimeSpan.FromMilliseconds(100), LibraryFile.MagicEx3, 50, 90, Color.White)
+                {
+                    Blend = true,
+                    Target = ob
+                });
 
-                GameScene.Game.MapControl.FLayer.TextureValid = false;
-
-                return;
-            }
+            GameScene.Game.MapControl.FLayer.TextureValid = false;
         }
 
         public void Process(S.ItemsGained p)
@@ -2813,14 +2657,8 @@ namespace Client.Envir
 
             if (p.Type != MessageType.Normal || p.ObjectID <= 0) return;
 
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
-
+            if (TryGetMapObject(p.ObjectID, out MapObject ob))
                 ob.Chat(p.Text);
-
-                return;
-            }
         }
 
         public void Process(S.NPCResponse p)
@@ -4317,14 +4155,10 @@ namespace Client.Envir
 
         public void Process(S.GuildChanged p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.ObjectID != p.ObjectID) continue;
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
 
-                ((PlayerObject)ob).Title = p.GuildName;
-                ((PlayerObject)ob).GuildRank = p.GuildRank;
-                return;
-            }
+            ((PlayerObject)ob).Title = p.GuildName;
+            ((PlayerObject)ob).GuildRank = p.GuildRank;
         }
 
         public void Process(S.GuildWar p)
@@ -4486,18 +4320,15 @@ namespace Client.Envir
         }
         public void Process(S.CompanionShapeUpdate p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.Race != ObjectType.Monster || ob.ObjectID != p.ObjectID) continue;
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
+            if (ob.Race != ObjectType.Monster) return;
 
-                MonsterObject monster = (MonsterObject)ob;
+            MonsterObject monster = (MonsterObject)ob;
 
-                if (monster.CompanionObject == null) continue;
+            if (monster.CompanionObject == null) return;
 
-                monster.CompanionObject.HeadShape = p.HeadShape;
-                monster.CompanionObject.BackShape = p.BackShape;
-                return;
-            }
+            monster.CompanionObject.HeadShape = p.HeadShape;
+            monster.CompanionObject.BackShape = p.BackShape;
         }
         public void Process(S.CompanionUpdate p)
         {
@@ -4810,23 +4641,20 @@ namespace Client.Envir
         }
         public void Process(S.PlayerChangeUpdate p)
         {
-            foreach (MapObject ob in GameScene.Game.MapControl.Objects)
-            {
-                if (ob.Race != ObjectType.Player || ob.ObjectID != p.ObjectID) continue;
+            if (!TryGetMapObject(p.ObjectID, out MapObject ob)) return;
+            if (ob.Race != ObjectType.Player) return;
 
-                PlayerObject player = (PlayerObject)ob;
+            PlayerObject player = (PlayerObject)ob;
 
-                player.Name = p.Name;
-                player.Caption = p.Caption;
-                player.CaptionOutlineColour = p.CaptionOutlineColour;
-                player.Gender = p.Gender;
-                player.HairType = p.HairType;
-                player.HairColour = p.HairColour;
-                player.ArmourColour = p.ArmourColour;
+            player.Name = p.Name;
+            player.Caption = p.Caption;
+            player.CaptionOutlineColour = p.CaptionOutlineColour;
+            player.Gender = p.Gender;
+            player.HairType = p.HairType;
+            player.HairColour = p.HairColour;
+            player.ArmourColour = p.ArmourColour;
 
-                player.UpdateLibraries();
-                return;
-            }
+            player.UpdateLibraries();
         }
 
         public void Process(S.FortuneUpdate p)

@@ -39,7 +39,7 @@ namespace Server.Models.Monsters
         }
         public override bool SpawnMinion(MonsterObject mob)
         {
-            return mob.Spawn(CurrentMap, CurrentMap.GetRandomLocation(CurrentLocation, 10));
+            return SpawnMinionNear(mob, CurrentLocation, 10);
         }
 
         public override void Die()
@@ -49,8 +49,9 @@ namespace Server.Models.Monsters
             if (DragonLordInfo == null) return;
 
             MonsterObject mob = GetMonster(DragonLordInfo);
+            if (mob == null) return;
 
-            mob.Spawn(CurrentMap, CurrentLocation);
+            SpawnMinionNear(mob, CurrentLocation, 3);
         }
     }
 }

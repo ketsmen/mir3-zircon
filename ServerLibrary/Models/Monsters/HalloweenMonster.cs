@@ -121,7 +121,7 @@ namespace Server.Models.Monsters
             ob.Attacked(this, power, Element.None);
 
             if (mob != null && mob.PetOwner == null && SEnvir.Random.Next(5) == 0)
-                Teleport(CurrentMap, CurrentMap.GetRandomLocation());
+                TeleportObjectRandom(this, CurrentMap);
         }
 
         public override void Activate()
@@ -129,7 +129,7 @@ namespace Server.Models.Monsters
             if (Activated) return;
 
             Activated = true;
-            SEnvir.ActiveObjects.Add(this);
+            SEnvir.AddActiveObject(this);
         }
 
         public override void DeActivate()
@@ -144,20 +144,26 @@ namespace Server.Models.Monsters
 
             if (SEnvir.Random.Next(2) == 0)
             {
-                MonsterInfo boss;
+                if (SEnvir.BossList.Count == 0) return;
 
-                while (true)
+                MonsterInfo boss = null;
+
+                for (int i = 0; i < SEnvir.BossList.Count * 2; i++)
                 {
-                    boss = SEnvir.BossList[SEnvir.Random.Next(SEnvir.BossList.Count)];
+                    MonsterInfo candidate = SEnvir.BossList[SEnvir.Random.Next(SEnvir.BossList.Count)];
 
-                    if (boss.Level >= 300) continue;
+                    if (candidate.Level >= 300) continue;
 
+                    boss = candidate;
                     break;
                 }
 
-                MonsterObject mob = GetMonster(boss);
+                if (boss == null) return;
 
-                mob.Spawn(CurrentMap, CurrentMap.GetRandomLocation(CurrentLocation, 2));
+                MonsterObject mob = GetMonster(boss);
+                if (mob == null) return;
+
+                SpawnMinionNear(mob, CurrentLocation, 2);
             }
             else
             {
@@ -177,7 +183,7 @@ namespace Server.Models.Monsters
 
                     if (mob.Level >= 300) continue;
 
-                    mob.Teleport(CurrentMap, CurrentMap.GetRandomLocation(CurrentLocation, 15));
+                    TeleportObjectNear(mob, CurrentLocation, 15);
                 }
 
             }

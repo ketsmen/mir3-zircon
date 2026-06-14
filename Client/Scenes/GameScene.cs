@@ -5272,7 +5272,7 @@ namespace Client.Scenes
 
             if (Partner != null && Partner.ObjectID == objectID) return true;
 
-            if (MapControl?.Objects?.FirstOrDefault(x => x.ObjectID == objectID) is HeroObject hero)
+            if (MapControl?.TryGetObject(objectID, out MapObject ob) == true && ob is HeroObject hero)
             {
                 if (string.Equals(hero.OwnerName, User.Name, StringComparison.OrdinalIgnoreCase)) return true;
 

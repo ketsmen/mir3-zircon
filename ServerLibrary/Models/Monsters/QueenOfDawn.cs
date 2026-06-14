@@ -22,13 +22,12 @@ namespace Server.Models.Monsters
             {
                 TingTime = SEnvir.Now.AddMinutes(1);
 
-                List<MapObject> obs = new List<MapObject>(CurrentMap.Objects);
-
-                foreach (MapObject ob in obs)
+                for (int i = CurrentMap.Objects.Count - 1; i >= 0; i--)
                 {
+                    MapObject ob = CurrentMap.Objects[i];
                     if (!CanAttackTarget(ob)) continue;
 
-                    ob.Teleport(CurrentMap, CurrentMap.GetRandomLocation());
+                    TeleportObjectRandom(ob, CurrentMap);
                 }
             }
         }
@@ -48,7 +47,7 @@ namespace Server.Models.Monsters
                     {
                         cell = CurrentMap.GetCell(Functions.Move(Target.CurrentLocation, Functions.ShiftDirection(dir, i), 1));
 
-                        if (cell == null || cell.Movements != null)
+                        if (cell == null || cell.Movements != null || cell.IsBlocking(this, false))
                         {
                             cell = null;
                             continue;

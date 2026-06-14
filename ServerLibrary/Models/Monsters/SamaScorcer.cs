@@ -1,10 +1,14 @@
 ﻿using Library;
 using Server.Envir;
+using System;
 
 namespace Server.Models.Monsters
 {
     class SamaScorcer : MonsterObject
     {
+        private DateTime ProtectionCheckTime;
+        private bool HasProtection;
+
         protected override bool InAttackRange()
         {
             if (Target.CurrentMap != CurrentMap) return false;
@@ -14,16 +18,31 @@ namespace Server.Models.Monsters
 
         public override int Attacked(MapObject attacker, int power, Element element, bool canReflect = true, bool ignoreShield = false, bool canCrit = true, bool canStruck = true)
         {
-            foreach (MapObject ob in CurrentMap.Objects) //Expensive.
+            if (ProtectedByBloodStone()) return 0;
+
+            return base.Attacked(attacker, power, element, canReflect, ignoreShield, canCrit);
+        }
+
+        private bool ProtectedByBloodStone()
+        {
+            if (SEnvir.Now < ProtectionCheckTime) return HasProtection;
+
+            ProtectionCheckTime = SEnvir.Now.AddSeconds(1);
+            HasProtection = false;
+
+            foreach (MapObject ob in CurrentMap.Objects)
             {
                 if (ob.Race != ObjectType.Monster) continue;
 
                 MonsterObject mob = (MonsterObject)ob;
 
-                if (mob.MonsterInfo.Flag == MonsterFlag.BloodStone) return 0;
+                if (mob.Dead || mob.MonsterInfo.Flag != MonsterFlag.BloodStone) continue;
+
+                HasProtection = true;
+                break;
             }
 
-            return base.Attacked(attacker, power, element, canReflect, ignoreShield, canCrit);
+            return HasProtection;
         }
 
         public override void ProcessTarget()
@@ -33,7 +52,7 @@ namespace Server.Models.Monsters
             if (!CanAttack) return;
 
             if (SEnvir.Random.Next(5) == 0 && !Functions.InRange(Target.CurrentLocation, CurrentLocation, 5))
-                Target.Teleport(CurrentMap, CurrentMap.GetRandomLocation(CurrentLocation, 2));
+                TeleportObjectNear(Target, CurrentLocation, 2);
 
             base.ProcessTarget();
         }

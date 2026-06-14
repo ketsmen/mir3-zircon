@@ -31,7 +31,7 @@ namespace Server.Models.Monsters
         }
         public override bool SpawnMinion(MonsterObject mob)
         {
-            return mob.Spawn(CurrentMap, CurrentMap.GetRandomLocation(CurrentLocation, 10));
+            return SpawnMinionNear(mob, CurrentLocation, 10);
         }
     }
 }

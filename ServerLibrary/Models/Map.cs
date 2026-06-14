@@ -378,6 +378,7 @@ namespace Server.Models
 
         public DateTime NextSpawn;
         public int AliveCount;
+        public int PendingSpawnCount;
 
         public DateTime LastCheck;
 
@@ -392,34 +393,57 @@ namespace Server.Models
         {
             if (CurrentMap.RespawnIndex != Info.RespawnIndex) return;
 
-            if (!eventSpawn)
+            int missingCount = Info.Count - AliveCount;
+
+            if (missingCount <= 0)
             {
-                if (Info.EventSpawn || SEnvir.Now < NextSpawn) return;
-
-                if (Info.Delay >= 1000000)
-                {
-                    TimeSpan timeofDay = TimeSpan.FromMinutes(Info.Delay - 1000000);
-
-                    if (LastCheck.TimeOfDay >= timeofDay || SEnvir.Now.TimeOfDay < timeofDay)
-                    {
-                        LastCheck = SEnvir.Now;
-                        return;
-                    }
-
-                    LastCheck = SEnvir.Now;
-                }
-                else
-                {
-                    if (Info.Announce)
-                        NextSpawn = SEnvir.Now.AddSeconds(Info.Delay * 60);
-                    else
-                        NextSpawn = SEnvir.Now.AddSeconds(SEnvir.Random.Next(Info.Delay * 60) + Info.Delay * 30);
-
-                }
+                PendingSpawnCount = 0;
+                return;
             }
 
-            for (int i = AliveCount; i < Info.Count; i++)
+            if (PendingSpawnCount <= 0)
             {
+                if (!eventSpawn)
+                {
+                    if (Info.EventSpawn || SEnvir.Now < NextSpawn) return;
+
+                    if (Info.Delay >= 1000000)
+                    {
+                        TimeSpan timeofDay = TimeSpan.FromMinutes(Info.Delay - 1000000);
+
+                        if (LastCheck.TimeOfDay >= timeofDay || SEnvir.Now.TimeOfDay < timeofDay)
+                        {
+                            LastCheck = SEnvir.Now;
+                            return;
+                        }
+
+                        LastCheck = SEnvir.Now;
+                    }
+                    else
+                    {
+                        if (Info.Announce)
+                            NextSpawn = SEnvir.Now.AddSeconds(Info.Delay * 60);
+                        else
+                            NextSpawn = SEnvir.Now.AddSeconds(SEnvir.Random.Next(Info.Delay * 60) + Info.Delay * 30);
+
+                    }
+                }
+
+                PendingSpawnCount = missingCount;
+            }
+            else
+                PendingSpawnCount = Math.Max(PendingSpawnCount, missingCount);
+
+            int spawnAttempts = Math.Min(Math.Max(1, Config.MaxRespawnBatchSize), PendingSpawnCount);
+
+            for (int i = 0; i < spawnAttempts; i++)
+            {
+                if (AliveCount >= Info.Count)
+                {
+                    PendingSpawnCount = 0;
+                    return;
+                }
+
                 MonsterObject mob = MonsterObject.GetMonster(Info.Monster);
 
                 if (!Info.Monster.IsBoss)
@@ -460,6 +484,7 @@ namespace Server.Models
 
                 mob.DropSet = Info.DropSet;
                 AliveCount++;
+                PendingSpawnCount = Math.Max(0, Info.Count - AliveCount);
             }
         }
     }

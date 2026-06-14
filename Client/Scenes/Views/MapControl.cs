@@ -169,6 +169,7 @@ namespace Client.Scenes.Views
 
         public List<DXControl> MapInfoObjects = new List<DXControl>();
         public List<MapObject> Objects = new List<MapObject>();
+        private readonly Dictionary<uint, MapObject> ObjectLookup = new Dictionary<uint, MapObject>();
         public List<MirEffect> Effects = new List<MirEffect>();
         public List<Models.Particles.ParticleEmitter> ParticleEffects = new List<Models.Particles.ParticleEmitter>();
 
@@ -342,6 +343,8 @@ namespace Client.Scenes.Views
             int minX = Math.Max(0, User.CurrentLocation.X - OffSetX - 4), maxX = Math.Min(Width - 1, User.CurrentLocation.X + OffSetX + 4);
             int minY = Math.Max(0, User.CurrentLocation.Y - OffSetY - 4), maxY = Math.Min(Height - 1, User.CurrentLocation.Y + OffSetY + 25);
 
+            List<MapObject>[] drawRows = BuildDrawRows(minY, maxY);
+
             for (int y = minY; y <= maxY; y++)
             {
                 int drawY = (y - User.CurrentLocation.Y + OffSetY + 1) * CellHeight + PixelOffsetY - User.MovingOffSet.Y - User.ShakeScreenOffset.Y;
@@ -426,11 +429,10 @@ namespace Client.Scenes.Views
                     }
                 }
 
-                foreach (MapObject ob in Objects)
-                {
-                    if (ob.RenderY == y)
-                        ob.Draw();
-                }
+                List<MapObject> drawObjects = drawRows[y - minY];
+                if (drawObjects != null)
+                    for (int i = 0; i < drawObjects.Count; i++)
+                        drawObjects[i].Draw();
 
                 if (Config.DrawEffects)
                 {
@@ -477,6 +479,25 @@ namespace Client.Scenes.Views
                     ob.Draw();
                 }
             }
+        }
+
+        private List<MapObject>[] BuildDrawRows(int minY, int maxY)
+        {
+            List<MapObject>[] rows = new List<MapObject>[maxY - minY + 1];
+
+            foreach (MapObject ob in Objects)
+            {
+                int renderY = ob.RenderY;
+                if (renderY < minY || renderY > maxY) continue;
+
+                int index = renderY - minY;
+                if (rows[index] == null)
+                    rows[index] = new List<MapObject>();
+
+                rows[index].Add(ob);
+            }
+
+            return rows;
         }
 
         private void LoadMap()
@@ -1312,18 +1333,38 @@ namespace Client.Scenes.Views
 
         public void AddObject(MapObject ob)
         {
-            Objects.Add(ob);
+            if (ob == null) return;
 
-            if (ob.CurrentLocation.X < Width && ob.CurrentLocation.Y < Height)
+            if (ObjectLookup.TryGetValue(ob.ObjectID, out MapObject existing))
+            {
+                if (ReferenceEquals(existing, ob)) return;
+
+                RemoveObject(existing);
+            }
+
+            Objects.Add(ob);
+            ObjectLookup[ob.ObjectID] = ob;
+
+            if (ob.CurrentLocation.X >= 0 && ob.CurrentLocation.X < Width && ob.CurrentLocation.Y >= 0 && ob.CurrentLocation.Y < Height)
                 Cells[ob.CurrentLocation.X, ob.CurrentLocation.Y].AddObject(ob);
         }
 
         public void RemoveObject(MapObject ob)
         {
+            if (ob == null) return;
+
             Objects.Remove(ob);
 
-            if (ob.CurrentLocation.X < Width && ob.CurrentLocation.Y < Height)
+            if (ObjectLookup.TryGetValue(ob.ObjectID, out MapObject existing) && ReferenceEquals(existing, ob))
+                ObjectLookup.Remove(ob.ObjectID);
+
+            if (ob.CurrentLocation.X >= 0 && ob.CurrentLocation.X < Width && ob.CurrentLocation.Y >= 0 && ob.CurrentLocation.Y < Height)
                 Cells[ob.CurrentLocation.X, ob.CurrentLocation.Y].RemoveObject(ob);
+        }
+
+        public bool TryGetObject(uint objectID, out MapObject ob)
+        {
+            return ObjectLookup.TryGetValue(objectID, out ob);
         }
 
         public bool CanAttack(MapObject ob)
@@ -1462,6 +1503,7 @@ namespace Client.Scenes.Views
                 MapInfoObjects = null;
 
                 Objects.Clear();
+                ObjectLookup.Clear();
                 Objects = null;
 
                 Effects.Clear();

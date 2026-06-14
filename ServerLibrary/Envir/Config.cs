@@ -122,6 +122,7 @@ namespace Server.Envir
         public static TimeSpan HarvestDuration { get; set; } = TimeSpan.FromMinutes(5);
         public static int MysteryShipRegionIndex { get; set; } = 0;
         public static int LairRegionIndex { get; set; } = 0;
+        public static int MaxRespawnBatchSize { get; set; } = 25;
 
         [ConfigSection("Items")]
         public static TimeSpan DropDuration { get; set; } = TimeSpan.FromMinutes(60);

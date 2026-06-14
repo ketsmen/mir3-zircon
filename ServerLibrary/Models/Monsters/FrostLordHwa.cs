@@ -58,7 +58,7 @@ namespace Server.Models.Monsters
 
                 foreach (MapObject ob in GetTargets(CurrentMap, CurrentLocation, Config.MaxViewRange))
                 {
-                    ob.Teleport(CurrentMap, CurrentMap.GetRandomLocation(CurrentLocation, Config.MaxViewRange));
+                    TeleportObjectNear(ob, CurrentLocation, Config.MaxViewRange);
 
                     ob.ApplyPoison(new Poison
                     {
@@ -110,7 +110,7 @@ namespace Server.Models.Monsters
                 {
                     cell = CurrentMap.GetCell(Functions.Move(Target.CurrentLocation, Functions.ShiftDirection(dir, i), 1));
 
-                    if (cell == null || cell.Movements != null)
+                    if (cell == null || cell.Movements != null || cell.IsBlocking(this, false))
                     {
                         cell = null;
                         continue;

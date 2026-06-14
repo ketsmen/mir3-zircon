@@ -1385,8 +1385,62 @@ namespace Server.Models
         }
         public virtual bool SpawnMinion(MonsterObject mob)
         {
-            return mob.Spawn(CurrentMap, CurrentMap.GetRandomLocation(CurrentLocation, 6));
+            return SpawnMinionNear(mob, CurrentLocation, 6);
         }
+
+        protected bool SpawnMinionNear(MonsterObject mob, Point origin, int range)
+        {
+            return SpawnMinionNear(mob, origin, 0, range);
+        }
+
+        protected bool SpawnMinionNear(MonsterObject mob, Point origin, int minRange, int maxRange)
+        {
+            if (mob == null || CurrentMap == null) return false;
+
+            foreach (Cell cell in CurrentMap.GetCells(origin, minRange, maxRange, true))
+            {
+                if (cell.Movements != null || cell.IsBlocking(mob, false)) continue;
+
+                return mob.Spawn(CurrentMap, cell.Location);
+            }
+
+            return false;
+        }
+
+        protected bool TeleportObjectNear(MapObject ob, Point origin, int range)
+        {
+            return TeleportObjectNear(ob, CurrentMap, origin, 0, range);
+        }
+
+        protected bool TeleportObjectNear(MapObject ob, Map map, Point origin, int minRange, int maxRange)
+        {
+            if (ob == null || map == null) return false;
+
+            foreach (Cell cell in map.GetCells(origin, minRange, maxRange, true))
+            {
+                if (cell.Movements != null || cell.IsBlocking(ob, false)) continue;
+
+                return ob.Teleport(map, cell.Location);
+            }
+
+            return false;
+        }
+
+        protected bool TeleportObjectRandom(MapObject ob, Map map, int attempts = 25)
+        {
+            if (ob == null || map == null || map.ValidCells.Count == 0) return false;
+
+            for (int i = 0; i < attempts; i++)
+            {
+                Cell cell = map.ValidCells[SEnvir.Random.Next(map.ValidCells.Count)];
+                if (cell.Movements != null || cell.IsBlocking(ob, false)) continue;
+
+                return ob.Teleport(map, cell.Location);
+            }
+
+            return false;
+        }
+
         public override int Pushed(MirDirection direction, int distance)
         {
             if (!MonsterInfo.CanPush) return 0;

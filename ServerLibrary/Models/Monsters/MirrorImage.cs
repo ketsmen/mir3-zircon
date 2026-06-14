@@ -99,7 +99,7 @@ namespace Server.Models.Monsters
             if (Activated) return;
 
             Activated = true;
-            SEnvir.ActiveObjects.Add(this);
+            SEnvir.AddActiveObject(this);
         }
 
         public override void Die()
