@@ -14624,6 +14624,9 @@ namespace Server.Models
             if (cast)
             {
                 magicObject.MagicCooldown();
+
+                if (ob != null && CanAttackTarget(ob))
+                    Hero?.OwnerEngagedTarget(ob);
             }
 
             Direction = ob == null || ob == this ? p.Direction : Functions.DirectionFromPoint(CurrentLocation, ob.CurrentLocation);
