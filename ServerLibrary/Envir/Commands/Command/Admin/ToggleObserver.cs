@@ -16,6 +16,11 @@ namespace Server.Envir.Commands.Command.Admin
             player.Connection.ReceiveChat($"{VALUE} {(player.Observer ? "activated" : "deactivated")}", MessageType.System);
             player.AddAllObjects();
             player.RemoveAllObjects();
+
+            if (player.Hero?.Node == null) return;
+
+            player.Hero.AddAllObjects();
+            player.Hero.RemoveAllObjects();
         }
     }
 }

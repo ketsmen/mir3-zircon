@@ -15,10 +15,13 @@ namespace Server.Models
     public class HeroObject : MapObject
     {
         public override ObjectType Race => ObjectType.Hero;
-        public override bool Blocking => !Dead;
+        public override bool Blocking => base.Blocking && !Observer;
 
         public HeroInfo Info;
         public PlayerObject Owner;
+        public bool GameMaster => Owner?.GameMaster == true;
+        public bool Observer => Owner?.Observer == true;
+        public bool Superman => Owner?.Superman == true;
 
         public UserItem[] Inventory;
         public UserItem[] Equipment;
@@ -705,7 +708,7 @@ namespace Server.Models
         {
             if (attacker?.Node == null || power == 0 || Dead || attacker.CurrentMap != CurrentMap ||
                 !Functions.InRange(attacker.CurrentLocation, CurrentLocation, Config.MaxViewRange) ||
-                Stats[Stat.Invincibility] > 0) return 0;
+                Stats[Stat.Invincibility] > 0 || Superman) return 0;
 
             if (StruckTime != DateTime.MaxValue && SEnvir.Now > StruckTime.AddMilliseconds(300))
             {
@@ -1059,24 +1062,52 @@ namespace Server.Models
 
         public override void SetHP(int amount)
         {
+            if (Superman)
+            {
+                CurrentHP = Stats[Stat.Health];
+                ClampHealthMana();
+                return;
+            }
+
             base.SetHP(amount);
             ClampHealthMana();
         }
 
         public override void ChangeHP(int amount)
         {
+            if (Superman)
+            {
+                CurrentHP = Stats[Stat.Health];
+                ClampHealthMana();
+                return;
+            }
+
             base.ChangeHP(amount);
             ClampHealthMana();
         }
 
         public override void SetMP(int amount)
         {
+            if (Superman)
+            {
+                CurrentMP = Stats[Stat.Mana];
+                ClampHealthMana();
+                return;
+            }
+
             base.SetMP(amount);
             ClampHealthMana();
         }
 
         public override void ChangeMP(int amount)
         {
+            if (Superman)
+            {
+                CurrentMP = Stats[Stat.Mana];
+                ClampHealthMana();
+                return;
+            }
+
             base.ChangeMP(amount);
             ClampHealthMana();
         }
@@ -1311,7 +1342,7 @@ namespace Server.Models
                 case ObjectType.Hero:
                     HeroObject hero = (HeroObject)ob;
 
-                    if (hero.Owner == null || hero.Owner == Owner) return false;
+                    if (hero.Owner == null || hero.Owner == Owner || hero.GameMaster) return false;
                     if (InSafeZone || hero.InSafeZone) return false;
 
                     switch (Owner.AttackMode)
