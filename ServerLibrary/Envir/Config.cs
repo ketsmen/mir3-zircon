@@ -101,6 +101,8 @@ namespace Server.Envir
         public static int HeroRequiredLevel { get; set; } = 1;
         public static int HeroMaxCount { get; set; } = Globals.HeroMaximumCount;
         public static TimeSpan HeroReviveDelay { get; set; } = TimeSpan.FromSeconds(10);
+        public static int HeroSearchRange { get; set; } = 8;
+        public static int HeroPursuitRange { get; set; } = 10;
         public static int DayCycleCount { get; set; } = 3;
         public static int SkillExp { get; set; } = 3;
         public static bool AllowObservation { get; set; } = true;

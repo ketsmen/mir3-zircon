@@ -2744,10 +2744,7 @@ namespace Server.Models
                     if (EXPOwner.Stats[Stat.Rebirth] > 0 && ExtraExperienceRate > 0)
                         exp /= ExtraExperienceRate;
 
-                    EXPOwner.GainExperience(exp, PlayerTagged, Level);
-
-                    if (HeroEXPOwner?.Owner == EXPOwner && HeroEXPOwner.Node != null && HeroEXPOwner.CurrentMap == CurrentMap && Functions.InRange(HeroEXPOwner.CurrentLocation, CurrentLocation, Config.MaxViewRange))
-                        HeroEXPOwner.GainExperience(exp);
+                    AwardMonsterExperience(EXPOwner, exp);
 
                     EXPOwner.LogMilestone(MilestoneType.MonsterKill, 1, monster: MonsterInfo);
 
@@ -2767,10 +2764,7 @@ namespace Server.Models
                     if (player.Stats[Stat.Rebirth] > 0 && ExtraExperienceRate > 0)
                         expfinal /= ExtraExperienceRate;
 
-                    player.GainExperience(expfinal, PlayerTagged, Level);
-
-                    if (HeroEXPOwner?.Owner == player && HeroEXPOwner.Node != null && HeroEXPOwner.CurrentMap == CurrentMap && Functions.InRange(HeroEXPOwner.CurrentLocation, CurrentLocation, Config.MaxViewRange))
-                        HeroEXPOwner.GainExperience(expfinal);
+                    AwardMonsterExperience(player, expfinal);
 
                     player.LogMilestone(MilestoneType.MonsterKill, 1, monster: MonsterInfo);
 
@@ -2789,6 +2783,36 @@ namespace Server.Models
                 foreach (PlayerObject player in dPlayers)
                     Drop(player, dPlayers.Count, dRate);
             }
+        }
+
+        private void AwardMonsterExperience(PlayerObject player, decimal amount)
+        {
+            if (player == null || amount <= 0) return;
+
+            decimal finalAmount = player.GetExperienceGain(amount, Level);
+            HeroObject hero = GetExperienceSharingHero(player);
+
+            if (hero == null)
+            {
+                player.GainFinalExperience(finalAmount, PlayerTagged);
+                return;
+            }
+
+            decimal playerAmount = finalAmount / 2M;
+            decimal heroAmount = finalAmount - playerAmount;
+
+            player.GainFinalExperience(playerAmount, PlayerTagged);
+            hero.GainExperience(heroAmount, false);
+        }
+
+        private HeroObject GetExperienceSharingHero(PlayerObject player)
+        {
+            HeroObject hero = player?.Hero;
+
+            if (hero?.Node == null || hero.Dead || hero.Owner != player) return null;
+            if (hero.CurrentMap != player.CurrentMap) return null;
+
+            return hero;
         }
 
         public virtual void Drop(PlayerObject owner, int players, decimal rate)

@@ -35,6 +35,7 @@ namespace Client.Envir.Translations
         public abstract string WeaponEnergyOffensiveBlow { get; set; }
         public abstract string LevelIncreased { get; set; }
         public abstract string GainedExperience { get; set; }
+        public abstract string HeroGainedExperience { get; set; }
         public abstract string LostExperience { get; set; }
         public abstract string GainedExperienceAndWeaponExperience { get; set; }
         public abstract string GainedExperienceAndReadyForRefine { get; set; }

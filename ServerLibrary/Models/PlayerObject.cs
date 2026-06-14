@@ -1947,7 +1947,7 @@ namespace Server.Models
             });
         }
 
-        public void GainExperience(decimal amount, bool huntGold, int gainLevel = Int32.MaxValue, bool rateEffected = true)
+        public decimal GetExperienceGain(decimal amount, int gainLevel = Int32.MaxValue, bool rateEffected = true)
         {
             if (rateEffected)
             {
@@ -1973,6 +1973,16 @@ namespace Server.Models
             }
             */
 
+            return amount;
+        }
+
+        public void GainExperience(decimal amount, bool huntGold, int gainLevel = Int32.MaxValue, bool rateEffected = true)
+        {
+            GainFinalExperience(GetExperienceGain(amount, gainLevel, rateEffected), huntGold, rateEffected);
+        }
+
+        public void GainFinalExperience(decimal amount, bool huntGold, bool applyWeaponExperience = true)
+        {
             if (amount == 0) return;
 
             Experience += amount;
@@ -1980,7 +1990,7 @@ namespace Server.Models
 
             UserItem weapon = Equipment[(int)EquipmentSlot.Weapon];
 
-            if (weapon != null && weapon.Info.ItemEffect != ItemEffect.PickAxe && (weapon.Flags & UserItemFlags.Refinable) != UserItemFlags.Refinable && (weapon.Flags & UserItemFlags.NonRefinable) != UserItemFlags.NonRefinable && weapon.Level < Globals.WeaponExperienceList.Count && rateEffected)
+            if (weapon != null && weapon.Info.ItemEffect != ItemEffect.PickAxe && (weapon.Flags & UserItemFlags.Refinable) != UserItemFlags.Refinable && (weapon.Flags & UserItemFlags.NonRefinable) != UserItemFlags.NonRefinable && weapon.Level < Globals.WeaponExperienceList.Count && applyWeaponExperience)
             {
                 weapon.Experience += amount / 10;
 

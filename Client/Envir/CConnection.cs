@@ -3920,6 +3920,9 @@ namespace Client.Envir
             GameScene.Game.CurrentHero.Experience = p.Experience;
             GameScene.Game.CurrentHero.MaxExperience = p.MaxExperience;
             GameScene.Game.HeroBox.UpdateLabels();
+
+            if (p.Amount > 0)
+                GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.HeroGainedExperience, p.Amount), MessageType.Combat);
         }
 
         public void Process(S.HeroLevelChanged p)

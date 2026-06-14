@@ -41,9 +41,12 @@ namespace Server.Models
         public int MoveDelay = 600;
         public int AttackDelay = 900;
 
-        protected virtual int ViewRange => Config.MaxViewRange;
+        private const int RunDistance = 2;
+        private const int RunStartDistance = 3;
+
         protected virtual int AttackRange => 1;
-        protected virtual int MaxPursuitRange => Math.Max(6, Config.MaxViewRange - 4);
+        protected virtual int ViewRange => Math.Max(AttackRange, Math.Min(Config.MaxViewRange, Config.HeroSearchRange));
+        protected virtual int MaxPursuitRange => Math.Max(ViewRange, Math.Min(Config.MaxViewRange, Config.HeroPursuitRange));
         protected virtual int PreferredOwnerRange => 2;
         protected virtual TimeSpan SearchDelay => TimeSpan.FromMilliseconds(800);
         protected virtual TimeSpan RoamDelay => TimeSpan.FromMilliseconds(500);
@@ -53,6 +56,10 @@ namespace Server.Models
         protected virtual MagicType AutoMagic => MagicType.None;
         protected virtual Element AutoMagicElement => Element.None;
         protected virtual int AutoMagicCost => 0;
+        protected virtual bool CanUseAutoMagicForRange => AutoMagic != MagicType.None &&
+                                                         CurrentMP >= AutoMagicCost &&
+                                                         (Poison & PoisonType.Silenced) != PoisonType.Silenced;
+        protected virtual int DesiredAttackRange => CanUseAutoMagicForRange ? AttackRange : 1;
 
         public MirClass Class => Info.Class;
         public MirGender Gender => Info.Gender;
@@ -183,6 +190,19 @@ namespace Server.Models
             return true;
         }
 
+        public override void Activate()
+        {
+            if (Activated) return;
+
+            Activated = true;
+            SEnvir.ActiveObjects.Add(this);
+        }
+
+        public override void DeActivate()
+        {
+            return;
+        }
+
         public void Recall()
         {
             if (Node == null) return;
@@ -245,7 +265,7 @@ namespace Server.Models
             }
 
             if (Target?.Node == null || Target.Dead || Target.CurrentMap != CurrentMap ||
-                !Functions.InRange(CurrentLocation, Target.CurrentLocation, Config.MaxViewRange) ||
+                !Functions.InRange(CurrentLocation, Target.CurrentLocation, MaxPursuitRange) ||
                 !CanAttackTarget(Target))
                 Target = null;
 
@@ -371,7 +391,7 @@ namespace Server.Models
 
             int distance = Functions.Distance(CurrentLocation, Owner.CurrentLocation);
 
-            if (distance > Config.MaxViewRange - 2)
+            if (distance > MaxPursuitRange + PreferredOwnerRange)
             {
                 Cell recallCell = Owner.CurrentMap.GetCell(Functions.Move(Owner.CurrentLocation, Owner.Direction, -1));
 
@@ -464,6 +484,9 @@ namespace Server.Models
                     magic));
                 return;
             }
+
+            if (CanUseAutoMagicForRange && Functions.InRange(CurrentLocation, Target.CurrentLocation, AttackRange))
+                return;
 
             if (!Functions.InRange(CurrentLocation, Target.CurrentLocation, 1))
             {
@@ -850,9 +873,10 @@ namespace Server.Models
             Stats[Stat.BaseMana] = Stats[Stat.Mana];
         }
 
-        public void GainExperience(decimal amount)
+        public void GainExperience(decimal amount, bool rateEffected = true)
         {
-            amount *= 1M + Config.HeroExperienceRate / 100M;
+            if (rateEffected)
+                amount *= 1M + Config.HeroExperienceRate / 100M;
 
             if (amount <= 0) return;
 
@@ -959,7 +983,7 @@ namespace Server.Models
         {
             return Target?.CurrentMap == CurrentMap &&
                    Target.CurrentLocation != CurrentLocation &&
-                   Functions.InRange(CurrentLocation, Target.CurrentLocation, AttackRange);
+                   Functions.InRange(CurrentLocation, Target.CurrentLocation, DesiredAttackRange);
         }
 
         protected virtual MagicType GetAutoMagic()
@@ -1021,6 +1045,10 @@ namespace Server.Models
             if (!CanMove || CurrentLocation == target) return;
 
             MirDirection direction = Functions.DirectionFromPoint(CurrentLocation, target);
+
+            if (Functions.Distance(CurrentLocation, target) > RunStartDistance && Run(direction))
+                return;
+
             int rotation = SEnvir.Random.Next(2) == 0 ? 1 : -1;
 
             for (int d = 0; d < 8; d++)
@@ -1029,6 +1057,36 @@ namespace Server.Models
 
                 direction = Functions.ShiftDirection(direction, rotation);
             }
+        }
+
+        public virtual bool Run(MirDirection direction)
+        {
+            if (!CanMove) return false;
+
+            Cell cell = null;
+
+            for (int distance = 1; distance <= RunDistance; distance++)
+            {
+                cell = CurrentMap.GetCell(Functions.Move(CurrentLocation, direction, distance));
+                if (cell == null || cell.IsBlocking(this, false)) return false;
+            }
+
+            BuffRemove(BuffType.Invisibility);
+            BuffRemove(BuffType.Transparency);
+
+            Direction = direction;
+            UpdateMoveTime();
+
+            PreventSpellCheck = true;
+            CurrentCell = cell;
+            PreventSpellCheck = false;
+
+            RemoveAllObjects();
+            AddAllObjects();
+
+            Broadcast(new S.ObjectMove { ObjectID = ObjectID, Direction = direction, Location = CurrentLocation, Distance = RunDistance });
+            CheckSpellObjects();
+            return true;
         }
 
         public virtual bool Walk(MirDirection direction)

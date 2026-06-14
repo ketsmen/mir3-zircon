@@ -36,6 +36,7 @@ namespace Client.Envir.Translations
         public override string WeaponEnergyOffensiveBlow { get; set; } = "Energy builds up within your weapon, Offensive Blow is ready.";
         public override string LevelIncreased { get; set; } = "Level Increased";
         public override string GainedExperience { get; set; } = "Experience Gained {0:#,##0.#}";
+        public override string HeroGainedExperience { get; set; } = "Hero Experience Gained {0:#,##0.#}";
         public override string LostExperience { get; set; } = "Experience Lost {0:#,##0.#}.";
         public override string GainedExperienceAndWeaponExperience { get; set; } = "Experience Gained {0:#,##0.#}, Weapon Experience {1:#,##0.#}.";
         public override string GainedExperienceAndReadyForRefine { get; set; } = "Experience Gained {0:#,##0.#}, Your weapon is ready for refine.";
