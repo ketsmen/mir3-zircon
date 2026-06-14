@@ -227,6 +227,8 @@ namespace Client.Rendering.SharpDXD3D11
             if (SharpDXD3D11Manager.D2DContext == null)
                 return;
 
+            SharpDXD3D11Manager.FlushD3DSprites();
+
             using SolidColorBrush brush = new SolidColorBrush(SharpDXD3D11Manager.D2DContext, ToRawColor(colour, SharpDXD3D11Manager.Opacity));
 
             for (int i = 0; i < points.Count - 1; i++)
@@ -239,6 +241,8 @@ namespace Client.Rendering.SharpDXD3D11
 
                 SharpDXD3D11Manager.D2DContext.DrawLine(p0, p1, brush, _lineWidth);
             }
+
+            SharpDXD3D11Manager.MarkD2DDrawPending();
         }
         private static float Snap(float v)
         {
@@ -263,7 +267,7 @@ namespace Client.Rendering.SharpDXD3D11
 
                 if (d3dTex != null)
                 {
-                    SharpDXD3D11Manager.FlushSprite(); // Ensure D2D is flushed
+                    SharpDXD3D11Manager.FlushD2D();
 
                     SharpDXD3D11Manager.SpriteRenderer.Draw(
                         d3dTex,
@@ -337,7 +341,7 @@ namespace Client.Rendering.SharpDXD3D11
             {
                 if (d3dTex != null)
                 {
-                    SharpDXD3D11Manager.FlushSprite();
+                    SharpDXD3D11Manager.FlushD2D();
                     // When drawing with a matrix, we usually assume the source texture is drawn at (0,0) with its size,
                     // then transformed.
                     // But `DrawBitmap` logic below uses `null` for destination rect when transform is set.
@@ -565,6 +569,8 @@ namespace Client.Rendering.SharpDXD3D11
             if (SharpDXD3D11Manager.Context == null || SharpDXD3D11Manager.CurrentTarget == null)
                 return;
 
+            SharpDXD3D11Manager.FlushD3DSprites();
+
             if ((flags & RenderClearFlags.Target) == 0)
                 return;
 
@@ -585,6 +591,7 @@ namespace Client.Rendering.SharpDXD3D11
                     var rect = new RawRectangleF(region.Left, region.Top, region.Right, region.Bottom);
                     SharpDXD3D11Manager.D2DContext.FillRectangle(rect, brush);
                 }
+                SharpDXD3D11Manager.MarkD2DDrawPending();
 
                 // Restore the original blend mode for subsequent draw calls.
                 SharpDXD3D11Manager.D2DContext.PrimitiveBlend = originalPrimitiveBlend;
@@ -595,12 +602,13 @@ namespace Client.Rendering.SharpDXD3D11
 
                 // Clear the D2D target as well so any previous blended content is removed for the next draw pass.
                 SharpDXD3D11Manager.D2DContext?.Clear(rawColor);
+                SharpDXD3D11Manager.MarkD2DDrawPending();
             }
         }
 
         public void FlushSprite()
         {
-            SharpDXD3D11Manager.D2DContext?.Flush();
+            SharpDXD3D11Manager.FlushSprite();
         }
 
         public void RegisterControlCache(ITextureCacheItem control)
@@ -745,6 +753,9 @@ namespace Client.Rendering.SharpDXD3D11
             if (ctx == null)
                 return;
 
+            SharpDXD3D11Manager.FlushD3DSprites();
+            RenderingPipelineManager.RecordD2DDraw();
+
             float opacity = SharpDXD3D11Manager.Opacity * (colour.A / 255f);
             float colorScale = 1f;
 
@@ -764,6 +775,7 @@ namespace Client.Rendering.SharpDXD3D11
             if (isLightBlend)
             {
                 DrawLightBlend(bitmap, destination, source, colour, opacity, colorScale);
+                SharpDXD3D11Manager.MarkD2DDrawPending();
                 return;
             }
 
@@ -807,6 +819,7 @@ namespace Client.Rendering.SharpDXD3D11
                 SharpDX.Direct2D1.Image effectOutput = _tintEffect.Output;
 
                 ctx.DrawImage(effectOutput, null, source, interpolation, compositeMode);
+                SharpDXD3D11Manager.MarkD2DDrawPending();
 
                 // restore whatever the pipeline had before
                 ctx.Transform = originalTransform;
@@ -825,6 +838,7 @@ namespace Client.Rendering.SharpDXD3D11
                 }
 
                 ctx.DrawImage(bitmap, null, source, interpolation, compositeMode);
+                SharpDXD3D11Manager.MarkD2DDrawPending();
                 ctx.Transform = originalTransform;
             }
         }

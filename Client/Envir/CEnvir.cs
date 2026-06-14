@@ -37,6 +37,7 @@ namespace Client.Envir
 
         public static int DPSCounter;
         private static int DPSCount;
+        private static string RenderDebugText;
 
         public static bool Shift, Alt, Ctrl;
         public static DateTime Now;
@@ -204,6 +205,8 @@ namespace Client.Envir
                 FPSCounter = 0;
                 DPSCount = DPSCounter;
                 DPSCounter = 0;
+                RenderingStatistics renderStats = RenderingPipelineManager.GetAndResetStatistics();
+                RenderDebugText = $"Draw: {renderStats.DrawRequests}, D2D: {renderStats.D2DDraws}/{renderStats.D2DFlushes}, D3D: {renderStats.D3DSprites}/{renderStats.D3DDrawCalls}, Batches: {renderStats.D3DBatchFlushes}";
                 RenderingPipelineManager.MemoryClear();
             }
 
@@ -231,6 +234,8 @@ namespace Client.Envir
                     debugText += $", Mouse Object: {MapObject.MouseObject.Name}";
             }
             debugText += $", DPS: {DPSCount}";
+            if (!string.IsNullOrEmpty(RenderDebugText))
+                debugText += $", {RenderDebugText}";
 
             string connectionText = string.Empty;
 

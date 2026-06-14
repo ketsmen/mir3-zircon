@@ -37,11 +37,20 @@ namespace Client.Rendering.SharpDXD3D11
 
         private readonly Dictionary<BlendMode, BlendState> _blendStates = new Dictionary<BlendMode, BlendState>();
         private readonly Dictionary<Texture2D, ShaderResourceView> _srvCache = new Dictionary<Texture2D, ShaderResourceView>();
+        private readonly VertexType[] _batchVertices = new VertexType[MaxBatchVertices];
+        private Texture2D _batchTexture;
+        private BlendMode _batchBlendMode;
+        private float _batchBlendRate;
+        private int _batchVertexCount;
+        private int _batchSpriteCount;
 
         private const string ShaderFileName = "SpriteD3D11.hlsl";
         private const string OutlineShaderFileName = "OutlineD3D11.hlsl";
         private const string GrayscaleFileName = "GrayscaleD3D11.hlsl";
         private const string DropShadowFileName = "DropShadowD3D11.hlsl";
+        private const int MaxBatchSprites = 2048;
+        private const int VerticesPerSprite = 6;
+        private const int MaxBatchVertices = MaxBatchSprites * VerticesPerSprite;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct VertexType
@@ -225,11 +234,10 @@ namespace Client.Rendering.SharpDXD3D11
 
         private void InitializeBuffers()
         {
-            // Dynamic vertex buffer for quads (4 vertices)
             _vertexBuffer = new Buffer(_device, new BufferDescription
             {
                 Usage = ResourceUsage.Dynamic,
-                SizeInBytes = Utilities.SizeOf<VertexType>() * 4,
+                SizeInBytes = Utilities.SizeOf<VertexType>() * MaxBatchVertices,
                 BindFlags = BindFlags.VertexBuffer,
                 CpuAccessFlags = CpuAccessFlags.Write,
                 OptionFlags = ResourceOptionFlags.None,
@@ -337,25 +345,43 @@ namespace Client.Rendering.SharpDXD3D11
 
         public void Draw(Texture2D texture, RectangleF destination, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate)
         {
-            DrawInternal(texture, destination, source, color, transform, blendMode, opacity, blendRate, _pixelShader, null);
+            QueueDraw(texture, destination, source, color, transform, blendMode, opacity, blendRate);
         }
 
         public void DrawOutlined(Texture2D texture, RectangleF destination, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate, RawColor4 outlineColor, float outlineThickness)
         {
+            Flush();
             var outlineEffect = CreateOutlineEffect(texture, source, outlineColor, outlineThickness);
             DrawInternal(texture, destination, source, color, transform, blendMode, opacity, blendRate, _outlinePixelShader ?? _pixelShader, outlineEffect);
         }
 
         public void DrawGrayscale(Texture2D texture, RectangleF destination, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate)
         {
+            Flush();
             var grayscaleEffect = CreateGrayscaleEffect();
             DrawInternal(texture, destination, source, color, transform, blendMode, opacity, blendRate, _grayscalePixelShader ?? _pixelShader, grayscaleEffect);
         }
 
         public void DrawDropShadow(Texture2D texture, RectangleF destination, RectangleF shadowBounds, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate, RawColor4 shadowColor, float shadowWidth, float shadowMaxOpacity)
         {
+            Flush();
             var dropShadowEffect = CreateDropShadowEffect(texture, shadowBounds, shadowWidth, shadowMaxOpacity);
             DrawInternal(texture, destination, source, color, transform, blendMode, opacity, blendRate, _dropShadowPixelShader ?? _pixelShader, dropShadowEffect);
+        }
+
+        public void ReleaseTexture(Texture2D texture)
+        {
+            if (texture == null)
+                return;
+
+            if (_batchTexture == texture)
+                Flush();
+
+            if (_srvCache.TryGetValue(texture, out var srv))
+            {
+                srv.Dispose();
+                _srvCache.Remove(texture);
+            }
         }
 
         private SpriteEffect? CreateOutlineEffect(Texture2D texture, RectangleF? source, RawColor4 outlineColor, float outlineThickness)
@@ -425,6 +451,125 @@ namespace Client.Rendering.SharpDXD3D11
                 stream => stream.Write(shadowBuffer));
         }
 
+        public void Flush()
+        {
+            if (_batchVertexCount == 0)
+                return;
+
+            if (_batchTexture == null || _batchTexture.IsDisposed || _vertexShader == null || _pixelShader == null)
+            {
+                ResetBatch();
+                return;
+            }
+
+            if (!UpdateViewportFromCurrentRenderTarget(out float width, out float height))
+            {
+                ResetBatch();
+                return;
+            }
+
+            if (!_srvCache.TryGetValue(_batchTexture, out var srv))
+            {
+                srv = new ShaderResourceView(_device, _batchTexture);
+                _srvCache[_batchTexture] = srv;
+            }
+
+            DataBox box = _context.MapSubresource(_vertexBuffer, 0, MapMode.WriteDiscard, MapFlags.None);
+            using (var stream = new DataStream(box.DataPointer, Utilities.SizeOf<VertexType>() * _batchVertexCount, true, true))
+            {
+                for (int i = 0; i < _batchVertexCount; i++)
+                    stream.Write(_batchVertices[i]);
+            }
+            _context.UnmapSubresource(_vertexBuffer, 0);
+
+            _context.InputAssembler.InputLayout = _inputLayout;
+            _context.InputAssembler.PrimitiveTopology = PrimitiveTopology.TriangleList;
+            _context.InputAssembler.SetVertexBuffers(0, new VertexBufferBinding(_vertexBuffer, Utilities.SizeOf<VertexType>(), 0));
+
+            UpdateProjectionMatrixBuffer(width, height);
+
+            _context.VertexShader.Set(_vertexShader);
+            _context.PixelShader.Set(_pixelShader);
+            _context.PixelShader.SetShaderResource(0, srv);
+            _context.PixelShader.SetSampler(0, _samplerState);
+            _context.VertexShader.SetConstantBuffer(0, _matrixBuffer);
+            _context.PixelShader.SetConstantBuffer(1, null);
+
+            SetBlendState(_batchBlendMode, _batchBlendRate);
+
+            _context.Draw(_batchVertexCount, 0);
+            RenderingPipelineManager.RecordD3DDrawCall();
+            RenderingPipelineManager.RecordD3DBatchFlush();
+
+            _context.PixelShader.SetShaderResource(0, null);
+            _context.OutputMerger.SetBlendState(null, null, -1);
+
+            ResetBatch();
+        }
+
+        private void QueueDraw(Texture2D texture, RectangleF destination, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate)
+        {
+            if (texture == null || texture.IsDisposed || _pixelShader == null) return;
+            if (destination.Width <= 0 || destination.Height <= 0) return;
+
+            if (_batchVertexCount > 0 &&
+                (_batchTexture != texture ||
+                 _batchBlendMode != blendMode ||
+                 Math.Abs(_batchBlendRate - blendRate) > float.Epsilon ||
+                 _batchSpriteCount >= MaxBatchSprites))
+            {
+                Flush();
+            }
+
+            if (_batchVertexCount == 0)
+            {
+                _batchTexture = texture;
+                _batchBlendMode = blendMode;
+                _batchBlendRate = blendRate;
+            }
+
+            AppendSpriteVertices(texture, destination, source, color, opacity, transform);
+            _batchSpriteCount++;
+            RenderingPipelineManager.RecordD3DSprite();
+        }
+
+        private void AppendSpriteVertices(Texture2D texture, RectangleF dest, RectangleF? source, Color color, float opacity, Matrix3x2 transform)
+        {
+            var desc = texture.Description;
+
+            float u1 = 0, v1 = 0, u2 = 1, v2 = 1;
+            if (source.HasValue)
+            {
+                u1 = source.Value.Left / desc.Width;
+                v1 = source.Value.Top / desc.Height;
+                u2 = source.Value.Right / desc.Width;
+                v2 = source.Value.Bottom / desc.Height;
+            }
+
+            var col = new RawColor4(color.R / 255f, color.G / 255f, color.B / 255f, (color.A / 255f) * opacity);
+
+            Vector2 topLeft = Vector2.Transform(new Vector2(dest.Left, dest.Top), transform);
+            Vector2 topRight = Vector2.Transform(new Vector2(dest.Right, dest.Top), transform);
+            Vector2 bottomLeft = Vector2.Transform(new Vector2(dest.Left, dest.Bottom), transform);
+            Vector2 bottomRight = Vector2.Transform(new Vector2(dest.Right, dest.Bottom), transform);
+
+            _batchVertices[_batchVertexCount++] = new VertexType(topLeft, new Vector2(u1, v1), col);
+            _batchVertices[_batchVertexCount++] = new VertexType(topRight, new Vector2(u2, v1), col);
+            _batchVertices[_batchVertexCount++] = new VertexType(bottomLeft, new Vector2(u1, v2), col);
+            _batchVertices[_batchVertexCount++] = new VertexType(bottomLeft, new Vector2(u1, v2), col);
+            _batchVertices[_batchVertexCount++] = new VertexType(topRight, new Vector2(u2, v1), col);
+            _batchVertices[_batchVertexCount++] = new VertexType(bottomRight, new Vector2(u2, v2), col);
+        }
+
+        private void ResetBatch()
+        {
+            _batchTexture = null;
+            _batchBlendMode = BlendMode.NONE;
+            _batchBlendRate = 0F;
+            _batchVertexCount = 0;
+            _batchSpriteCount = 0;
+        }
+
         private void DrawInternal(Texture2D texture, RectangleF destination, RectangleF? source, Color color, Matrix3x2 transform, BlendMode blendMode, float opacity, float blendRate, PixelShader pixelShader, SpriteEffect? effect)
         {
             if (texture == null) return;
@@ -432,26 +577,9 @@ namespace Client.Rendering.SharpDXD3D11
             var activePixelShader = effect?.Shader ?? pixelShader ?? _pixelShader;
             if (activePixelShader == null) return;
 
-            var rtv = _context.OutputMerger.GetRenderTargets(1);
-            if (rtv != null && rtv.Length > 0 && rtv[0] != null)
-            {
-                using (var res = rtv[0].Resource)
-                using (var tex = res.QueryInterface<Texture2D>())
-                {
-                    var width = tex.Description.Width;
-                    var height = tex.Description.Height;
-                    _context.Rasterizer.SetViewport(new RawViewportF
-                    {
-                        X = 0,
-                        Y = 0,
-                        Width = width,
-                        Height = height,
-                        MinDepth = 0,
-                        MaxDepth = 1
-                    });
-                }
-                rtv[0].Dispose();
-            }
+            Flush();
+
+            if (!UpdateViewportFromCurrentRenderTarget(out _, out _)) return;
 
             if (!_srvCache.TryGetValue(texture, out var srv))
             {
@@ -478,22 +606,60 @@ namespace Client.Rendering.SharpDXD3D11
 
             ApplyEffect(effect);
 
-            if (_blendStates.TryGetValue(blendMode, out var blendState))
-            {
-                var factor = new RawColor4(blendRate, blendRate, blendRate, blendRate);
-                _context.OutputMerger.SetBlendState(blendState, factor, -1);
-            }
-            else
-            {
-                var factor = new RawColor4(blendRate, blendRate, blendRate, blendRate);
-                _context.OutputMerger.SetBlendState(_blendStates[BlendMode.NORMAL], factor, -1);
-            }
+            SetBlendState(blendMode, blendRate);
 
             _context.Draw(4, 0);
+            RenderingPipelineManager.RecordD3DSprite();
+            RenderingPipelineManager.RecordD3DDrawCall();
 
             _context.PixelShader.SetShaderResource(0, null);
             _context.PixelShader.SetConstantBuffer(1, null);
             _context.OutputMerger.SetBlendState(null, null, -1);
+        }
+
+        private bool UpdateViewportFromCurrentRenderTarget(out float width, out float height)
+        {
+            width = 0F;
+            height = 0F;
+
+            RenderTargetView[] rtv = _context.OutputMerger.GetRenderTargets(1);
+            if (rtv == null || rtv.Length == 0 || rtv[0] == null)
+                return false;
+
+            try
+            {
+                using (var res = rtv[0].Resource)
+                using (var tex = res.QueryInterface<Texture2D>())
+                {
+                    width = tex.Description.Width;
+                    height = tex.Description.Height;
+                    _context.Rasterizer.SetViewport(new RawViewportF
+                    {
+                        X = 0,
+                        Y = 0,
+                        Width = width,
+                        Height = height,
+                        MinDepth = 0,
+                        MaxDepth = 1
+                    });
+                }
+            }
+            finally
+            {
+                rtv[0].Dispose();
+            }
+
+            return width > 0 && height > 0;
+        }
+
+        private void SetBlendState(BlendMode blendMode, float blendRate)
+        {
+            var factor = new RawColor4(blendRate, blendRate, blendRate, blendRate);
+
+            if (_blendStates.TryGetValue(blendMode, out var blendState))
+                _context.OutputMerger.SetBlendState(blendState, factor, -1);
+            else
+                _context.OutputMerger.SetBlendState(_blendStates[BlendMode.NORMAL], factor, -1);
         }
 
         private void ApplyEffect(SpriteEffect? effect)
@@ -590,38 +756,24 @@ namespace Client.Rendering.SharpDXD3D11
             // X: (x / W) * 2 - 1
             // Y: -((y / H) * 2 - 1) = 1 - (y / H) * 2
 
-            Matrix4x4 projection = Matrix4x4.Identity;
-            projection.M11 = 2.0f / width;
-            projection.M22 = -2.0f / height;
-            projection.M41 = -1.0f;
-            projection.M42 = 1.0f;
-
-            // Apply the object transform (Matrix3x2)
-            // 3x2 = [ M11 M12 ]
-            //       [ M21 M22 ]
-            //       [ M31 M32 ]
-            // Extend to 4x4
-            Matrix4x4 world = Matrix4x4.Identity;
-            world.M11 = transform.M11;
-            world.M12 = transform.M12;
-            world.M21 = transform.M21;
-            world.M22 = transform.M22;
-            world.M41 = transform.M31; // Translation X
-            world.M42 = transform.M32; // Translation Y
-
-            // Final Matrix = World * Projection
-            // Transpose because HLSL defaults to column-major in mul(v, M) or row-major?
-            // SharpDX matrices are Row-Major. HLSL mul(vector, matrix) expects Row-Major matrix if vector is row.
-            // mul(float4, matrix) -> Row Vector * Matrix.
-            // So we send it as is.
-
-            Matrix4x4 final = world * projection;
+            Matrix4x4 final = CreateProjectionMatrix(width, height, transform);
 
             // However, D3D default constant buffer layout expects Column-Major logic if we don't transpose,
             // OR we construct it carefully.
             // SharpDX Matrix.Transpose() is usually needed if the shader uses `matrix` type and `mul(pos, mat)`.
             final = Matrix4x4.Transpose(final);
 
+            WriteMatrixBuffer(final);
+        }
+
+        private void UpdateProjectionMatrixBuffer(float width, float height)
+        {
+            Matrix4x4 final = Matrix4x4.Transpose(CreateProjectionMatrix(width, height, Matrix3x2.Identity));
+            WriteMatrixBuffer(final);
+        }
+
+        private void WriteMatrixBuffer(Matrix4x4 final)
+        {
             DataBox box = _context.MapSubresource(_matrixBuffer, 0, MapMode.WriteDiscard, MapFlags.None);
             using (var stream = new DataStream(box.DataPointer, Utilities.SizeOf<Matrix4x4>(), true, true))
             {
@@ -630,8 +782,29 @@ namespace Client.Rendering.SharpDXD3D11
             _context.UnmapSubresource(_matrixBuffer, 0);
         }
 
+        private static Matrix4x4 CreateProjectionMatrix(float width, float height, Matrix3x2 transform)
+        {
+            Matrix4x4 projection = Matrix4x4.Identity;
+            projection.M11 = 2.0f / width;
+            projection.M22 = -2.0f / height;
+            projection.M41 = -1.0f;
+            projection.M42 = 1.0f;
+
+            Matrix4x4 world = Matrix4x4.Identity;
+            world.M11 = transform.M11;
+            world.M12 = transform.M12;
+            world.M21 = transform.M21;
+            world.M22 = transform.M22;
+            world.M41 = transform.M31;
+            world.M42 = transform.M32;
+
+            return world * projection;
+        }
+
         public void Dispose()
         {
+            Flush();
+
             foreach (var srv in _srvCache.Values) srv.Dispose();
             _srvCache.Clear();
 

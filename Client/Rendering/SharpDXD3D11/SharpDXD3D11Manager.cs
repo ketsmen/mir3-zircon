@@ -118,6 +118,7 @@ namespace Client.Rendering.SharpDXD3D11
 
         private static bool _resetRequested;
         private static bool _d2dDrawActive;
+        private static bool _d2dHasPendingDraws;
         private static readonly DisplayModeManager _displayMode = new DisplayModeManager();
         private static System.Windows.Forms.Timer _postTogglePlacementTimer;
 
@@ -436,6 +437,8 @@ namespace Client.Rendering.SharpDXD3D11
             if (surface.NativeHandle is not SharpD3D11RenderTarget target)
                 return;
 
+            FlushD3DSprites();
+
             var d2d = D2DContext;
 
             // Use the existing render target
@@ -459,6 +462,7 @@ namespace Client.Rendering.SharpDXD3D11
             d2d.FillRectangle(
                 new RawRectangleF(rect.Left, rect.Top, rect.Right, rect.Bottom),
                 brush);
+            MarkD2DDrawPending();
 
             // Remove clip
             d2d.PopAxisAlignedClip();
@@ -580,8 +584,29 @@ namespace Client.Rendering.SharpDXD3D11
 
         public static void FlushSprite()
         {
-            if (_d2dDrawActive)
+            FlushD3DSprites();
+            FlushD2D();
+        }
+
+        public static void FlushD2D()
+        {
+            if (_d2dDrawActive && _d2dHasPendingDraws)
+            {
                 D2DContext?.Flush();
+                _d2dHasPendingDraws = false;
+                RenderingPipelineManager.RecordD2DFlush();
+            }
+        }
+
+        public static void FlushD3DSprites()
+        {
+            SpriteRenderer?.Flush();
+        }
+
+        public static void MarkD2DDrawPending()
+        {
+            if (_d2dDrawActive)
+                _d2dHasPendingDraws = true;
         }
 
         public static void MemoryClear()
@@ -616,6 +641,8 @@ namespace Client.Rendering.SharpDXD3D11
 
         public static void Unload()
         {
+            FlushSprite();
+
             if (SwapChain != null)
             {
                 try
@@ -711,6 +738,7 @@ namespace Client.Rendering.SharpDXD3D11
             _d2dDrawActive = true;
             D2DContext.Transform = new RawMatrix3x2 { M11 = 1, M22 = 1 };
             D2DContext.Clear(clear);
+            _d2dHasPendingDraws = true;
         }
 
         public static void EndDraw()
@@ -720,11 +748,13 @@ namespace Client.Rendering.SharpDXD3D11
 
             try
             {
+                FlushD3DSprites();
                 D2DContext.EndDraw();
             }
             finally
             {
                 _d2dDrawActive = false;
+                _d2dHasPendingDraws = false;
             }
 
             SwapChain.Present(Config.VSync ? 1 : 0, PresentFlags.None);
@@ -755,6 +785,10 @@ namespace Client.Rendering.SharpDXD3D11
 
         public static void ReleaseRenderTarget(SharpD3D11RenderTarget renderTarget)
         {
+            FlushSprite();
+            if (renderTarget != null)
+                SpriteRenderer?.ReleaseTexture(renderTarget.Texture);
+
             renderTarget?.Dispose();
         }
 
@@ -808,6 +842,10 @@ namespace Client.Rendering.SharpDXD3D11
 
         public static void ReleaseTexture(SharpD3D11TextureResource texture)
         {
+            FlushSprite();
+            if (texture != null)
+                SpriteRenderer?.ReleaseTexture(texture.Texture);
+
             texture?.Dispose();
         }
 
@@ -815,6 +853,8 @@ namespace Client.Rendering.SharpDXD3D11
         {
             if (texture == null)
                 throw new ArgumentNullException(nameof(texture));
+
+            FlushSprite();
 
             MapMode mapMode = mode == TextureLockMode.ReadOnly ? MapMode.Read : MapMode.Write;
 
@@ -1176,6 +1216,8 @@ namespace Client.Rendering.SharpDXD3D11
 
         private static void DisposeTargets()
         {
+            FlushSprite();
+
             if (Context != null)
                 Context.OutputMerger.SetRenderTargets((RenderTargetView)null);
 
