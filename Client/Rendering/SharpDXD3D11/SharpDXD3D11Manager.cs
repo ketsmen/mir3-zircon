@@ -137,8 +137,9 @@ namespace Client.Rendering.SharpDXD3D11
 
             ApplyWindowStyle();
 
-            if (CEnvir.Target != null && CEnvir.Target.ClientSize != Config.GameSize)
-                CEnvir.Target.ClientSize = Config.GameSize;
+            Size windowSize = RenderingPipelineManager.GetSceneWindowSize();
+            if (CEnvir.Target != null && CEnvir.Target.ClientSize != windowSize)
+                CEnvir.Target.ClientSize = windowSize;
 
             ApplyWindowBounds(true);
 
@@ -156,7 +157,7 @@ namespace Client.Rendering.SharpDXD3D11
             }
             ValidResolutions.Sort((s1, s2) => (s1.Width * s1.Height).CompareTo(s2.Width * s2.Height));
 
-            Size targetSize = CEnvir.Target?.ClientSize ?? Config.GameSize;
+            Size targetSize = CEnvir.Target?.ClientSize ?? windowSize;
 
             SwapChainDescription swapChainDescription = new SwapChainDescription
             {
@@ -212,7 +213,7 @@ namespace Client.Rendering.SharpDXD3D11
                 return;
 
             _resetRequested = false;
-            RecreateSwapChain(Config.GameSize);
+            RecreateSwapChain(RenderingPipelineManager.GetSceneWindowSize());
         }
 
         public static void ToggleFullScreen()
@@ -240,19 +241,22 @@ namespace Client.Rendering.SharpDXD3D11
 
         public static void SetResolution(Size size)
         {
-            if (CEnvir.Target.ClientSize == size && GetBackBufferSize() == size)
+            if (RenderingPipelineManager.UseGameWindowSettings)
+                Config.GameSize = size;
+
+            bool useFullScreen = RenderingPipelineManager.UseFullScreenWindow;
+
+            if (!useFullScreen && CEnvir.Target.ClientSize == size && GetBackBufferSize() == size)
                 return;
 
-            Config.GameSize = size;
-
-            if (!Config.FullScreen && CEnvir.Target != null && CEnvir.Target.ClientSize != size)
+            if (!useFullScreen && CEnvir.Target != null && CEnvir.Target.ClientSize != size)
             {
                 CEnvir.Target.ClientSize = size;
                 CenterOnSelectedMonitor();
             }
 
             ApplyWindowStyle();
-            ApplyWindowBounds(!Config.FullScreen);
+            ApplyWindowBounds(!useFullScreen);
             RequestReset();
         }
 
@@ -261,7 +265,7 @@ namespace Client.Rendering.SharpDXD3D11
             if (monitorIndex < 0 || monitorIndex >= Screen.AllScreens.Length)
                 monitorIndex = RenderingPipelineManager.GetSelectedMonitorIndex();
 
-            if (Config.FullScreen)
+            if (RenderingPipelineManager.UseFullScreenWindow)
                 ApplyWindowBounds(true);
             else
                 CenterOnSelectedMonitor();
@@ -283,8 +287,8 @@ namespace Client.Rendering.SharpDXD3D11
                 ? RenderingPipelineManager.GetSelectedScreen()
                 : DisplayModeManager.GetScreenByDeviceName(screen.DeviceName, RenderingPipelineManager.GetSelectedScreen());
 
-            Size size = DXControl.ActiveScene?.Size ?? Config.GameSize;
-            if (!Config.FullScreen && CEnvir.Target.ClientSize != size)
+            Size size = RenderingPipelineManager.GetSceneWindowSize();
+            if (!RenderingPipelineManager.UseFullScreenWindow && CEnvir.Target.ClientSize != size)
                 CEnvir.Target.ClientSize = size;
 
             Rectangle bounds = RenderingPipelineManager.GetMonitorDisplayBounds(screen);
@@ -378,7 +382,7 @@ namespace Client.Rendering.SharpDXD3D11
             if (CEnvir.Target == null)
                 return;
 
-            CEnvir.Target.FormBorderStyle = (Config.FullScreen || Config.Borderless) ? FormBorderStyle.None : FormBorderStyle.FixedDialog;
+            CEnvir.Target.FormBorderStyle = (RenderingPipelineManager.UseFullScreenWindow || RenderingPipelineManager.UseBorderlessWindow) ? FormBorderStyle.None : FormBorderStyle.FixedDialog;
             CEnvir.Target.MaximizeBox = false;
         }
 
@@ -387,12 +391,14 @@ namespace Client.Rendering.SharpDXD3D11
             if (CEnvir.Target == null)
                 return true;
 
-            if (Config.FullScreen)
+            Size size = RenderingPipelineManager.GetSceneWindowSize();
+
+            if (RenderingPipelineManager.UseFullScreenWindow)
             {
                 Screen selectedScreen = RenderingPipelineManager.GetSelectedScreen();
                 string deviceName = selectedScreen.DeviceName;
 
-                if (!_displayMode.Apply(selectedScreen, Config.GameSize))
+                if (!_displayMode.Apply(selectedScreen, size))
                     return false;
 
                 selectedScreen = DisplayModeManager.GetScreenByDeviceName(deviceName, RenderingPipelineManager.GetSelectedScreen());
@@ -403,7 +409,6 @@ namespace Client.Rendering.SharpDXD3D11
 
             _displayMode.Restore();
 
-            Size size = DXControl.ActiveScene?.Size ?? Config.GameSize;
             if (CEnvir.Target.ClientSize != size)
                 CEnvir.Target.ClientSize = size;
 
@@ -1194,12 +1199,14 @@ namespace Client.Rendering.SharpDXD3D11
                 SwapChain.IsFullScreen = false;
 
             ApplyWindowStyle();
-            ApplyWindowBounds(Config.FullScreen);
+            bool useFullScreen = RenderingPipelineManager.UseFullScreenWindow;
+            ApplyWindowBounds(useFullScreen);
 
-            if (!Config.FullScreen && CEnvir.Target != null && CEnvir.Target.ClientSize != size)
-                CEnvir.Target.ClientSize = size;
+            Size windowSize = RenderingPipelineManager.GetSceneWindowSize();
+            if (!useFullScreen && CEnvir.Target != null && CEnvir.Target.ClientSize != windowSize)
+                CEnvir.Target.ClientSize = windowSize;
 
-            Size targetSize = CEnvir.Target?.ClientSize ?? size;
+            Size targetSize = CEnvir.Target?.ClientSize ?? windowSize;
 
             SwapChain.ResizeBuffers(1, targetSize.Width, targetSize.Height, Format.B8G8R8A8_UNorm, SwapChainFlags.AllowModeSwitch);
             CreateTargets();

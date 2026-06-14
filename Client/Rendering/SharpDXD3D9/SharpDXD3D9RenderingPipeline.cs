@@ -163,11 +163,7 @@ namespace Client.Rendering.SharpDXD3D9
 
         public void OnSceneChanged(bool isGameScene)
         {
-            if (!isGameScene)
-                return;
-
-            if (!Config.FullScreen)
-                SharpDXD3D9Manager.RequestReset();
+            SharpDXD3D9Manager.RequestReset();
         }
 
         public IReadOnlyList<Size> GetSupportedResolutions()

@@ -25,11 +25,11 @@ namespace Client
 
             AutoScaleDimensions = new SizeF(96F, 96F);
 
-            ClientSize = new Size(1024, 768);
+            ClientSize = Config.IntroSceneSize;
 
             Icon = Properties.Resources.Zircon;
 
-            FormBorderStyle = (Config.FullScreen || Config.Borderless) ? FormBorderStyle.None : FormBorderStyle.FixedSingle;
+            FormBorderStyle = FormBorderStyle.FixedSingle;
 
             MaximizeBox = false;
         }

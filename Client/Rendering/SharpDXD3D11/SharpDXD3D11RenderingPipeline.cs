@@ -135,12 +135,9 @@ namespace Client.Rendering.SharpDXD3D11
 
         public void OnSceneChanged(bool isGameScene)
         {
-            if (!isGameScene)
-                return;
+            SharpDXD3D11Manager.RequestReset();
 
-            if (!Config.FullScreen)
-                SharpDXD3D11Manager.RequestReset();
-            else
+            if (!RenderingPipelineManager.UseFullScreenWindow)
                 SharpDXD3D11Manager.CenterOnSelectedMonitor();
         }
 

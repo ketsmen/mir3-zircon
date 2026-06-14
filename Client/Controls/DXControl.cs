@@ -71,6 +71,12 @@ namespace Client.Controls
                 _ActiveScene = value;
 
                 _ActiveScene?.CheckIsVisible();
+
+                if (_ActiveScene != null && RenderingPipelineManager.IsInitialized)
+                {
+                    RenderingPipelineManager.SetResolution(_ActiveScene.Size);
+                    RenderingPipelineManager.OnSceneChanged(_ActiveScene.UsesGameWindowSettings);
+                }
             }
         }
         private static DXScene _ActiveScene;

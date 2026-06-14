@@ -22,6 +22,8 @@ namespace Client.Scenes
     public sealed class GameScene : DXScene
     {
         #region Properties
+        public override bool UsesGameWindowSettings => true;
+
         public static GameScene Game;
 
         public DXItemCell SelectedCell

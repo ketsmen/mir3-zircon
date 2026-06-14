@@ -313,11 +313,15 @@ namespace Client.Rendering.SilkVulkan
         public void SetResolution(Size size)
         {
             bool needsResize = _context.RenderTarget.ClientSize != size;
-            if (!needsResize && size == Config.GameSize)
+            bool useFullScreen = RenderingPipelineManager.UseFullScreenWindow;
+
+            if (RenderingPipelineManager.UseGameWindowSettings)
+                Config.GameSize = size;
+
+            if (!useFullScreen && !needsResize && (!RenderingPipelineManager.UseGameWindowSettings || size == Config.GameSize))
                 return;
 
-            Config.GameSize = size;
-            if (needsResize && !Config.FullScreen)
+            if (needsResize && !useFullScreen)
                 _context.RenderTarget.ClientSize = size;
 
             ApplyWindowStyle();
@@ -344,7 +348,7 @@ namespace Client.Rendering.SilkVulkan
 
             Screen selectedScreen = GetSelectedScreen();
 
-            if (!force && !Config.FullScreen && !Config.Borderless && IsWindowOnScreen(selectedScreen))
+            if (!force && !RenderingPipelineManager.UseFullScreenWindow && !RenderingPipelineManager.UseBorderlessWindow && IsWindowOnScreen(selectedScreen))
                 return;
 
             Rectangle bounds = RenderingPipelineManager.GetMonitorDisplayBounds(selectedScreen);
@@ -363,12 +367,8 @@ namespace Client.Rendering.SilkVulkan
 
         public void OnSceneChanged(bool isGameScene)
         {
-            if (!isGameScene)
-                return;
-
-            if (Config.FullScreen || Config.Borderless)
-                ApplyWindowBounds();
-
+            ApplyWindowStyle();
+            ApplyWindowBounds(!RenderingPipelineManager.UseFullScreenWindow);
             ResizeBackBufferIfNeeded(true);
         }
 
@@ -1603,7 +1603,7 @@ namespace Client.Rendering.SilkVulkan
             bool forceFifo = _forceNextSwapchainFifoPresentMode;
             _forceNextSwapchainFifoPresentMode = false;
 
-            if (forceFifo || (Config.VSync && Config.FullScreen))
+            if (forceFifo || (Config.VSync && RenderingPipelineManager.UseFullScreenWindow))
                 return PresentModeKHR.PresentModeFifoKhr;
 
             // Windowed mailbox is still tear-free, but avoids FIFO blocking during renderer handoff.
@@ -2850,7 +2850,7 @@ namespace Client.Rendering.SilkVulkan
             if (_context?.RenderTarget == null)
                 return;
 
-            _context.RenderTarget.FormBorderStyle = (Config.FullScreen || Config.Borderless) ? FormBorderStyle.None : FormBorderStyle.FixedDialog;
+            _context.RenderTarget.FormBorderStyle = (RenderingPipelineManager.UseFullScreenWindow || RenderingPipelineManager.UseBorderlessWindow) ? FormBorderStyle.None : FormBorderStyle.FixedDialog;
             _context.RenderTarget.MaximizeBox = false;
         }
 
@@ -2859,12 +2859,14 @@ namespace Client.Rendering.SilkVulkan
             if (_context?.RenderTarget == null)
                 return true;
 
-            if (Config.FullScreen)
+            Size size = RenderingPipelineManager.GetSceneWindowSize();
+
+            if (RenderingPipelineManager.UseFullScreenWindow)
             {
                 Screen screen = GetSelectedScreen();
                 string deviceName = screen.DeviceName;
 
-                if (!_displayMode.Apply(screen, Config.GameSize))
+                if (!_displayMode.Apply(screen, size))
                     return false;
 
                 screen = DisplayModeManager.GetScreenByDeviceName(deviceName, GetSelectedScreen());
@@ -2875,8 +2877,8 @@ namespace Client.Rendering.SilkVulkan
 
             _displayMode.Restore();
 
-            if (_context.RenderTarget.ClientSize != Config.GameSize)
-                _context.RenderTarget.ClientSize = Config.GameSize;
+            if (_context.RenderTarget.ClientSize != size)
+                _context.RenderTarget.ClientSize = size;
 
             if (forceCenter || !IsWindowOnScreen(GetSelectedScreen()))
                 CenterOnSelectedMonitor(forceCenter);

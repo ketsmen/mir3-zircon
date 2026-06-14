@@ -22,6 +22,8 @@ namespace Client.Controls
             set => base.Size = value;
         }
 
+        public virtual bool UsesGameWindowSettings => false;
+
         public override void OnLocationChanged(Point oValue, Point nValue)
         {
             base.OnLocationChanged(oValue, nValue);
@@ -49,11 +51,6 @@ namespace Client.Controls
             DrawTexture = false;
 
             Size = size;
-
-            RenderingPipelineManager.SetResolution(size);
-
-            if (!Config.FullScreen)
-                RenderingPipelineManager.CenterOnSelectedMonitor();
         }
 
         #region Methods

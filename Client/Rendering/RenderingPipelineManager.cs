@@ -44,9 +44,23 @@ namespace Client.Rendering
 
         public static string DefaultPipelineIdentifier => DefaultPipelineId;
         public static string ActivePipelineId => _activePipeline?.Id;
+        public static bool IsInitialized => _activePipeline != null;
         public static IReadOnlyCollection<string> AvailablePipelineIds => PipelineFactories.Keys;
         public static bool SupportsMultiplePipelines => PipelineFactories.Count > 1;
         public static bool IsDefaultPipelineOnly => PipelineFactories.Count == 1 && PipelineFactories.ContainsKey(DefaultPipelineId);
+        public static bool UseGameWindowSettings => DXControl.ActiveScene?.UsesGameWindowSettings == true;
+        public static bool UseFullScreenWindow => UseGameWindowSettings && Config.FullScreen;
+        public static bool UseBorderlessWindow => UseGameWindowSettings && Config.Borderless;
+
+        public static Size GetSceneWindowSize()
+        {
+            Size size = DXControl.ActiveScene?.Size ?? Config.IntroSceneSize;
+
+            if (size.Width <= 0 || size.Height <= 0)
+                return Config.IntroSceneSize;
+
+            return size;
+        }
 
         public static IReadOnlyList<DisplayMonitorInfo> GetDisplayMonitors()
         {
@@ -326,6 +340,9 @@ namespace Client.Rendering
         {
             if (_activePipeline == null)
                 throw new InvalidOperationException("No rendering pipeline has been initialized.");
+
+            if (!UseGameWindowSettings)
+                return;
 
             _activePipeline.ToggleFullScreen();
         }
