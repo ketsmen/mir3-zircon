@@ -1,4 +1,3 @@
-﻿using DevExpress.XtraEditors;
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -9,56 +8,19 @@ using System.Windows.Forms;
 
 namespace ImageManager
 {
-    public partial class IMain : XtraForm
+    public partial class IMain : Form
     {
-
         public int TotleCount;
         public int ProgressCount;
 
         public IMain()
         {
             InitializeComponent();
-            /*
-            string path = @"C:\Legend of Mir 3 Old\Clean Client\SoundList.wwl";
-
-            byte[] text = File.ReadAllBytes(path);
-
-            string test = Encoding.ASCII.GetString(text, 234, 16);
-
-            int start = 234;
-
-            Dictionary<int, string> files = new Dictionary<int, string>();
-            while (start <= text.Length - 16)
-            {
-                int count = BitConverter.ToUInt16(text, start);
-
-                if (count > 254)
-                {
-                    
-
-                }
-
-                string file = Encoding.ASCII.GetString(text, start + 2, 14);
-                file = file.Substring(0, file.IndexOf('\0'));
-
-                files[count] = file;
-
-                start += 16;
-            }
-
-            List<string> lines = new List<string>();
-            foreach (KeyValuePair<int, string> pair in files)
-            {
-                lines.Add($"{pair.Key} = {pair.Value}");
-                
-            }
-            File.WriteAllLines(@"C:\Legend of Mir 3 Old\Clean Client\SoundList2.txt", lines);
-            */
         }
 
         private async void ConvertLibrariesButton_Click(object sender, EventArgs e)
         {
-            DirectoryInfo directory = new DirectoryInfo((string)SelectedFolderButtonEdit.EditValue);
+            DirectoryInfo directory = new DirectoryInfo(SelectedFolderButtonEdit.Text);
 
             if (!directory.Exists) return;
 
@@ -94,24 +56,26 @@ namespace ImageManager
                 await Task.Delay(100);
             }
 
-            ProgressLabel.Text = "Compeleted.";
+            UpdateProgress();
+            ProgressLabel.Text = "已完成。";
         }
-
 
         public void UpdateProgress()
         {
             ProgressLabel.Text = $"{ProgressCount} of {TotleCount}.";
+            if (TotleCount > 0)
+                progressBarControl1.Value = Math.Max(0, Math.Min(100, ProgressCount * 100 / TotleCount));
         }
 
-        private void SelectedFolderButtonEdit_ButtonClick(object sender, DevExpress.XtraEditors.Controls.ButtonPressedEventArgs e)
+        private void SelectedFolderButtonEdit_ButtonClick(object sender, EventArgs e)
         {
             if (FolderDialog.ShowDialog() == DialogResult.OK)
-                SelectedFolderButtonEdit.EditValue = FolderDialog.SelectedPath;
+                SelectedFolderButtonEdit.Text = FolderDialog.SelectedPath;
         }
 
         private async void CreaetLibrariesButton_Click(object sender, EventArgs e)
         {
-            DirectoryInfo directory = new DirectoryInfo((string)SelectedFolderButtonEdit.EditValue);
+            DirectoryInfo directory = new DirectoryInfo(SelectedFolderButtonEdit.Text);
 
             if (!directory.Exists) return;
 
@@ -149,7 +113,6 @@ namespace ImageManager
                         short x = short.Parse(placement[0]);
                         short y = short.Parse(placement[1]);
 
-
                         using (Bitmap image = new Bitmap(fileName))
                         {
                             lib.Images[index] = new Mir3Image
@@ -166,7 +129,6 @@ namespace ImageManager
                     lib.Save(targets[i].FullName + ".Zl");
 
                     Interlocked.Increment(ref ProgressCount);
-
                 });
             });
 
@@ -177,24 +139,12 @@ namespace ImageManager
                 await Task.Delay(100);
             }
 
-            ProgressLabel.Text = "Compeleted.";
+            UpdateProgress();
+            ProgressLabel.Text = "已完成。";
         }
 
-        //WTLLibrary lib = new WTLLibrary(@"C:\Zircon Server\Data Works\Test\WM-Hum.wtl");
         private void simpleButton1_Click(object sender, EventArgs e)
         {
-            /*  DirectoryInfo dInfo = new DirectoryInfo(@"C:\Zircon Server\Data Works\Inventory");
-              FileInfo[] files = dInfo.GetFiles("*.BMP");
-
-              foreach (FileInfo file in files)
-              {
-                  Bitmap image = new Bitmap(file.FullName);
-
-                  image.Save(Path.ChangeExtension(file.FullName, @".png"), ImageFormat.Png);
-
-                  image.Dispose();
-              }*/
-
             DirectoryInfo dInfo = new DirectoryInfo(@"C:\Zircon Server\Data Works\Game\MiniMap");
             FileInfo[] files = dInfo.GetFiles("*.BMP");
 
@@ -219,7 +169,6 @@ namespace ImageManager
 
         private void IMain_Load(object sender, EventArgs e)
         {
-
         }
     }
 }

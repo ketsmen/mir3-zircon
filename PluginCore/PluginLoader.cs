@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.IO;
 using System.Reflection;
 
@@ -52,7 +51,7 @@ namespace PluginCore
             return null;
         }
 
-        public static void LoadPlugins(IComponent pluginPage, MirDB.Session session)
+        public static void LoadPlugins(IPluginMenuHost menuHost, MirDB.Session session)
         {
             if (Instance == null) return;
 
@@ -64,7 +63,7 @@ namespace PluginCore
                 if (pluginInstance != null)
                 {
                     pluginInstance.Session = session;
-                    pluginInstance.Type.SetupMenu(pluginPage);
+                    pluginInstance.Type.SetupMenu(menuHost);
                 }
             }
         }

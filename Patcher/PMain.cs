@@ -1,4 +1,3 @@
-﻿using DevExpress.XtraWaitForm;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -7,33 +6,22 @@ using System.Windows.Forms;
 
 namespace Patcher
 {
-    public partial class PMain : WaitForm
+    public partial class PMain : Form
     {
         public PMain()
         {
             InitializeComponent();
-            this.progressPanel1.AutoHeight = true;
         }
 
-        #region Overrides
-
-        public override void SetCaption(string caption)
+        public void SetCaption(string caption)
         {
-            base.SetCaption(caption);
-            this.progressPanel1.Caption = caption;
-        }
-        public override void SetDescription(string description)
-        {
-            base.SetDescription(description);
-            this.progressPanel1.Description = description;
-        }
-        public override void ProcessCommand(Enum cmd, object arg)
-        {
-            base.ProcessCommand(cmd, arg);
+            CaptionLabel.Text = caption;
         }
 
-        #endregion
-
+        public void SetDescription(string description)
+        {
+            DescriptionLabel.Text = description;
+        }
 
         private async void PMain_Load(object sender, EventArgs e)
         {
@@ -42,23 +30,23 @@ namespace Patcher
                 string patchFrom = Program.Arguments[0];
                 string patchTo = Program.Arguments[1];
 
-                SetDescription("Waiting 5 seconds Launcher to close...");
+                SetDescription("等待 5 秒以便启动器关闭...");
 
                 await Task.Delay(TimeSpan.FromSeconds(5));
 
                 if (File.Exists(patchTo))
                     File.Delete(patchTo);
 
-                SetDescription("Updating Launcher...");
+                SetDescription("正在更新启动器...");
 
                 await Task.Delay(TimeSpan.FromSeconds(3));
 
                 File.Move(patchFrom, patchTo);
-                Process.Start(patchTo);
+                Process.Start(new ProcessStartInfo(patchTo) { UseShellExecute = true });
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Update Failed.");
+                MessageBox.Show(ex.Message, "更新失败");
             }
 
             Close();

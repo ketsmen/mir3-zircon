@@ -1,8 +1,6 @@
-﻿using DevExpress.LookAndFeel;
-using DevExpress.Skins;
-using DevExpress.UserSkins;
 using Library;
 using Server.Envir;
+using Server.WinForms;
 using System;
 using System.Reflection;
 using System.Runtime;
@@ -12,15 +10,11 @@ namespace Server
 {
     static class Program
     {
-        /// <summary>
-        /// The main entry point for the application.
-        /// </summary>
         [STAThread]
         static void Main()
         {
             var assembly = Assembly.GetAssembly(typeof(Config));
             ConfigReader.Load(assembly);
-
             Config.LoadVersion();
 
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
@@ -29,14 +23,17 @@ namespace Server
             Application.SetHighDpiMode(HighDpiMode.SystemAware);
             Application.SetCompatibleTextRenderingDefault(false);
 
-            BonusSkins.Register();
-            SkinManager.EnableFormSkins();
-            UserLookAndFeel.Default.SetSkinStyle(SkinStyle.Office2010Blue);
-
-            Application.Run(new SMain());
+            try
+            {
+                MirDbSessionFactory.ConfigureEncryption();
+                Application.Run(new MainForm());
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.ToString(), "服务端启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
 
             ConfigReader.Save(typeof(Config).Assembly);
         }
-
     }
 }

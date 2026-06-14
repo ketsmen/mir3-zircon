@@ -44,17 +44,21 @@
     <ProjectReference Include="..\ServerLibrary\ServerLibrary.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Dapper" Version="2.1.35" />
-    <PackageReference Include="DevExpress.Win" Version="25.2.5" />
-    <PackageReference Include="DevExpress.Win.BonusSkins" Version="25.2.5" />
-    <PackageReference Include="DevExpress.Win.Design" Version="25.2.5" />
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="9.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="System.Data.SqlClient" Version="4.9.0" />
     <PackageReference Include="System.Runtime.Serialization.Schema" Version="8.0.0" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Remove="Views\LocationView.resx" />
+    <EmbeddedResource Remove="SMain.resx" />
+    <EmbeddedResource Remove="Views\**\*.resx" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="SMain.cs" />
+    <Compile Remove="SMain.Designer.cs" />
+    <Compile Remove="Helpers\JsonExporter.cs" />
+    <Compile Remove="Helpers\JsonImporter.cs" />
+    <Compile Remove="Views\**\*.cs" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

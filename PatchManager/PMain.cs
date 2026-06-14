@@ -7,11 +7,12 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 using WinSCP;
 
 namespace PatchManager
 {
-    public partial class PMain : DevExpress.XtraEditors.XtraForm
+    public partial class PMain : System.Windows.Forms.Form
     {
         public const string PListFileName = "PList.Bin";
 
@@ -31,42 +32,42 @@ namespace PatchManager
         #region Event Handlers
         private void PMain_Load(object sender, EventArgs e)
         {
-            CleanClientButtonEdit.EditValue = Config.CleanClient;
-            HostTextEdit.EditValue = Config.Host;
-            UseLoginCheckEdit.EditValue = Config.UseLogin;
-            UsernameTextEdit.EditValue = Config.Username;
-            PasswordTextEdit.EditValue = Config.Password;
-            ProtocolDropDown.EditValue = Config.Protocol;
+            CleanClientButtonEdit.Text = Config.CleanClient;
+            HostTextEdit.Text = Config.Host;
+            UseLoginCheckEdit.Checked = Config.UseLogin;
+            UsernameTextEdit.Text = Config.Username;
+            PasswordTextEdit.Text = Config.Password;
+            ProtocolDropDown.Text = Config.Protocol;
         }
 
         private void CleanClientButtonEdit_EditValueChanged(object sender, EventArgs e)
         {
-            Config.CleanClient = (string)CleanClientButtonEdit.EditValue;
+            Config.CleanClient = CleanClientButtonEdit.Text;
         }
 
         private void HostTextEdit_EditValueChanged(object sender, EventArgs e)
         {
-            Config.Host = (string)HostTextEdit.EditValue;
+            Config.Host = HostTextEdit.Text;
         }
 
         private void UseLoginCheckEdit_CheckedChanged(object sender, EventArgs e)
         {
-            Config.UseLogin = (bool)UseLoginCheckEdit.EditValue;
+            Config.UseLogin = UseLoginCheckEdit.Checked;
         }
 
         private void UsernameTextEdit_EditValueChanged(object sender, EventArgs e)
         {
-            Config.Username = (string)UsernameTextEdit.EditValue;
+            Config.Username = UsernameTextEdit.Text;
         }
 
         private void PasswordTextEdit_EditValueChanged(object sender, EventArgs e)
         {
-            Config.Password = (string)PasswordTextEdit.EditValue;
+            Config.Password = PasswordTextEdit.Text;
         }
 
         private void ProtocolDropDown_SelectedIndexChanged(object sender, EventArgs e)
         {
-            Config.Protocol = (string)ProtocolDropDown.EditValue;
+            Config.Protocol = ProtocolDropDown.Text;
         }
 
         private void UploadPatchButton_Click(object sender, EventArgs e)
@@ -153,7 +154,7 @@ namespace PatchManager
             UploadSizeLabel.Text = text.ToString();
 
             if (TotalUpload > 0)
-                TotalProgressBar.EditValue = Math.Max(0, Math.Min(100, TotalProgressPercent));
+                TotalProgressBar.Value = (int)Math.Max(0, Math.Min(100, TotalProgressPercent));
 
             long speed = Speed;
 
@@ -421,5 +422,13 @@ namespace PatchManager
             }
         }
         #endregion
+
+        private void CleanClientBrowseButton_Click(object sender, EventArgs e)
+        {
+            using FolderBrowserDialog dialog = new FolderBrowserDialog();
+
+            if (dialog.ShowDialog(this) == System.Windows.Forms.DialogResult.OK)
+                CleanClientButtonEdit.Text = dialog.SelectedPath;
+        }
     }
 }

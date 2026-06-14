@@ -15,7 +15,7 @@ using System.Windows.Forms;
 
 namespace Launcher
 {
-    public partial class LMain : DevExpress.XtraEditors.XtraForm
+    public partial class LMain : Form
     {
         public const string PListFileName = "PList.Bin";
         public const string ClientPath = ".\\";
@@ -38,10 +38,10 @@ namespace Launcher
             CheckPatch(false);
         }
 
-        private void PatchNotesHyperlinkControl_HyperlinkClick(object sender, DevExpress.Utils.HyperlinkClickEventArgs e)
+        private void PatchNotesHyperlinkControl_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
         {
             PatchNotesHyperlinkControl.LinkVisited = true;
-            Process.Start(e.Link);
+            Process.Start(new ProcessStartInfo("https://www.zirconserver.com") { UseShellExecute = true });
         }
 
         private void RepairButton_Click(object sender, EventArgs e)
@@ -57,7 +57,7 @@ namespace Launcher
             TotalDownload = 0;
             TotalProgress = 0;
             CurrentProgress = 0;
-            TotalProgressBar.EditValue = 0;
+            TotalProgressBar.Value = 0;
             LastSpeedCheck = Time.Now;
             NeedUpdate = false;
 
@@ -146,7 +146,7 @@ namespace Launcher
             DownloadSizeLabel.Text = text.ToString();
 
             if (TotalDownload > 0)
-                TotalProgressBar.EditValue = Math.Max(0, Math.Min(100, (int)(progress * 100 / TotalDownload)));
+                TotalProgressBar.Value = Math.Max(0, Math.Min(100, (int)(progress * 100 / TotalDownload)));
 
             long speed = (progress - LastDownloadProcess) * TimeSpan.TicksPerSecond / (Time.Now.Ticks - LastSpeedCheck.Ticks); //May cause errors?
             LastDownloadProcess = progress;
