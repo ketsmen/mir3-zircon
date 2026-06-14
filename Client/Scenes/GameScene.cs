@@ -4033,6 +4033,190 @@ namespace Client.Scenes
 
             return true;
         }
+
+        public bool CanHeroWearItem(ClientUserItem item, EquipmentSlot slot)
+        {
+            ClientUserHero hero = CurrentHero;
+
+            if (hero == null || item?.Info == null) return false;
+            if (!Functions.CorrectSlot(item.Info.ItemType, slot)) return false;
+            if (!CanHeroUseItem(hero, item)) return false;
+
+            switch (slot)
+            {
+                case EquipmentSlot.HorseArmour:
+                case EquipmentSlot.Hook:
+                case EquipmentSlot.Float:
+                case EquipmentSlot.Bait:
+                case EquipmentSlot.Finder:
+                case EquipmentSlot.Reel:
+                    ReceiveChat($"英雄不能装备{item.Info.ItemName}。", MessageType.System);
+                    return false;
+            }
+
+            switch (item.Info.ItemType)
+            {
+                case ItemType.HorseArmour:
+                case ItemType.Hook:
+                case ItemType.Float:
+                case ItemType.Bait:
+                case ItemType.Finder:
+                case ItemType.Reel:
+                    ReceiveChat($"英雄不能装备{item.Info.ItemName}。", MessageType.System);
+                    return false;
+                case ItemType.Weapon:
+                case ItemType.Torch:
+                case ItemType.Shield:
+                    if (HeroHandWeight(hero) - (hero.EquipmentArray[(int)slot]?.Weight ?? 0) + item.Weight > hero.Stats[Stat.HandWeight])
+                    {
+                        ReceiveChat($"英雄腕力不足，无法装备{item.Info.ItemName}。", MessageType.System);
+                        return false;
+                    }
+                    break;
+                default:
+                    if (HeroWearWeight(hero) - (hero.EquipmentArray[(int)slot]?.Weight ?? 0) + item.Weight > hero.Stats[Stat.WearWeight])
+                    {
+                        ReceiveChat($"英雄穿戴负重不足，无法装备{item.Info.ItemName}。", MessageType.System);
+                        return false;
+                    }
+                    break;
+            }
+
+            return true;
+        }
+
+        private bool CanHeroUseItem(ClientUserHero hero, ClientUserItem item)
+        {
+            if ((item.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage) return false;
+            if (item.Info.Durability > 0 && item.CurrentDurability <= 0) return false;
+
+            switch (hero.Gender)
+            {
+                case MirGender.Male:
+                    if ((item.Info.RequiredGender & RequiredGender.Male) != RequiredGender.Male)
+                    {
+                        ReceiveChat($"英雄性别不符合，无法装备{item.Info.ItemName}。", MessageType.System);
+                        return false;
+                    }
+                    break;
+                case MirGender.Female:
+                    if ((item.Info.RequiredGender & RequiredGender.Female) != RequiredGender.Female)
+                    {
+                        ReceiveChat($"英雄性别不符合，无法装备{item.Info.ItemName}。", MessageType.System);
+                        return false;
+                    }
+                    break;
+            }
+
+            switch (hero.Class)
+            {
+                case MirClass.Warrior:
+                    if ((item.Info.RequiredClass & RequiredClass.Warrior) != RequiredClass.Warrior)
+                    {
+                        ReceiveChat($"英雄职业不符合，无法装备{item.Info.ItemName}。", MessageType.System);
+                        return false;
+                    }
+                    break;
+                case MirClass.Wizard:
+                    if ((item.Info.RequiredClass & RequiredClass.Wizard) != RequiredClass.Wizard)
+                    {
+                        ReceiveChat($"英雄职业不符合，无法装备{item.Info.ItemName}。", MessageType.System);
+                        return false;
+                    }
+                    break;
+                case MirClass.Taoist:
+                    if ((item.Info.RequiredClass & RequiredClass.Taoist) != RequiredClass.Taoist)
+                    {
+                        ReceiveChat($"英雄职业不符合，无法装备{item.Info.ItemName}。", MessageType.System);
+                        return false;
+                    }
+                    break;
+                case MirClass.Assassin:
+                    if ((item.Info.RequiredClass & RequiredClass.Assassin) != RequiredClass.Assassin)
+                    {
+                        ReceiveChat($"英雄职业不符合，无法装备{item.Info.ItemName}。", MessageType.System);
+                        return false;
+                    }
+                    break;
+            }
+
+            switch (item.Info.RequiredType)
+            {
+                case RequiredType.Level:
+                    if (hero.Level < item.Info.RequiredAmount) return HeroRequirementFailed(item);
+                    break;
+                case RequiredType.MaxLevel:
+                    if (hero.Level > item.Info.RequiredAmount) return HeroRequirementFailed(item);
+                    break;
+                case RequiredType.AC:
+                    if (hero.Stats[Stat.MaxAC] < item.Info.RequiredAmount) return HeroRequirementFailed(item);
+                    break;
+                case RequiredType.MR:
+                    if (hero.Stats[Stat.MaxMR] < item.Info.RequiredAmount) return HeroRequirementFailed(item);
+                    break;
+                case RequiredType.DC:
+                    if (hero.Stats[Stat.MaxDC] < item.Info.RequiredAmount) return HeroRequirementFailed(item);
+                    break;
+                case RequiredType.MC:
+                    if (hero.Stats[Stat.MaxMC] < item.Info.RequiredAmount) return HeroRequirementFailed(item);
+                    break;
+                case RequiredType.SC:
+                    if (hero.Stats[Stat.MaxSC] < item.Info.RequiredAmount) return HeroRequirementFailed(item);
+                    break;
+                case RequiredType.Health:
+                    if (hero.Stats[Stat.Health] < item.Info.RequiredAmount) return HeroRequirementFailed(item);
+                    break;
+                case RequiredType.Mana:
+                    if (hero.Stats[Stat.Mana] < item.Info.RequiredAmount) return HeroRequirementFailed(item);
+                    break;
+                case RequiredType.Accuracy:
+                    if (hero.Stats[Stat.Accuracy] < item.Info.RequiredAmount) return HeroRequirementFailed(item);
+                    break;
+                case RequiredType.Agility:
+                    if (hero.Stats[Stat.Agility] < item.Info.RequiredAmount) return HeroRequirementFailed(item);
+                    break;
+                case RequiredType.RebirthLevel:
+                case RequiredType.MaxRebirthLevel:
+                case RequiredType.CompanionLevel:
+                case RequiredType.MaxCompanionLevel:
+                    return HeroRequirementFailed(item);
+            }
+
+            switch (item.Info.ItemEffect)
+            {
+                case ItemEffect.PickAxe:
+                case ItemEffect.FishingRod:
+                case ItemEffect.MagicRing:
+                    ReceiveChat($"英雄不能使用{item.Info.ItemName}。", MessageType.System);
+                    return false;
+            }
+
+            return true;
+        }
+
+        private bool HeroRequirementFailed(ClientUserItem item)
+        {
+            ReceiveChat($"英雄条件不足，无法装备{item.Info.ItemName}。", MessageType.System);
+            return false;
+        }
+
+        private static int HeroWearWeight(ClientUserHero hero)
+        {
+            if (hero?.EquipmentArray == null) return 0;
+
+            return hero.EquipmentArray
+                .Where(x => x != null && x.Info.ItemType != ItemType.Weapon && x.Info.ItemType != ItemType.Torch && x.Info.ItemType != ItemType.Shield)
+                .Sum(x => x.Weight);
+        }
+
+        private static int HeroHandWeight(ClientUserHero hero)
+        {
+            if (hero?.EquipmentArray == null) return 0;
+
+            return hero.EquipmentArray
+                .Where(x => x != null && (x.Info.ItemType == ItemType.Weapon || x.Info.ItemType == ItemType.Torch || x.Info.ItemType == ItemType.Shield))
+                .Sum(x => x.Weight);
+        }
         public bool CanCompanionUseItem(ItemInfo info)
         {
             switch (info.RequiredType)

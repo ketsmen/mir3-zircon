@@ -908,6 +908,13 @@ namespace Client.Controls
                     if (SelectedCell.Item.Info.ItemEffect != ItemEffect.ItemPart) return;
                     break;
                 case GridType.Equipment:
+                    if (SelectedCell.GridType == GridType.HeroInventory || SelectedCell.GridType == GridType.HeroEquipment)
+                    {
+                        GameScene.Game.ReceiveChat("英雄物品不能直接装备到人物身上。", MessageType.System);
+                        SelectedCell = null;
+                        return;
+                    }
+
                     if (!Functions.CorrectSlot(SelectedCell.Item.Info.ItemType, (EquipmentSlot)Slot) || SelectedCell.GridType == GridType.Belt) return;
 
                     ToEquipment(SelectedCell);
@@ -918,6 +925,13 @@ namespace Client.Controls
                     ToCompanionEquipment(SelectedCell);
                     return;
                 case GridType.HeroEquipment:
+                    if (SelectedCell.GridType != GridType.HeroInventory)
+                    {
+                        GameScene.Game.ReceiveChat("只有英雄包裹中的物品可以装备到英雄身上。", MessageType.System);
+                        SelectedCell = null;
+                        return;
+                    }
+
                     if (!Functions.CorrectSlot(SelectedCell.Item.Info.ItemType, (EquipmentSlot)Slot) || SelectedCell.GridType == GridType.Belt) return;
 
                     ToHeroEquipment(SelectedCell);
@@ -937,6 +951,12 @@ namespace Client.Controls
             if (GameScene.Game.MapControl.FishingState != FishingState.None) return;
 
             if (fromCell == SelectedCell) SelectedCell = null;
+
+            if (fromCell.GridType == GridType.HeroInventory || fromCell.GridType == GridType.HeroEquipment)
+            {
+                GameScene.Game.ReceiveChat("英雄物品不能直接装备到人物身上。", MessageType.System);
+                return;
+            }
 
             if (!GameScene.Game.CanWearItem(fromCell.Item, (EquipmentSlot)Slot)) return;
 
@@ -998,7 +1018,14 @@ namespace Client.Controls
 
             if (fromCell == SelectedCell) SelectedCell = null;
 
+            if (fromCell.GridType != GridType.HeroInventory)
+            {
+                GameScene.Game.ReceiveChat("只有英雄包裹中的物品可以装备到英雄身上。", MessageType.System);
+                return;
+            }
+
             if (!Functions.CorrectSlot(fromCell.Item.Info.ItemType, (EquipmentSlot)Slot)) return;
+            if (!GameScene.Game.CanHeroWearItem(fromCell.Item, (EquipmentSlot)Slot)) return;
 
             C.ItemMove packet = new C.ItemMove
             {
@@ -1020,6 +1047,49 @@ namespace Client.Controls
             Locked = true;
             fromCell.Locked = true;
             CEnvir.Enqueue(packet);
+        }
+
+        private bool MoveHeroItemToEquipment(EquipmentSlot slot)
+        {
+            if (Item == null || Locked || ReadOnly) return false;
+            if (GridType != GridType.HeroInventory) return false;
+            if (GameScene.Game?.CurrentHero?.EquipmentArray == null || GameScene.Game.HeroBox?.EquipmentGrid == null) return false;
+            if (!Functions.CorrectSlot(Item.Info.ItemType, slot)) return false;
+            if (!GameScene.Game.CanHeroWearItem(Item, slot)) return false;
+
+            int toSlot = (int)slot;
+            if (toSlot < 0 || toSlot >= Globals.EquipmentSize) return false;
+
+            DXItemCell toCell = GameScene.Game.HeroBox.EquipmentGrid[toSlot];
+            if (toCell == null || toCell.Locked) return false;
+
+            ClientUserItem toItem = GameScene.Game.CurrentHero.EquipmentArray[toSlot];
+            if (toItem != null && (toItem.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage) return false;
+
+            C.ItemMove packet = new C.ItemMove
+            {
+                FromGrid = GridType,
+                ToGrid = GridType.HeroEquipment,
+                FromSlot = Slot,
+                ToSlot = toSlot
+            };
+
+            if (toItem != null && toItem.Info == Item.Info && toItem.Count < toItem.Info.StackSize &&
+                (toItem.Flags & UserItemFlags.Bound) == (Item.Flags & UserItemFlags.Bound) &&
+                (toItem.Flags & UserItemFlags.Worthless) == (Item.Flags & UserItemFlags.Worthless) &&
+                (toItem.Flags & UserItemFlags.NonRefinable) == (Item.Flags & UserItemFlags.NonRefinable) &&
+                (toItem.Flags & UserItemFlags.Expirable) == (Item.Flags & UserItemFlags.Expirable) &&
+                toItem.AddedStats.Compare(Item.AddedStats) &&
+                toItem.ExpireTime == Item.ExpireTime)
+                packet.MergeItem = true;
+
+            if (Selected) SelectedCell = null;
+
+            Locked = true;
+            toCell.Locked = true;
+            CEnvir.Enqueue(packet);
+
+            return true;
         }
         public void MoveItem(DXItemCell toCell)
         {
@@ -1165,6 +1235,34 @@ namespace Client.Controls
 
             }
 
+            if (toCell.GridType == GridType.HeroEquipment && GridType != GridType.HeroInventory)
+            {
+                GameScene.Game.ReceiveChat("只有英雄包裹中的物品可以装备到英雄身上。", MessageType.System);
+                if (Selected) SelectedCell = null;
+                return;
+            }
+
+            if (toCell.GridType == GridType.Equipment && (GridType == GridType.HeroInventory || GridType == GridType.HeroEquipment))
+            {
+                GameScene.Game.ReceiveChat("英雄物品不能直接装备到人物身上。", MessageType.System);
+                if (Selected) SelectedCell = null;
+                return;
+            }
+
+            if (GridType == GridType.Equipment && toCell.GridType == GridType.HeroInventory)
+            {
+                GameScene.Game.ReceiveChat("人物装备不能直接放入英雄包裹。", MessageType.System);
+                if (Selected) SelectedCell = null;
+                return;
+            }
+
+            if (GridType == GridType.HeroEquipment && toCell.GridType == GridType.Inventory)
+            {
+                GameScene.Game.ReceiveChat("英雄装备不能直接放入人物包裹。", MessageType.System);
+                if (Selected) SelectedCell = null;
+                return;
+            }
+
             C.ItemMove packet = new C.ItemMove
             {
                 FromGrid = GridType,
@@ -1292,6 +1390,20 @@ namespace Client.Controls
             }
 
             if (toCell == null) return false;
+
+            if (GridType == GridType.Equipment && toGrid.GridType == GridType.HeroInventory)
+            {
+                GameScene.Game.ReceiveChat("人物装备不能直接放入英雄包裹。", MessageType.System);
+                if (Selected) SelectedCell = null;
+                return false;
+            }
+
+            if (GridType == GridType.HeroEquipment && toGrid.GridType == GridType.Inventory)
+            {
+                GameScene.Game.ReceiveChat("英雄装备不能直接放入人物包裹。", MessageType.System);
+                if (Selected) SelectedCell = null;
+                return false;
+            }
 
             if (toCell.Selected) SelectedCell = null;
 
@@ -1616,69 +1728,48 @@ namespace Client.Controls
             switch (Item.Info.ItemType)
             {
                 case ItemType.Weapon:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Weapon].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Weapon);
                 case ItemType.Armour:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Armour].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Armour);
                 case ItemType.Torch:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Torch].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Torch);
                 case ItemType.Helmet:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Helmet].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Helmet);
                 case ItemType.Necklace:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Necklace].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Necklace);
                 case ItemType.Bracelet:
-                    if (GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.BraceletL].Item == null)
-                        GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.BraceletL].ToHeroEquipment(this);
-                    else
-                        GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.BraceletR].ToHeroEquipment(this);
-                    break;
+                    return GameScene.Game.CurrentHero?.EquipmentArray[(int)EquipmentSlot.BraceletL] == null
+                        ? MoveHeroItemToEquipment(EquipmentSlot.BraceletL)
+                        : MoveHeroItemToEquipment(EquipmentSlot.BraceletR);
                 case ItemType.Ring:
-                    if (GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.RingL].Item == null)
-                        GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.RingL].ToHeroEquipment(this);
-                    else
-                        GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.RingR].ToHeroEquipment(this);
-                    break;
+                    return GameScene.Game.CurrentHero?.EquipmentArray[(int)EquipmentSlot.RingL] == null
+                        ? MoveHeroItemToEquipment(EquipmentSlot.RingL)
+                        : MoveHeroItemToEquipment(EquipmentSlot.RingR);
                 case ItemType.Shoes:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Shoes].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Shoes);
                 case ItemType.Poison:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Poison].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Poison);
                 case ItemType.Amulet:
                 case ItemType.DarkStone:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Amulet].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Amulet);
                 case ItemType.Flower:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Flower].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Flower);
                 case ItemType.Emblem:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Emblem].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Emblem);
                 case ItemType.Shield:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Shield].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Shield);
                 case ItemType.Costume:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Costume].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Costume);
                 case ItemType.Hook:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Hook].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Hook);
                 case ItemType.Float:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Float].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Float);
                 case ItemType.Bait:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Bait].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Bait);
                 case ItemType.Finder:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Finder].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Finder);
                 case ItemType.Reel:
-                    GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Reel].ToHeroEquipment(this);
-                    break;
+                    return MoveHeroItemToEquipment(EquipmentSlot.Reel);
                 case ItemType.Consumable:
                     if (Item.Info.Shape != 0 && Item.Info.Shape != 14 && Item.Info.Shape != 15) return false;
                     if (CEnvir.Now < GameScene.Game.UseItemTime && Item.Info.ItemEffect != ItemEffect.ElixirOfPurification) return false;
@@ -1698,7 +1789,9 @@ namespace Client.Controls
 
         public bool UseItem()
         {
-            if (Item == null || Locked || ReadOnly || SelectedCell == this || (!Linked && Link != null) || GameScene.Game.Observer || GameScene.Game.MapControl.FishingState != FishingState.None) return false;
+            if (SelectedCell == this) SelectedCell = null;
+
+            if (Item == null || Locked || ReadOnly || (!Linked && Link != null) || GameScene.Game.Observer || GameScene.Game.MapControl.FishingState != FishingState.None) return false;
             if (GridType != GridType.HeroInventory && GridType != GridType.HeroEquipment && !GameScene.Game.CanUseItem(Item)) return false;
 
             if (GridType == GridType.Belt || GridType == GridType.Belt)

@@ -7743,6 +7743,30 @@ namespace Server.Models
 
             bool heroInvolved = IsHeroGrid(p.FromGrid) || IsHeroGrid(p.ToGrid);
 
+            if (p.ToGrid == GridType.HeroEquipment && p.FromGrid != GridType.HeroInventory)
+            {
+                Connection.ReceiveChatWithObservers(con => "只有英雄包裹中的物品可以装备到英雄身上。", MessageType.System);
+                return;
+            }
+
+            if (p.ToGrid == GridType.Equipment && IsHeroGrid(p.FromGrid))
+            {
+                Connection.ReceiveChatWithObservers(con => "英雄物品不能直接装备到人物身上。", MessageType.System);
+                return;
+            }
+
+            if (p.FromGrid == GridType.Equipment && p.ToGrid == GridType.HeroInventory)
+            {
+                Connection.ReceiveChatWithObservers(con => "人物装备不能直接放入英雄包裹。", MessageType.System);
+                return;
+            }
+
+            if (p.FromGrid == GridType.HeroEquipment && p.ToGrid == GridType.Inventory)
+            {
+                Connection.ReceiveChatWithObservers(con => "英雄装备不能直接放入人物包裹。", MessageType.System);
+                return;
+            }
+
             if (p.FromGrid == GridType.Equipment)
             {
                 //CanRemove Item
