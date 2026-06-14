@@ -10,6 +10,13 @@ namespace Client.Scenes.Views
 {
     public class MenuDialog : DXImageControl
     {
+        private const int Width = 152;
+        private const int ButtonX = 26;
+        private const int FirstButtonY = 40;
+        private const int ButtonSpacing = 30;
+        private const int BottomPadding = 16;
+        private const int ButtonCount = 8;
+
         public DXLabel TitleLabel;
 
         public DXButton CloseButton;
@@ -83,6 +90,8 @@ namespace Client.Scenes.Views
         {
             LibraryFile = LibraryFile.Interface;
             Index = 279;
+            FixedSize = true;
+            Size = new Size(Width, FirstButtonY + ButtonSpacing * (ButtonCount - 1) + DefaultHeight + BottomPadding);
             Sort = true;
             Movable = true;
             DropShadow = true;
@@ -112,7 +121,7 @@ namespace Client.Scenes.Views
 
             SettingsButton = new DXButton
             {
-                Location = new Point(26, 40),
+                Location = GetButtonLocation(0),
                 Size = new Size(100, DefaultHeight),
                 Parent = this,
                 Label = { Text = CEnvir.Language.MenuDialogSettingsButtonLabel },
@@ -122,7 +131,7 @@ namespace Client.Scenes.Views
 
             HelpButton = new DXButton
             {
-                Location = new Point(26, 70),
+                Location = GetButtonLocation(1),
                 Size = new Size(100, DefaultHeight),
                 Parent = this,
                 Label = { Text = CEnvir.Language.MenuDialogHelpButtonLabel },
@@ -132,7 +141,7 @@ namespace Client.Scenes.Views
 
             GuildButton = new DXButton
             {
-                Location = new Point(26, 100),
+                Location = GetButtonLocation(2),
                 Size = new Size(100, DefaultHeight),
                 Parent = this,
                 Label = { Text = CEnvir.Language.MenuDialogGuildButtonLabel },
@@ -142,7 +151,7 @@ namespace Client.Scenes.Views
 
             StorageButton = new DXButton
             {
-                Location = new Point(26, 130),
+                Location = GetButtonLocation(3),
                 Size = new Size(100, DefaultHeight),
                 Parent = this,
                 Label = { Text = CEnvir.Language.MenuDialogStorageButtonLabel },
@@ -152,7 +161,7 @@ namespace Client.Scenes.Views
 
             RankingButton = new DXButton
             {
-                Location = new Point(26, 160),
+                Location = GetButtonLocation(4),
                 Size = new Size(100, DefaultHeight),
                 Parent = this,
                 Label = { Text = CEnvir.Language.MenuDialogRankingButtonLabel },
@@ -162,7 +171,7 @@ namespace Client.Scenes.Views
 
             CompanionButton = new DXButton
             {
-                Location = new Point(26, 190),
+                Location = GetButtonLocation(5),
                 Size = new Size(100, DefaultHeight),
                 Parent = this,
                 Label = { Text = CEnvir.Language.MenuDialogCompanionButtonLabel },
@@ -172,7 +181,7 @@ namespace Client.Scenes.Views
 
             HeroButton = new DXButton
             {
-                Location = new Point(26, 220),
+                Location = GetButtonLocation(6),
                 Size = new Size(100, DefaultHeight),
                 Parent = this,
                 Label = { Text = CEnvir.Language.MenuDialogHeroButtonLabel },
@@ -182,13 +191,18 @@ namespace Client.Scenes.Views
 
             LeaveButton = new DXButton
             {
-                Location = new Point(26, 250),
+                Location = GetButtonLocation(7),
                 Size = new Size(100, DefaultHeight),
                 Parent = this,
                 Label = { Text = CEnvir.Language.MenuDialogLeaveButtonLabel },
                 Hint = string.Format(CEnvir.Language.MenuDialogLeaveButtonHint, CEnvir.GetKeyBindLabel(KeyBindAction.ExitGameWindow)),
             };
             LeaveButton.MouseClick += (o, e) => GameScene.Game.ExitBox.Visible = true;
+        }
+
+        private static Point GetButtonLocation(int index)
+        {
+            return new Point(ButtonX, FirstButtonY + ButtonSpacing * index);
         }
 
         #region IDisposable
