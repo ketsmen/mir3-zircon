@@ -432,10 +432,20 @@ namespace Client.Scenes.Views
         private void OpenCreateWindow()
         {
             DXInputWindow window = new DXInputWindow("请输入英雄名字", "创建英雄");
+            window.ConfirmButton.Enabled = false;
+            window.ValueTextBox.TextBox.TextChanged += (o, e) =>
+            {
+                string name = window.ValueTextBox.TextBox.Text.Trim();
+                bool valid = Globals.CharacterReg.IsMatch(name);
+
+                window.ConfirmButton.Enabled = valid;
+                window.ValueTextBox.BorderColour = string.IsNullOrEmpty(name) ? Color.FromArgb(198, 166, 99) : valid ? Color.Green : Color.Red;
+            };
+
             window.ConfirmButton.MouseClick += (o, e) =>
             {
                 string name = window.Value?.Trim();
-                if (string.IsNullOrEmpty(name)) return;
+                if (string.IsNullOrEmpty(name) || !Globals.CharacterReg.IsMatch(name)) return;
 
                 CEnvir.Enqueue(new C.NewHero
                 {

@@ -390,7 +390,7 @@ namespace Client.Scenes.Views
                         string[] parts = label.Text.Split(':', ' ');
                         if (parts.Length == 0) return;
 
-                        GameScene.Game.ChatTextBox.StartPM(Regex.Replace(parts[0], "[^A-Za-z0-9]", ""));
+                        GameScene.Game.ChatTextBox.StartPM(Globals.NameCharacterFilter.Replace(parts[0], ""));
                     };
                     break;
             }

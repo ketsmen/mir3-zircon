@@ -2982,6 +2982,22 @@ namespace Client.Models
 
                         #endregion
 
+                        #region Legacy monster magic
+
+                        case MagicType.PoisonousGolemLineAoE:
+                            AddPoisonousGolemLineEffects(CurrentLocation);
+                            break;
+
+                        case MagicType.IgyuScorchedEarth:
+                            AddIgyuScorchedEarthEffects(CurrentLocation);
+                            break;
+
+                        case MagicType.IgyuCyclone:
+                            AddIgyuCycloneEffects();
+                            break;
+
+                        #endregion
+
                         #region Monster Scortched Earth
 
                         case MagicType.MonsterScortchedEarth:
@@ -4994,6 +5010,19 @@ namespace Client.Models
 
                         #region Monster Scortched Earth
 
+                        case MagicType.PoisonousGolemLineAoE:
+                            AddPoisonousGolemLineEffects(CurrentLocation);
+                            break;
+
+                        case MagicType.IgyuScorchedEarth:
+                            location = CurrentLocation;
+                            AddIgyuScorchedEarthEffects(location);
+                            break;
+
+                        case MagicType.IgyuCyclone:
+                            AddIgyuCycloneEffects();
+                            break;
+
                         case MagicType.MonsterScortchedEarth:
 
                             location = CurrentLocation;
@@ -5118,6 +5147,98 @@ namespace Client.Models
 
 
                     break;
+            }
+        }
+
+        private static DateTime GetMagicLocationStartTime(DateTime baseTime, Point point, Point origin, int offset = 0)
+        {
+            return baseTime.AddMilliseconds(offset + Functions.Distance(point, origin) * 50);
+        }
+
+        private void AddPoisonousGolemLineEffects(Point origin)
+        {
+            if (!Config.DrawEffects || MagicLocations == null || MagicLocations.Count == 0) return;
+
+            DateTime baseTime = CEnvir.Now;
+            TimeSpan firstDelay = TimeSpan.FromMilliseconds(80);
+            TimeSpan secondDelay = TimeSpan.FromMilliseconds(100);
+
+            foreach (Point point in MagicLocations)
+            {
+                DateTime startTime = GetMagicLocationStartTime(baseTime, point, origin);
+
+                Effects.Add(new MirEffect(1210, 6, firstDelay, LibraryFile.MonMagicEx13, 0, 0, Globals.NoneColour)
+                {
+                    Blend = true,
+                    MapTarget = point,
+                    StartTime = startTime,
+                    BlendRate = 1F,
+                });
+
+                Effects.Add(new MirEffect(1230, 7, secondDelay, LibraryFile.MonMagicEx13, 0, 0, Globals.NoneColour)
+                {
+                    MapTarget = point,
+                    StartTime = startTime,
+                });
+            }
+        }
+
+        private void AddIgyuScorchedEarthEffects(Point origin)
+        {
+            if (!Config.DrawEffects || MagicLocations == null || MagicLocations.Count == 0) return;
+
+            DateTime baseTime = CEnvir.Now;
+            TimeSpan scorchDelay = TimeSpan.FromMilliseconds(2500);
+            TimeSpan flameDelay = TimeSpan.FromMilliseconds(250);
+            TimeSpan burstDelay = TimeSpan.FromMilliseconds(100);
+
+            foreach (Point point in MagicLocations)
+            {
+                DateTime delayedStart = GetMagicLocationStartTime(baseTime, point, origin, 500);
+                DateTime immediateStart = GetMagicLocationStartTime(baseTime, point, origin);
+
+                Effects.Add(new MirEffect(220, 1, scorchDelay, LibraryFile.ProgUse, 0, 0, Globals.NoneColour)
+                {
+                    MapTarget = point,
+                    StartTime = delayedStart,
+                    Opacity = 0.8F,
+                    DrawType = DrawType.Floor,
+                });
+
+                Effects.Add(new MirEffect(2450 + CEnvir.Random.Next(5) * 10, 10, flameDelay, LibraryFile.Magic, 0, 0, Globals.NoneColour)
+                {
+                    Blend = true,
+                    MapTarget = point,
+                    StartTime = delayedStart,
+                    DrawType = DrawType.Floor,
+                });
+
+                Effects.Add(new MirEffect(1430, 30, burstDelay, LibraryFile.MonMagicEx14, 20, 70, Globals.FireColour)
+                {
+                    Blend = true,
+                    MapTarget = point,
+                    StartTime = immediateStart,
+                    BlendRate = 1F,
+                });
+            }
+        }
+
+        private void AddIgyuCycloneEffects()
+        {
+            if (!Config.DrawEffects || MagicLocations == null || MagicLocations.Count == 0) return;
+
+            TimeSpan delay = TimeSpan.FromMilliseconds(150);
+
+            foreach (Point point in MagicLocations)
+            {
+                MirEffect spell = new MirEffect(900, 12, delay, LibraryFile.MonMagicEx14, 50, 80, Globals.FireColour)
+                {
+                    Blend = true,
+                    MapTarget = point,
+                };
+
+                Effects.Add(spell);
+                spell.Process();
             }
         }
 

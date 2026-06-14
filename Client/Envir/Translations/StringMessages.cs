@@ -64,6 +64,8 @@ namespace Client.Envir.Translations
         public abstract string DoNotUseFlameSplash { get; set; }
         public abstract string GameSceneAutoRunOn { get; set; }
         public abstract string GameSceneAutoRunOff { get; set; }
+        public abstract string GameSceneAutoPathOn { get; set; }
+        public abstract string GameSceneAutoPathOff { get; set; }
         public abstract string GameSceneSkillReady { get; set; }
         public abstract string GameSceneCastInCooldown { get; set; }
         public abstract string GameSceneCastInCombat { get; set; }

@@ -318,7 +318,7 @@ namespace Client.Scenes
                     CurrentPathIndex = 0;
                 }
 
-                ReceiveChat(value ? "[自动寻路: 开]" : "[自动寻路: 关]", MessageType.Hint);
+                ReceiveChat(value ? CEnvir.Language.GameSceneAutoPathOn : CEnvir.Language.GameSceneAutoPathOff, MessageType.Hint);
             }
         }
 

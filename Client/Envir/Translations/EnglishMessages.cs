@@ -64,6 +64,8 @@ namespace Client.Envir.Translations
         public override string DoNotUseFlameSplash { get; set; } = "Do not use Flame Splash.";
         public override string GameSceneAutoRunOn { get; set; } = "[AutoRun: On]";
         public override string GameSceneAutoRunOff { get; set; } = "[AutoRun: Off]";
+        public override string GameSceneAutoPathOn { get; set; } = "[AutoPath: On]";
+        public override string GameSceneAutoPathOff { get; set; } = "[AutoPath: Off]";
         public override string GameSceneSkillReady { get; set; } = "{0} is now Ready.";
         public override string GameSceneCastInCooldown { get; set; } = "Unable to cast {0}, it is still on Cooldown.";
         public override string GameSceneCastInCombat { get; set; } = "Unable to cast {0} whilst in combat";
