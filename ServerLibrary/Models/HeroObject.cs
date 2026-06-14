@@ -851,9 +851,20 @@ namespace Server.Models
             Stats.Clear();
             AddBaseStats();
 
+            Dictionary<SetInfo, List<ItemInfo>> sets = new Dictionary<SetInfo, List<ItemInfo>>();
+
             foreach (UserItem item in Equipment)
             {
                 if (item == null || item.CurrentDurability == 0 && item.Info.Durability > 0) continue;
+
+                if (item.Info.Set != null)
+                {
+                    if (!sets.TryGetValue(item.Info.Set, out List<ItemInfo> items))
+                        sets[item.Info.Set] = items = new List<ItemInfo>();
+
+                    if (!items.Contains(item.Info))
+                        items.Add(item.Info);
+                }
 
                 Stats.Add(item.Info.Stats, item.Info.ItemType != ItemType.Weapon);
                 Stats.Add(item.Stats, item.Info.ItemType != ItemType.Weapon);
@@ -874,6 +885,34 @@ namespace Server.Models
                 if (buff.Pause || buff.Stats == null) continue;
 
                 Stats.Add(buff.Stats);
+            }
+
+            foreach (KeyValuePair<SetInfo, List<ItemInfo>> pair in sets)
+            {
+                if (pair.Key.Items.Count != pair.Value.Count) continue;
+
+                foreach (SetInfoStat stat in pair.Key.SetStats)
+                {
+                    if (Level < stat.Level) continue;
+
+                    switch (Class)
+                    {
+                        case MirClass.Warrior:
+                            if ((stat.Class & RequiredClass.Warrior) != RequiredClass.Warrior) continue;
+                            break;
+                        case MirClass.Wizard:
+                            if ((stat.Class & RequiredClass.Wizard) != RequiredClass.Wizard) continue;
+                            break;
+                        case MirClass.Taoist:
+                            if ((stat.Class & RequiredClass.Taoist) != RequiredClass.Taoist) continue;
+                            break;
+                        case MirClass.Assassin:
+                            if ((stat.Class & RequiredClass.Assassin) != RequiredClass.Assassin) continue;
+                            break;
+                    }
+
+                    Stats[stat.Stat] += stat.Amount;
+                }
             }
 
             if (Buffs.Any(x => x.Type == BuffType.MagicWeakness))
