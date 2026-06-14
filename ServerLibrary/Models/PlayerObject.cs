@@ -3036,6 +3036,57 @@ namespace Server.Models
             return false;
         }
 
+        private void AssignItemOwner(UserItem item, GridType grid, int slot)
+        {
+            if (item == null) return;
+
+            item.Character = null;
+            item.Account = null;
+            item.Mail = null;
+            item.Auction = null;
+            item.Companion = null;
+            item.Guild = null;
+            item.Hero = null;
+
+            switch (grid)
+            {
+                case GridType.Equipment:
+                case GridType.CompanionEquipment:
+                case GridType.HeroEquipment:
+                    item.Slot = slot + Globals.EquipmentOffSet;
+                    break;
+                case GridType.PartsStorage:
+                    item.Slot = slot + Globals.PartsStorageOffset;
+                    break;
+                default:
+                    item.Slot = slot;
+                    break;
+            }
+
+            switch (grid)
+            {
+                case GridType.Inventory:
+                case GridType.Equipment:
+                    item.Character = Character;
+                    break;
+                case GridType.Storage:
+                case GridType.PartsStorage:
+                    item.Account = Character.Account;
+                    break;
+                case GridType.CompanionInventory:
+                case GridType.CompanionEquipment:
+                    item.Companion = Companion.UserCompanion;
+                    break;
+                case GridType.HeroInventory:
+                case GridType.HeroEquipment:
+                    item.Hero = Hero.Info;
+                    break;
+                case GridType.GuildStorage:
+                    item.Guild = Character.Account.GuildMember.Guild;
+                    break;
+            }
+        }
+
         private bool IsValidHeroPotionIndex(int itemIndex, bool health)
         {
             if (itemIndex <= 0) return false;
@@ -6378,8 +6429,7 @@ namespace Server.Models
                     if (Inventory[i] != null) continue;
 
                     Inventory[i] = item;
-                    item.Slot = i;
-                    item.Character = Character;
+                    AssignItemOwner(item, GridType.Inventory, i);
                     item.IsTemporary = false;
                     LogMilestone(MilestoneType.ItemGain, item.Count, item: item.Info);
                     break;
@@ -6432,7 +6482,13 @@ namespace Server.Models
             if (item == null) return;
             if (!ValidateHeroItemOwnership(item, link.GridType, link.Slot)) return;
 
-            if (IsHeroGrid(link.GridType))
+            if (link.GridType == GridType.HeroInventory)
+            {
+                Hero.ItemUse(link.Slot);
+                return;
+            }
+
+            if (link.GridType == GridType.HeroEquipment)
             {
                 Enqueue(new S.ItemChanged { Link = new CellLinkInfo { GridType = link.GridType, Slot = link.Slot } });
                 return;
@@ -7965,8 +8021,7 @@ namespace Server.Models
                 case GridType.Inventory:
                     if (toItem == null) break;
 
-                    toItem.Slot = p.FromSlot;
-                    toItem.Character = Character;
+                    AssignItemOwner(toItem, p.FromGrid, p.FromSlot);
                     break;
                 case GridType.Equipment:
                     sendShape = true;
@@ -7975,8 +8030,7 @@ namespace Server.Models
                 case GridType.CompanionInventory:
                     if (toItem == null) break;
 
-                    toItem.Slot = p.FromSlot;
-                    toItem.Companion = Companion.UserCompanion;
+                    AssignItemOwner(toItem, p.FromGrid, p.FromSlot);
                     break;
                 case GridType.CompanionEquipment:
                     sendCompanionShape = true;
@@ -7985,8 +8039,7 @@ namespace Server.Models
                 case GridType.HeroInventory:
                     if (toItem == null) break;
 
-                    toItem.Slot = p.FromSlot;
-                    toItem.Hero = Hero.Info;
+                    AssignItemOwner(toItem, p.FromGrid, p.FromSlot);
                     break;
                 case GridType.HeroEquipment:
                     sendHeroShape = true;
@@ -7995,14 +8048,12 @@ namespace Server.Models
                 case GridType.PartsStorage:
                     if (toItem == null) break;
 
-                    toItem.Slot = p.FromSlot;
-                    toItem.Account = Character.Account;
+                    AssignItemOwner(toItem, p.FromGrid, p.FromSlot);
                     break;
                 case GridType.Storage:
                     if (toItem == null) break;
 
-                    toItem.Slot = p.FromSlot;
-                    toItem.Account = Character.Account;
+                    AssignItemOwner(toItem, p.FromGrid, p.FromSlot);
                     break;
                 case GridType.GuildStorage:
                     if (p.ToGrid == GridType.GuildStorage)
@@ -8054,50 +8105,41 @@ namespace Server.Models
 
                     if (toItem == null) break; //CAN ONLY BE GS -> GS
 
-                    toItem.Slot = p.FromSlot;
+                    AssignItemOwner(toItem, p.FromGrid, p.FromSlot);
                     break;
             }
 
             switch (p.ToGrid)
             {
                 case GridType.Inventory:
-                    fromItem.Slot = p.ToSlot;
-                    fromItem.Character = Character;
+                    AssignItemOwner(fromItem, p.ToGrid, p.ToSlot);
                     break;
                 case GridType.Equipment:
                     sendShape = true;
-                    fromItem.Slot = p.ToSlot + Globals.EquipmentOffSet;
-                    fromItem.Character = Character;
+                    AssignItemOwner(fromItem, p.ToGrid, p.ToSlot);
                     break;
                 case GridType.CompanionInventory:
-                    fromItem.Slot = p.ToSlot;
-                    fromItem.Companion = Companion.UserCompanion;
+                    AssignItemOwner(fromItem, p.ToGrid, p.ToSlot);
                     break;
                 case GridType.CompanionEquipment:
                     sendCompanionShape = true;
-                    fromItem.Slot = p.ToSlot + Globals.EquipmentOffSet;
-                    fromItem.Companion = Companion.UserCompanion;
+                    AssignItemOwner(fromItem, p.ToGrid, p.ToSlot);
                     break;
                 case GridType.HeroInventory:
-                    fromItem.Slot = p.ToSlot;
-                    fromItem.Hero = Hero.Info;
+                    AssignItemOwner(fromItem, p.ToGrid, p.ToSlot);
                     break;
                 case GridType.HeroEquipment:
                     sendHeroShape = true;
-                    fromItem.Slot = p.ToSlot + Globals.EquipmentOffSet;
-                    fromItem.Hero = Hero.Info;
+                    AssignItemOwner(fromItem, p.ToGrid, p.ToSlot);
                     break;
                 case GridType.PartsStorage:
-                    fromItem.Slot = p.ToSlot + Globals.PartsStorageOffset;
-                    fromItem.Account = Character.Account;
+                    AssignItemOwner(fromItem, p.ToGrid, p.ToSlot);
                     break;
                 case GridType.Storage:
-                    fromItem.Slot = p.ToSlot;
-                    fromItem.Account = Character.Account;
+                    AssignItemOwner(fromItem, p.ToGrid, p.ToSlot);
                     break;
                 case GridType.GuildStorage:
-                    fromItem.Slot = p.ToSlot;
-                    fromItem.Guild = Character.Account.GuildMember.Guild;
+                    AssignItemOwner(fromItem, p.ToGrid, p.ToSlot);
 
                     if (p.FromGrid == GridType.GuildStorage) break; //Already Handled
 
@@ -8233,12 +8275,6 @@ namespace Server.Models
             }
 
             int index = 0;
-            int slot = 0;
-
-            if (p.Grid == GridType.PartsStorage)
-            {
-                slot = Globals.PartsStorageOffset;
-            }
 
             for (int i = 0; i < sorted.Length; i++)
             {
@@ -8252,33 +8288,15 @@ namespace Server.Models
                     item.Count -= item.Info.StackSize;
 
                     array[index] = newItem;
-                    newItem.Slot = slot;
-
-                    switch (p.Grid)
-                    {
-                        case GridType.Inventory:
-                            newItem.Character = Character;
-                            break;
-                        case GridType.PartsStorage:
-                            newItem.Account = Character.Account;
-                            break;
-                        case GridType.Storage:
-                            newItem.Account = Character.Account;
-                            break;
-                        case GridType.HeroInventory:
-                            newItem.Hero = Hero.Info;
-                            break;
-                    }
+                    AssignItemOwner(newItem, p.Grid, index);
 
                     index++;
-                    slot++;
                 }
 
                 array[index] = item;
-                item.Slot = slot;
+                AssignItemOwner(item, p.Grid, index);
 
                 index++;
-                slot++;
             }
 
             S.ItemSort result = new()
@@ -8551,51 +8569,32 @@ namespace Server.Models
                 newItem.Count = p.Count;
 
                 array[i] = newItem;
-                newItem.Slot = i;
+                AssignItemOwner(newItem, p.Grid, i);
 
-                switch (p.Grid)
+                if (p.Grid == GridType.GuildStorage)
                 {
-                    case GridType.Inventory:
-                        newItem.Character = Character;
-                        break;
-                    case GridType.PartsStorage:
-                        newItem.Account = Character.Account;
-                        break;
-                    case GridType.Storage:
-                        newItem.Account = Character.Account;
-                        break;
-                    case GridType.CompanionInventory:
-                        newItem.Companion = Companion.UserCompanion;
-                        break;
-                    case GridType.HeroInventory:
-                        newItem.Hero = Hero.Info;
-                        break;
-                    case GridType.GuildStorage:
-                        newItem.Guild = Character.Account.GuildMember.Guild;
+                    foreach (GuildMemberInfo member in Character.Account.GuildMember.Guild.Members)
+                    {
+                        PlayerObject player = member.Account.Connection?.Player;
 
-                        foreach (GuildMemberInfo member in Character.Account.GuildMember.Guild.Members)
+                        if (player == null || player == this) continue;
+
+                        player.Enqueue(new S.ItemChanged
                         {
-                            PlayerObject player = member.Account.Connection?.Player;
+                            Link = new CellLinkInfo { GridType = p.Grid, Slot = p.Slot, Count = item.Count },
+                            Success = true,
 
-                            if (player == null || player == this) continue;
+                            ObserverPacket = false
+                        });
 
-                            player.Enqueue(new S.ItemChanged
-                            {
-                                Link = new CellLinkInfo { GridType = p.Grid, Slot = p.Slot, Count = item.Count },
-                                Success = true,
+                        player.Enqueue(new S.GuildNewItem
+                        {
+                            Slot = newItem.Slot,
+                            Item = newItem.ToClientInfo(),
 
-                                ObserverPacket = false
-                            });
-
-                            player.Enqueue(new S.GuildNewItem
-                            {
-                                Slot = newItem.Slot,
-                                Item = newItem.ToClientInfo(),
-
-                                ObserverPacket = false
-                            });
-                        }
-                        break;
+                            ObserverPacket = false
+                        });
+                    }
                 }
 
                 if (p.Grid == GridType.HeroInventory)

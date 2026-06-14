@@ -1679,6 +1679,16 @@ namespace Client.Controls
                 case ItemType.Reel:
                     GameScene.Game.HeroBox.EquipmentGrid[(int)EquipmentSlot.Reel].ToHeroEquipment(this);
                     break;
+                case ItemType.Consumable:
+                    if (Item.Info.Shape != 0 && Item.Info.Shape != 14 && Item.Info.Shape != 15) return false;
+                    if (CEnvir.Now < GameScene.Game.UseItemTime && Item.Info.ItemEffect != ItemEffect.ElixirOfPurification) return false;
+
+                    GameScene.Game.UseItemTime = CEnvir.Now.AddMilliseconds(Math.Max(250, Item.Info.Durability));
+                    Locked = true;
+
+                    CEnvir.Enqueue(new C.ItemUse { Link = new CellLinkInfo { GridType = GridType, Slot = Slot, Count = 1 } });
+                    PlayItemSound();
+                    break;
                 default:
                     return false;
             }

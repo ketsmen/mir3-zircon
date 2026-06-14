@@ -73,6 +73,9 @@ namespace Server.Models
             oValue?.TaggedMonsters.Remove(this);
 
             nValue?.TaggedMonsters.Add(this);
+
+            if (nValue == null || HeroEXPOwner?.Owner != nValue)
+                HeroEXPOwner = null;
         }
 
         #endregion
@@ -1094,6 +1097,20 @@ namespace Server.Models
 
                     closest.Add(pet);
                     bestDistance = distance;
+                }
+
+                HeroObject hero = player.Hero;
+                if (hero?.Node != null && hero.CurrentMap == CurrentMap)
+                {
+                    distance = Functions.Distance(hero.CurrentLocation, CurrentLocation);
+
+                    if (distance <= ViewRange && distance <= bestDistance && ShouldAttackTarget(hero))
+                    {
+                        if (distance != bestDistance) closest.Clear();
+
+                        closest.Add(hero);
+                        bestDistance = distance;
+                    }
                 }
 
                 distance = Functions.Distance(player.CurrentLocation, CurrentLocation);

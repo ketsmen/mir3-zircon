@@ -36,6 +36,7 @@ namespace Server.Models
         public DateTime AutoPotTime;
         public DateTime AutoPotLowStockTime;
         public DateTime ReviveTime;
+        public DateTime UseItemTime;
 
         public int MoveDelay = 600;
         public int AttackDelay = 900;
@@ -464,7 +465,11 @@ namespace Server.Models
                 return;
             }
 
-            if (!Functions.InRange(CurrentLocation, Target.CurrentLocation, 1)) return;
+            if (!Functions.InRange(CurrentLocation, Target.CurrentLocation, 1))
+            {
+                MoveTo(Target.CurrentLocation);
+                return;
+            }
 
             MagicType attackMagic = GetMeleeAttackMagic();
             Element attackElement = GetMeleeAttackElement();
@@ -1465,6 +1470,101 @@ namespace Server.Models
                         ClearAutoPotion(false, "英雄MP自动喝药的药品不可用或已不存在，设置已清空。");
                 }
             }
+        }
+
+        public void ItemUse(int slot)
+        {
+            if (slot < 0 || slot >= Inventory.Length) return;
+
+            UserItem item = Inventory[slot];
+            if (item == null) return;
+
+            S.ItemChanged result = new S.ItemChanged
+            {
+                Link = new CellLinkInfo { GridType = GridType.HeroInventory, Slot = slot }
+            };
+
+            Owner?.Enqueue(result);
+
+            if (Dead || Owner?.Node == null) return;
+            if (!CanUseItem(item)) return;
+            if (item.Info.ItemType != ItemType.Consumable) return;
+            if (SEnvir.Now < UseItemTime && item.Info.ItemEffect != ItemEffect.ElixirOfPurification) return;
+
+            switch (item.Info.Shape)
+            {
+                case 0:
+                    ChangeHP(item.Info.Stats[Stat.Health]);
+                    ChangeMP(item.Info.Stats[Stat.Mana]);
+
+                    if (item.Info.Stats[Stat.Experience] > 0)
+                        GainExperience(item.Info.Stats[Stat.Experience]);
+                    break;
+                case 14:
+                    if (!UsePurificationElixir()) return;
+                    break;
+                case 15:
+                    if (CurrentHP >= Stats[Stat.Health] && CurrentMP >= Stats[Stat.Mana]) return;
+
+                    SetHP(Stats[Stat.Health]);
+                    SetMP(Stats[Stat.Mana]);
+                    break;
+                default:
+                    return;
+            }
+
+            if (item.Info.ItemEffect != ItemEffect.ElixirOfPurification || UseItemTime < SEnvir.Now)
+                UseItemTime = SEnvir.Now.AddMilliseconds(item.Info.Durability);
+            else
+                UseItemTime = UseItemTime.AddMilliseconds(item.Info.Durability);
+
+            result.Success = true;
+
+            if (item.Count > 1)
+            {
+                item.Count--;
+                result.Link.Count = item.Count;
+            }
+            else
+            {
+                RemoveItem(item);
+                Inventory[slot] = null;
+                item.Delete();
+                result.Link.Count = 0;
+            }
+
+            RefreshWeight();
+            CheckAutoPotionAfterUse(item.Info.Index, item.Info.ItemName);
+            SendInformation();
+        }
+
+        private bool UsePurificationElixir()
+        {
+            bool work = false;
+
+            for (int i = PoisonList.Count - 1; i >= 0; i--)
+            {
+                Poison poison = PoisonList[i];
+
+                switch (poison.Type)
+                {
+                    case PoisonType.Green:
+                    case PoisonType.Red:
+                    case PoisonType.Slow:
+                    case PoisonType.Paralysis:
+                    case PoisonType.HellFire:
+                    case PoisonType.Silenced:
+                    case PoisonType.Abyss:
+                    case PoisonType.Burn:
+                    case PoisonType.Containment:
+                    case PoisonType.Binding:
+                        PoisonList.Remove(poison);
+                        work = true;
+                        break;
+                }
+            }
+
+            return work;
         }
 
         protected bool UseAutoPotion(int itemIndex, bool health)
