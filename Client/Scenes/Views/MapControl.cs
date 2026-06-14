@@ -902,7 +902,9 @@ namespace Client.Scenes.Views
                     case MouseButtons.Left:
                         Mining = false;
 
-                        if (GameScene.Game.AutoPath)
+                        if (GameScene.Game.AutoFight)
+                            GameScene.Game.AutoFight = false;
+                        else if (GameScene.Game.AutoPath)
                             GameScene.Game.AutoPath = false;
 
                         if (CEnvir.Shift && MapObject.TargetObject == null)
@@ -1125,6 +1127,7 @@ namespace Client.Scenes.Views
             if (MapObject.TargetObject == null || MapObject.TargetObject.Dead) return;
             if ((MapObject.TargetObject.Race == ObjectType.Player || MapObject.TargetObject.Race == ObjectType.Hero || !string.IsNullOrEmpty(MapObject.TargetObject.PetOwner)) && !CEnvir.Shift) return;
             if (Functions.InRange(MapObject.TargetObject.CurrentLocation, MapObject.User.CurrentLocation, 1)) return;
+            if (GameScene.Game.AutoFight && (User.Class == MirClass.Wizard || User.Class == MirClass.Taoist)) return;
 
             direction = Functions.DirectionFromPoint(MapObject.User.CurrentLocation, MapObject.TargetObject.CurrentLocation);
 
@@ -1262,13 +1265,13 @@ namespace Client.Scenes.Views
             return CanMove(next, distance) ? next : dir;
         }
 
-        private bool CanMove(MirDirection dir, int distance)
+        public bool CanMove(MirDirection dir, int distance)
         {
             for (int i = 1; i <= distance; i++)
             {
                 Point loc = Functions.Move(User.CurrentLocation, dir, i);
 
-                if (loc.X < 0 || loc.Y < 0 || loc.X >= Width || loc.Y > Height) return false;
+                if (loc.X < 0 || loc.Y < 0 || loc.X >= Width || loc.Y >= Height) return false;
 
                 if (Cells[loc.X, loc.Y].Blocking())
                     return false;

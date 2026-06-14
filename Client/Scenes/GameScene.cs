@@ -322,6 +322,46 @@ namespace Client.Scenes
             }
         }
 
+        private const int AutoFightSearchRange = 100;
+        private const int AutoFightPathCandidateLimit = 16;
+        private const int AutoFightRangedMinRange = 4;
+
+        private bool _AutoFight;
+        private DateTime AutoFightTargetSearchTime, AutoFightPathTime, AutoFightRoamTime, AutoFightHintTime;
+        private readonly Dictionary<uint, DateTime> AutoFightUnreachableTargets = new Dictionary<uint, DateTime>();
+
+        public bool AutoFight
+        {
+            get => _AutoFight;
+            set
+            {
+                if (_AutoFight == value) return;
+
+                _AutoFight = value;
+
+                ClearAutoFightPath();
+                AutoFightUnreachableTargets.Clear();
+
+                if (_AutoFight)
+                {
+                    if (AutoRun)
+                        AutoRun = false;
+
+                    AutoFightTargetSearchTime = DateTime.MinValue;
+                    AutoFightPathTime = DateTime.MinValue;
+                    AutoFightRoamTime = DateTime.MinValue;
+                    AutoFightHintTime = DateTime.MinValue;
+                }
+                else
+                {
+                    MapObject.TargetObject = null;
+                    MapObject.MagicObject = null;
+                }
+
+                ReceiveChat(value ? "[自动战斗: 开]" : "[自动战斗: 关]", MessageType.Hint);
+            }
+        }
+
         #region StorageSize
 
         public int StorageSize
@@ -1145,6 +1185,8 @@ namespace Client.Scenes
                 CreateItemLabel();
             }
 
+            ProcessAutoFight();
+
             MapControl.ProcessInput();
 
             foreach (MapObject ob in MapControl.Objects)
@@ -1223,6 +1265,401 @@ namespace Client.Scenes
                 if (mob != null && mob.CompanionObject == null && !FocusObject.Dead)
                     MonsterBox.Monster = mob;
             }
+        }
+
+        private void ProcessAutoFight()
+        {
+            if (!AutoFight || Observer || User == null || MapControl == null) return;
+
+            if (User.Dead)
+            {
+                ClearAutoFightPath();
+                return;
+            }
+
+            MapObject target = MapObject.TargetObject;
+
+            if (target != null && !IsAutoFightTarget(target))
+            {
+                MapObject.TargetObject = null;
+                MapObject.MagicObject = null;
+                ClearAutoFightPath();
+                target = null;
+            }
+
+            if (target == null)
+            {
+                if (CEnvir.Now >= AutoFightTargetSearchTime)
+                {
+                    AutoFightTargetSearchTime = CEnvir.Now.AddMilliseconds(300);
+                    RemoveExpiredAutoFightTargets();
+                    target = FindAutoFightTarget(AutoFightSearchRange);
+                }
+
+                if (target == null)
+                {
+                    TryStartAutoFightRoam();
+                    return;
+                }
+
+                ClearAutoFightPath();
+                MapObject.TargetObject = target;
+                MapObject.MagicObject = target;
+            }
+
+            int attackRange = GetAutoFightRange(User.Class);
+
+            if (Functions.InRange(target.CurrentLocation, User.CurrentLocation, attackRange))
+            {
+                ClearAutoFightPath();
+                TryAutoFightAttack(target);
+                return;
+            }
+
+            if (_AutoPath && CurrentPath != null && CurrentPathIndex < CurrentPath.Count) return;
+
+            StartAutoFightPath(target, attackRange);
+        }
+
+        private void ClearAutoFightPath()
+        {
+            CurrentPath = null;
+            CurrentPathIndex = 0;
+            _AutoPath = false;
+        }
+
+        private bool IsAutoFightTarget(MapObject ob)
+        {
+            if (ob == null || ob.Race != ObjectType.Monster || !string.IsNullOrEmpty(ob.PetOwner)) return false;
+            if (!CanAttackTarget(ob)) return false;
+
+            if (!AutoFightUnreachableTargets.TryGetValue(ob.ObjectID, out DateTime expireTime)) return true;
+
+            if (expireTime > CEnvir.Now) return false;
+
+            AutoFightUnreachableTargets.Remove(ob.ObjectID);
+            return true;
+        }
+
+        private void RemoveExpiredAutoFightTargets()
+        {
+            if (AutoFightUnreachableTargets.Count == 0) return;
+
+            foreach (uint objectID in AutoFightUnreachableTargets.Where(x => x.Value <= CEnvir.Now).Select(x => x.Key).ToList())
+                AutoFightUnreachableTargets.Remove(objectID);
+        }
+
+        private MapObject FindAutoFightTarget(int range)
+        {
+            if (MapControl.Objects == null) return null;
+
+            MapObject best = null;
+            int bestDistance = int.MaxValue;
+
+            for (int i = 0; i < MapControl.Objects.Count; i++)
+            {
+                MapObject ob = MapControl.Objects[i];
+                if (!IsAutoFightTarget(ob)) continue;
+
+                int distance = Functions.Distance(User.CurrentLocation, ob.CurrentLocation);
+                if (distance > range || distance >= bestDistance) continue;
+
+                best = ob;
+                bestDistance = distance;
+            }
+
+            return best;
+        }
+
+        private bool TryAutoFightAttack(MapObject target)
+        {
+            if (!IsAutoFightTarget(target)) return false;
+
+            MapObject.TargetObject = target;
+            MapObject.MagicObject = target;
+
+            if (IsAutoFightRangedClass(User.Class))
+            {
+                bool cast = TryUseAutoFightMagic(target, true);
+
+                if (!cast)
+                    TryAutoFightRetreat(target);
+
+                return cast;
+            }
+
+            if (!Functions.InRange(target.CurrentLocation, User.CurrentLocation, 1))
+            {
+                MapObject nearbyTarget = FindAutoFightTarget(1);
+                if (nearbyTarget != null)
+                {
+                    MapObject.TargetObject = nearbyTarget;
+                    MapObject.MagicObject = nearbyTarget;
+                }
+
+                return false;
+            }
+
+            TryUseAutoFightMagic(target, false);
+            return true;
+        }
+
+        private bool TryUseAutoFightMagic(MapObject target, bool requireMagic)
+        {
+            if (User.Horse != HorseType.None || User.MagicAction != null) return false;
+
+            ClientUserMagic magic = GetAutoFightMagic();
+
+            if (magic == null)
+            {
+                if (requireMagic && CEnvir.Now >= AutoFightHintTime)
+                {
+                    AutoFightHintTime = CEnvir.Now.AddSeconds(1);
+                    ReceiveChat("F1挂机技能不能为空，请先把挂机技能设置到当前技能栏的F1。", MessageType.Hint);
+                    AutoFight = false;
+                }
+
+                return false;
+            }
+
+            if (CEnvir.Now < User.NextMagicTime || CEnvir.Now < magic.NextCast) return false;
+
+            if (magic.Cost > User.CurrentMP)
+            {
+                if (requireMagic && CEnvir.Now >= AutoFightHintTime)
+                {
+                    AutoFightHintTime = CEnvir.Now.AddSeconds(1);
+                    ReceiveChat(string.Format(CEnvir.Language.GameSceneCastNoEnoughMana, magic.Info.Name), MessageType.Hint);
+                }
+
+                return false;
+            }
+
+            MapObject oldMouseObject = MapObject.MouseObject;
+            Point oldMapLocation = MapControl.MapLocation;
+
+            try
+            {
+                MapObject.MagicObject = target;
+                MapObject.MouseObject = target;
+                MapControl.MapLocation = target.CurrentLocation;
+
+                UseMagic(SpellKey.Spell01);
+            }
+            finally
+            {
+                MapControl.MapLocation = oldMapLocation;
+                MapObject.MouseObject = oldMouseObject;
+            }
+
+            return User.MagicAction != null;
+        }
+
+        private bool TryAutoFightRetreat(MapObject target)
+        {
+            int currentDistance = Functions.Distance(User.CurrentLocation, target.CurrentLocation);
+            if (currentDistance >= AutoFightRangedMinRange) return false;
+            if (User.MagicAction != null) return false;
+            if (!MoveFrame || (User.Poison & PoisonType.WraithGrip) == PoisonType.WraithGrip) return false;
+
+            MirDirection awayDirection = Functions.DirectionFromPoint(target.CurrentLocation, User.CurrentLocation);
+            bool canRun = CanRun &&
+                          CEnvir.Now >= User.NextRunTime &&
+                          User.CurrentHP >= 10 &&
+                          User.BagWeight <= User.Stats[Stat.BagWeight] &&
+                          User.WearWeight <= User.Stats[Stat.WearWeight];
+
+            bool found = false;
+            MirDirection bestDirection = awayDirection;
+            int bestSteps = 1;
+            int bestDistance = currentDistance;
+
+            foreach (MirDirection direction in GetAutoFightRetreatDirections(awayDirection))
+            {
+                int maxSteps = canRun && MapControl.CanMove(direction, 2) ? 2 : 1;
+
+                for (int steps = maxSteps; steps >= 1; steps--)
+                {
+                    if (!MapControl.CanMove(direction, steps)) continue;
+
+                    Point location = Functions.Move(User.CurrentLocation, direction, steps);
+                    int distance = Functions.Distance(location, target.CurrentLocation);
+                    if (distance < currentDistance) continue;
+                    if (found && distance <= bestDistance) continue;
+
+                    found = true;
+                    bestDirection = direction;
+                    bestSteps = steps;
+                    bestDistance = distance;
+                }
+            }
+
+            if (!found) return false;
+
+            MapObject.User.AttemptAction(new ObjectAction(
+                MirAction.Moving,
+                bestDirection,
+                Functions.Move(MapObject.User.CurrentLocation, bestDirection, bestSteps),
+                bestSteps,
+                MagicType.None));
+
+            return true;
+        }
+
+        private IEnumerable<MirDirection> GetAutoFightRetreatDirections(MirDirection awayDirection)
+        {
+            int side = CEnvir.Random.Next(2) == 0 ? 1 : -1;
+
+            yield return Functions.ShiftDirection(awayDirection, side);
+            yield return Functions.ShiftDirection(awayDirection, -side);
+            yield return awayDirection;
+            yield return Functions.ShiftDirection(awayDirection, side * 2);
+            yield return Functions.ShiftDirection(awayDirection, -side * 2);
+        }
+
+        private ClientUserMagic GetAutoFightMagic()
+        {
+            if (MagicBarBox == null || User?.Magics == null) return null;
+
+            foreach (KeyValuePair<MagicInfo, ClientUserMagic> pair in User.Magics)
+            {
+                switch (MagicBarBox.SpellSet)
+                {
+                    case 1:
+                        if (pair.Value.Set1Key == SpellKey.Spell01)
+                            return pair.Value;
+                        break;
+                    case 2:
+                        if (pair.Value.Set2Key == SpellKey.Spell01)
+                            return pair.Value;
+                        break;
+                    case 3:
+                        if (pair.Value.Set3Key == SpellKey.Spell01)
+                            return pair.Value;
+                        break;
+                    case 4:
+                        if (pair.Value.Set4Key == SpellKey.Spell01)
+                            return pair.Value;
+                        break;
+                }
+            }
+
+            return null;
+        }
+
+        private void StartAutoFightPath(MapObject target, int attackRange)
+        {
+            if (CEnvir.Now < AutoFightPathTime) return;
+
+            AutoFightPathTime = CEnvir.Now.AddMilliseconds(500);
+
+            if (!EnsureAutoFightPathFinder()) return;
+
+            foreach (Point location in GetAutoFightPathCandidates(target.CurrentLocation, attackRange))
+            {
+                List<Node> path = PathFinder.FindPath(User.CurrentLocation, location);
+                if (path == null || path.Count <= 1) continue;
+
+                CurrentPath = path;
+                CurrentPathIndex = 0;
+                _AutoPath = true;
+                return;
+            }
+
+            MarkAutoFightTargetUnreachable(target);
+        }
+
+        private void TryStartAutoFightRoam()
+        {
+            if (_AutoPath && CurrentPath != null && CurrentPathIndex < CurrentPath.Count) return;
+            if (CEnvir.Now < AutoFightRoamTime) return;
+
+            AutoFightRoamTime = CEnvir.Now.AddSeconds(2);
+
+            if (!EnsureAutoFightPathFinder()) return;
+
+            for (int i = 0; i < 5; i++)
+            {
+                Point location = PathFinder.GetRandomLocation(User.CurrentLocation, 50);
+                if (!MapControl.EmptyCell(location)) continue;
+
+                List<Node> path = PathFinder.FindPath(User.CurrentLocation, location);
+                if (path == null || path.Count <= 1) continue;
+
+                CurrentPath = path;
+                CurrentPathIndex = 0;
+                _AutoPath = true;
+                return;
+            }
+        }
+
+        private bool EnsureAutoFightPathFinder()
+        {
+            if (MapControl == null || MapControl.Cells == null || MapControl.Width <= 0 || MapControl.Height <= 0) return false;
+
+            if (PathFinder == null)
+                PathFinder = new PathFinder(MapControl);
+
+            return true;
+        }
+
+        private IEnumerable<Point> GetAutoFightPathCandidates(Point targetLocation, int attackRange)
+        {
+            List<Point> candidates = new List<Point>();
+
+            int minRange = 1;
+            int maxRange = Math.Max(minRange, attackRange);
+
+            for (int range = maxRange; range >= minRange; range--)
+            {
+                for (int x = -range; x <= range; x++)
+                {
+                    AddAutoFightPathCandidate(candidates, new Point(targetLocation.X + x, targetLocation.Y - range));
+                    AddAutoFightPathCandidate(candidates, new Point(targetLocation.X + x, targetLocation.Y + range));
+                }
+
+                for (int y = -range + 1; y <= range - 1; y++)
+                {
+                    AddAutoFightPathCandidate(candidates, new Point(targetLocation.X - range, targetLocation.Y + y));
+                    AddAutoFightPathCandidate(candidates, new Point(targetLocation.X + range, targetLocation.Y + y));
+                }
+            }
+
+            return candidates
+                .OrderBy(x => Functions.Distance(User.CurrentLocation, x))
+                .ThenByDescending(x => Functions.Distance(targetLocation, x))
+                .Take(AutoFightPathCandidateLimit)
+                .ToList();
+        }
+
+        private void AddAutoFightPathCandidate(List<Point> candidates, Point location)
+        {
+            if (!MapControl.EmptyCell(location) || candidates.Contains(location)) return;
+
+            candidates.Add(location);
+        }
+
+        private void MarkAutoFightTargetUnreachable(MapObject target)
+        {
+            AutoFightUnreachableTargets[target.ObjectID] = CEnvir.Now.AddSeconds(5);
+
+            if (MapObject.TargetObject == target)
+                MapObject.TargetObject = null;
+
+            if (MapObject.MagicObject == target)
+                MapObject.MagicObject = null;
+
+            ClearAutoFightPath();
+        }
+
+        private int GetAutoFightRange(MirClass mirClass)
+        {
+            return IsAutoFightRangedClass(mirClass) ? Math.Min(Globals.MagicRange, 7) : 3;
+        }
+
+        private bool IsAutoFightRangedClass(MirClass mirClass)
+        {
+            return mirClass == MirClass.Wizard || mirClass == MirClass.Taoist;
         }
 
         public override void OnKeyPress(KeyPressEventArgs e)
@@ -1441,6 +1878,11 @@ namespace Client.Scenes
                         if (Observer) continue;
 
                         AutoRun = !AutoRun;
+                        break;
+                    case KeyBindAction.AutoFight:
+                        if (Observer) continue;
+
+                        AutoFight = !AutoFight;
                         break;
                     case KeyBindAction.UseBelt01:
                         if (Observer) continue;

@@ -339,6 +339,9 @@ namespace Client.UserModels
         HelpWindow,
 
         [Description("Hero Window")]
-        HeroWindow
+        HeroWindow,
+
+        [Description("自动战斗开关")]
+        AutoFight
     }
 }
