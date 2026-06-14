@@ -21,6 +21,14 @@ namespace Server.Models.Monsters
         {
             if (Target == null) return;
 
+            if (InAttackRange())
+            {
+                if (CanAttack)
+                    Attack();
+
+                return;
+            }
+
             if (CurrentLocation == Target.CurrentLocation)
             {
                 MirDirection direction = (MirDirection)SEnvir.Random.Next(8);

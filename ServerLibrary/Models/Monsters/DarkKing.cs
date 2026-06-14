@@ -11,6 +11,8 @@ namespace Server.Models.Monsters
 {
     public class DarkKing : MonsterObject
     {
+        private const int ComboMagicShieldBonus = 70;
+
         public int numberOfAttacks = 10;
         int attacksDone = 0;
         int tempAttackDelay;
@@ -28,11 +30,7 @@ namespace Server.Models.Monsters
             {
                 if(attacksDone != 0)
                 {
-                    AttackDelay = tempAttackDelay;
-                    Direction = tempDirection;
-                    Teleport(CurrentMap, tempLocation, false);
-                    Stats[Stat.MagicShield] -= 100;
-                    attacksDone = 0;
+                    EndCombo();
                 }
                 return;
             }
@@ -48,7 +46,7 @@ namespace Server.Models.Monsters
                         AttackDelay = 300;
                         tempDirection = Direction;
                         tempLocation = CurrentLocation;
-                        Stats[Stat.MagicShield] += 70;
+                        Stats[Stat.MagicShield] += ComboMagicShieldBonus;
                     }
                 }
 
@@ -88,7 +86,7 @@ namespace Server.Models.Monsters
                         {
                             cell = CurrentMap.GetCell(Functions.Move(newTarget.CurrentLocation, Functions.ShiftDirection(dir, i), 1));
 
-                            if (cell == null || cell.Movements != null)
+                            if (cell == null || cell.Movements != null || cell.IsBlocking(this, false))
                             {
                                 cell = null;
                                 continue;
@@ -107,21 +105,27 @@ namespace Server.Models.Monsters
                             ActionList.Add(new DelayedAction(
                                                SEnvir.Now.AddMilliseconds(400),
                                                ActionType.DelayAttack,
-                                               Target,
+                                               newTarget,
                                                GetDC() + newTarget.Stats[Stat.Health] / 100,
                                                AttackElement));
                             attacksDone--;
                             if (attacksDone == 0)
                             {
-                                AttackDelay = tempAttackDelay;
-                                Direction = tempDirection;
-                                Teleport(CurrentMap, tempLocation, false);
-                                Stats[Stat.MagicShield] -= 100;
+                                EndCombo();
                             }
                         }
                     }
                 }
             }
+        }
+
+        private void EndCombo()
+        {
+            AttackDelay = tempAttackDelay;
+            Direction = tempDirection;
+            Teleport(CurrentMap, tempLocation, false);
+            Stats[Stat.MagicShield] -= ComboMagicShieldBonus;
+            attacksDone = 0;
         }
     }
 }

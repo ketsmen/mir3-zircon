@@ -23,8 +23,10 @@ namespace Server.Models.Monsters
 
             Broadcast(new S.ObjectRangeAttack { ObjectID = ObjectID, Direction = Direction, Location = CurrentLocation });
 
-            foreach (MapObject ob in GetTargets(CurrentMap, CurrentLocation, 1))
+            foreach (MapObject ob in GetAllObjects(CurrentLocation, 1))
             {
+                if (!CanHelpTarget(ob)) continue;
+
                 Stats buffStats = new Stats
                 {
                     [Stat.MinAC] = ob.Stats[Stat.MaxAC] / 2,

@@ -25,9 +25,10 @@ namespace Server.Models.Monsters
         {
             if (Target == null) return;
 
-            if (InAttackRange() && CanAttack && SEnvir.Random.Next(3) == 0)
+            if (InAttackRange())
             {
-                Attack();
+                if (CanAttack)
+                    Attack();
                 return;
             }
 
@@ -61,10 +62,18 @@ namespace Server.Models.Monsters
                 BatsSpawned = true;
                 if (BatInfo == null) return;
 
-                for (int i = 0; i < 14; i++)
+                int count = Math.Min(14, MaxMinions - MinionList.Count);
+
+                for (int i = 0; i < count; i++)
                 {
                     MonsterObject mob = GetMonster(BatInfo);
-                    SpawnMinion(mob);
+                    if (mob == null) continue;
+
+                    if (!SpawnMinion(mob)) continue;
+
+                    mob.Target = Target;
+                    mob.Master = this;
+                    MinionList.Add(mob);
                 }
                 return;
             }
@@ -90,7 +99,16 @@ namespace Server.Models.Monsters
 
         public override bool SpawnMinion(MonsterObject mob)
         {
-            return mob.Spawn(CurrentMap, CurrentMap.GetRandomLocation(CurrentLocation, AttackRange));
+            if (mob == null || CurrentMap == null) return false;
+
+            foreach (Cell cell in CurrentMap.GetCells(CurrentLocation, 1, AttackRange, true))
+            {
+                if (cell.Movements != null || cell.IsBlocking(mob, false)) continue;
+
+                return mob.Spawn(CurrentMap, cell.Location);
+            }
+
+            return false;
         }
 
         private void RangeAttack()
@@ -99,8 +117,8 @@ namespace Server.Models.Monsters
             switch (SEnvir.Random.Next(3))
             {
                 case 0:
-                    Broadcast(new S.ObjectMagic { ObjectID = ObjectID, Direction = Direction, CurrentLocation = CurrentLocation, Cast = true, Type = MagicType.None });
-                    List<MapObject> targets = GetTargets(CurrentMap, CurrentLocation, ViewRange);
+                    List<uint> targetIDs = new List<uint>();
+                    List<MapObject> targets = GetTargets(CurrentMap, CurrentLocation, AttackRange);
 
                     if (targets.Count > 0)
                     {
@@ -115,8 +133,12 @@ namespace Server.Models.Monsters
                                 TickFrequency = TimeSpan.FromSeconds(10),
                                 TickCount = 1,
                             });
+
+                            targetIDs.Add(ob.ObjectID);
                         }
                     }
+
+                    Broadcast(new S.ObjectMagic { ObjectID = ObjectID, Direction = Direction, CurrentLocation = CurrentLocation, Cast = true, Type = MagicType.None, Targets = targetIDs });
                     break;
                 default:
                     Broadcast(new S.ObjectRangeAttack { ObjectID = ObjectID, Direction = Direction, Location = CurrentLocation, Targets = new List<uint> { Target.ObjectID } });

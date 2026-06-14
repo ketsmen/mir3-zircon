@@ -22,6 +22,7 @@ namespace Server.Models.Monsters
                 CastTime = SEnvir.Now.AddSeconds(5);
                 PoisonRate = 2;
                 LineAoE(10, -1, 1, MagicType.PoisonousGolemLineAoE, Element.None);
+                return;
             }
 
             base.ProcessTarget();
@@ -29,7 +30,7 @@ namespace Server.Models.Monsters
 
         protected override void Attack()
         {
-            Cast--;
+            Cast = Math.Max(0, Cast - 1);
             PoisonRate = 5;
 
             base.Attack();

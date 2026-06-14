@@ -20,7 +20,7 @@ namespace Server.Models.Monsters
 
         public override void Die()
         {
-            Owner.minions.Remove(this);
+            Owner?.minions.Remove(this);
             //SEnvir.BossEventCount--;
             base.Die();
         }

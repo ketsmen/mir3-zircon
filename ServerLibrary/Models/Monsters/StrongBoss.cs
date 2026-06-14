@@ -11,19 +11,9 @@ namespace Server.Models.Monsters
 {
     public class StrongBoss : MonsterObject
     {
-        List<Cell> cells;
         public StrongBoss()
         {
             AvoidFireWall = false;
-        }
-
-        public override void Process()
-        {
-            base.Process();
-
-            if (Dead) return;
-
-            cells = CurrentMap.GetCells(CurrentLocation, 0, ViewRange);
         }
 
         protected override bool InAttackRange()
@@ -71,7 +61,7 @@ namespace Server.Models.Monsters
                 {
                     cell = CurrentMap.GetCell(Functions.Move(newTarget.CurrentLocation, Functions.ShiftDirection(dir, i), 1));
 
-                    if (cell == null || cell.Movements != null)
+                    if (cell == null || cell.Movements != null || cell.IsBlocking(this, false))
                     {
                         cell = null;
                         continue;
@@ -91,6 +81,8 @@ namespace Server.Models.Monsters
             Broadcast(new S.ObjectMagic { ObjectID = ObjectID, Direction = Direction, CurrentLocation = CurrentLocation, Cast = true, Type = MagicType.FireStorm, Targets = targetIDs, Locations = locations });
 
             UpdateAttackTime();
+
+            List<Cell> cells = CurrentMap.GetCells(CurrentLocation, 0, ViewRange);
 
             foreach (Cell cell in cells)
             {

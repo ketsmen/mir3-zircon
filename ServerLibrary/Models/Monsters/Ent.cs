@@ -29,6 +29,15 @@ namespace Server.Models.Monsters
         public override void ProcessTarget()
         {
             if(Target == null) return;
+
+            if (InAttackRange())
+            {
+                if (CanAttack)
+                    Attack();
+
+                return;
+            }
+
             if (CurrentLocation == Target.CurrentLocation)
             {
                 MirDirection direction = (MirDirection)SEnvir.Random.Next(8);
@@ -43,8 +52,11 @@ namespace Server.Models.Monsters
             }
             else
                 MoveTo(Target.CurrentLocation);
+        }
 
-            if (!CanAttack || !InAttackRange()) return;
+        protected override void Attack()
+        {
+            Direction = Functions.DirectionFromPoint(CurrentLocation, Target.CurrentLocation);
 
             List<uint> targetIDs = new List<uint>();
             List<Point> locations = new List<Point>();
@@ -53,26 +65,16 @@ namespace Server.Models.Monsters
 
             UpdateAttackTime();
 
-            foreach (Cell cell in CurrentMap.GetCells(CurrentLocation, 0, ViewRange))
+            foreach (MapObject ob in GetTargets(CurrentMap, CurrentLocation, ViewRange))
             {
-                if (cell.Objects == null)
-                {
-                    continue;
-                }
+                targetIDs.Add(ob.ObjectID);
 
-                foreach (MapObject ob in cell.Objects)
-                {
-                    if (!CanAttackTarget(ob)) continue;
-
-                    targetIDs.Add(ob.ObjectID);
-
-                    ActionList.Add(new DelayedAction(
-                        SEnvir.Now.AddMilliseconds(500),
-                        ActionType.DelayAttack,
-                        ob,
-                        GetDC(),
-                        AttackElement));
-                }
+                ActionList.Add(new DelayedAction(
+                    SEnvir.Now.AddMilliseconds(500),
+                    ActionType.DelayAttack,
+                    ob,
+                    GetDC(),
+                    AttackElement));
             }
         }
     }

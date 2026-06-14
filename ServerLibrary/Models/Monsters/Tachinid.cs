@@ -15,14 +15,22 @@ namespace Server.Models.Monsters
         public override void ProcessTarget()
         {
             if (Target == null) return;
+            if (!Functions.InRange(CurrentLocation, Target.CurrentLocation, ViewRange))
+            {
+                Target = null;
+                return;
+            }
+
             if (CanAttack && CanAttackTarget(Target))
             {
                 Cell cell = null;
+                MirDirection direction = (MirDirection)SEnvir.Random.Next(8);
+
                 for (int i = 0; i < 8; i++)
                 {
-                    cell = CurrentMap.GetCell(Functions.Move(Target.CurrentLocation, Functions.ShiftDirection(Target.Direction, i), 1));
+                    cell = CurrentMap.GetCell(Functions.Move(Target.CurrentLocation, Functions.ShiftDirection(direction, i), 1));
 
-                    if (cell == null || cell.Movements != null)
+                    if (cell == null || cell.Movements != null || cell.IsBlocking(this, false))
                     {
                         cell = null;
                         continue;

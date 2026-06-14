@@ -693,7 +693,7 @@ namespace Server.Models
                         MonsterInfo = monsterInfo,
                         SpawnList = { [SEnvir.MonsterInfoList.Binding.First(x => x.Flag == MonsterFlag.SuperLarva)] = 1 },
                         MinionsCount = 3,
-                        MaxMinions = 1000
+                        MaxMinions = 30
                     };
                 case 145:
                     return new StrongBoss
@@ -997,7 +997,7 @@ namespace Server.Models
             if (NearByPlayers.Count == 0 && (MonsterInfo.ViewRange <= Config.MaxViewRange || CurrentMap.Players.Count == 0) && !MonsterInfo.IsBoss && PetOwner == null) return;
 
             Activated = true;
-            SEnvir.ActiveObjects.Add(this);
+            SEnvir.AddActiveObject(this);
         }
         public override void DeActivate()
         {
@@ -1006,7 +1006,7 @@ namespace Server.Models
             if (NearByPlayers.Count > 0 || Target != null || (MonsterInfo.ViewRange > Config.MaxViewRange && CurrentMap.Players.Count > 0) || MonsterInfo.IsBoss || PetOwner != null || ActionList.Count > 0 || CurrentHP < Stats[Stat.Health]) return;
 
             Activated = false;
-            SEnvir.ActiveObjects.Remove(this);
+            SEnvir.RemoveActiveObject(this);
         }
 
         public override void ProcessAction(DelayedAction action)
@@ -1373,6 +1373,8 @@ namespace Server.Models
                 if (info == null) continue;
 
                 MonsterObject mob = GetMonster(info);
+
+                if (mob == null) continue;
 
                 if (!SpawnMinion(mob)) return;
 

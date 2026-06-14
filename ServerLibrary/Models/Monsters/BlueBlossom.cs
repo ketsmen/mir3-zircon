@@ -49,7 +49,7 @@ namespace Server.Models.Monsters
 
         public void Heal(MapObject ob)
         {
-            if (ob?.Node == null || ob.Dead) return;
+            if (!CanHelpTarget(ob)) return;
 
             ob.BuffAdd(BuffType.Heal, TimeSpan.MaxValue, new Stats { [Stat.Healing] = Stats[Stat.Healing], [Stat.HealingCap] = Stats[Stat.HealingCap] }, false, false, TimeSpan.FromSeconds(1));
         }

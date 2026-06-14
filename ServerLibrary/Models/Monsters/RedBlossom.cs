@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Drawing;
+using System.Collections.Generic;
 using Library;
 using Server.Envir;
 using S = Library.Network.ServerPackets;
@@ -71,8 +72,10 @@ namespace Server.Models.Monsters
             {
                 Broadcast(new S.ObjectRangeAttack { ObjectID = ObjectID, Direction = Direction, Location = CurrentLocation });
 
+                HashSet<MapObject> hitTargets = new HashSet<MapObject>();
+
                 foreach (MirDirection dir in Enum.GetValues(typeof(MirDirection)))
-                    LineAttack(5, dir);
+                    LineAttack(5, dir, hitTargets);
             }
         }
     }

@@ -1,6 +1,7 @@
 ﻿using Library;
 using Server.Envir;
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using S = Library.Network.ServerPackets;
 
@@ -39,12 +40,19 @@ namespace Server.Models.Monsters
 
         protected void LineAttack(int distance, MirDirection direction)
         {
+            LineAttack(distance, direction, null);
+        }
+
+        protected void LineAttack(int distance, MirDirection direction, HashSet<MapObject> hitTargets)
+        {
             for (int i = 1; i <= distance; i++)
             {
                 Point target = Functions.Move(CurrentLocation, direction, i);
 
                 if (target == Target.CurrentLocation)
                 {
+                    if (hitTargets != null && !hitTargets.Add(Target)) continue;
+
                     ActionList.Add(new DelayedAction(
                         SEnvir.Now.AddMilliseconds(400),
                         ActionType.DelayAttack,
@@ -60,6 +68,7 @@ namespace Server.Models.Monsters
                     foreach (MapObject ob in cell.Objects)
                     {
                         if (!CanAttackTarget(ob)) continue;
+                        if (hitTargets != null && !hitTargets.Add(ob)) continue;
 
                         ActionList.Add(new DelayedAction(
                             SEnvir.Now.AddMilliseconds(400),

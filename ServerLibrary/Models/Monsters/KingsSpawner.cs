@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -13,37 +14,55 @@ namespace Server.Models.Monsters
     {
         public MonsterInfo MonsterSpawnInfo;
         public int NumberToSpawn;
+        public int MaxTotalSpawn = 12;
 
         public override void Die()
         {
-            if (MonsterSpawnInfo == null) return;
-
-            if(EXPOwner != null)
+            if(MonsterSpawnInfo != null && EXPOwner != null)
             {
+                int spawned = 0;
+
                 if (EXPOwner.GroupMembers != null)
                 {
                     foreach (PlayerObject ob in EXPOwner.GroupMembers)
                     {
                         if (ob.CurrentMap != CurrentMap || !Functions.InRange(ob.CurrentLocation, CurrentLocation, Config.MaxViewRange)) continue;
 
-                        for (int i = 0; i < NumberToSpawn; i++)
+                        for (int i = 0; i < NumberToSpawn && spawned < MaxTotalSpawn; i++)
                         {
-                            MonsterObject mob = GetMonster(MonsterSpawnInfo);
-                            mob.Spawn(CurrentMap, ob.CurrentLocation);
+                            if (SpawnMonsterNear(ob.CurrentLocation))
+                                spawned++;
                         }
+
+                        if (spawned >= MaxTotalSpawn) break;
                     }
                 }
                 else
                 {
-                    for (int i = 0; i < NumberToSpawn; i++)
+                    for (int i = 0; i < NumberToSpawn && spawned < MaxTotalSpawn; i++)
                     {
-                        MonsterObject mob = GetMonster(MonsterSpawnInfo);
-                        mob.Spawn(CurrentMap, EXPOwner.CurrentLocation);
+                        if (SpawnMonsterNear(EXPOwner.CurrentLocation))
+                            spawned++;
                     }
                 }
             }
 
             base.Die();
+        }
+
+        private bool SpawnMonsterNear(Point origin)
+        {
+            MonsterObject mob = GetMonster(MonsterSpawnInfo);
+            if (mob == null) return false;
+
+            foreach (Cell cell in CurrentMap.GetCells(origin, 0, 3, true))
+            {
+                if (cell.Movements != null || cell.IsBlocking(mob, false)) continue;
+
+                return mob.Spawn(CurrentMap, cell.Location);
+            }
+
+            return false;
         }
     }
 }

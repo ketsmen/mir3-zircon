@@ -7,6 +7,17 @@ namespace Server.Models.Monsters
 {
     public class CrawlerSlave : DuelHitMonster
     {
+        public override void ProcessAction(DelayedAction action)
+        {
+            switch (action.Type)
+            {
+                case ActionType.Function:
+                    PoisonAttack((MapObject)action.Data[0], (int)action.Data[1], (Element)action.Data[2]);
+                    return;
+            }
+
+            base.ProcessAction(action);
+        }
 
         protected override void Attack2()
         {
@@ -16,20 +27,26 @@ namespace Server.Models.Monsters
             {
                 ActionList.Add(new DelayedAction(
                     SEnvir.Now.AddMilliseconds(400),
-                    ActionType.DelayAttack,
+                    ActionType.Function,
                     ob,
                     GetDC(),
                     AttackElement));
-
-                ob.ApplyPoison(new Poison
-                {
-                    Value = GetSC(),
-                    Type = PoisonType.Green,
-                    Owner = this,
-                    TickFrequency = TimeSpan.FromSeconds(2),
-                    TickCount = 10,
-                });
             }
+        }
+
+        private void PoisonAttack(MapObject ob, int power, Element element)
+        {
+            int damage = Attack(ob, power, element);
+            if (damage <= 0) return;
+
+            ob.ApplyPoison(new Poison
+            {
+                Value = GetSC(),
+                Type = PoisonType.Green,
+                Owner = this,
+                TickFrequency = TimeSpan.FromSeconds(2),
+                TickCount = 10,
+            });
         }
     }
 }

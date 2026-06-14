@@ -14,6 +14,7 @@ namespace Server.Models.Monsters
         public List<MonsterObject> minions = new List<MonsterObject>();
         public int count = 9;
         public MonsterInfo MonsterSpawnInfo;
+        private DateTime NextSwapTime;
 
         public DemonicLunatic()
         {
@@ -30,18 +31,19 @@ namespace Server.Models.Monsters
 
         public bool SpawnMinion(MonsterObject mob, MonsterObject owner)
         {
-            if(mob.Spawn(CurrentMap, CurrentMap.GetRandomLocation(CurrentLocation, 6)))
+            DemonicLunaticMirror mirror = mob as DemonicLunaticMirror;
+            if (mirror == null) return false;
+
+            foreach (Cell cell in CurrentMap.GetCells(CurrentLocation, 1, 6, true))
             {
-                DemonicLunaticMirror mirror = (DemonicLunaticMirror)mob;
-                if(mirror == null)
-                {
-                    mob.EXPOwner = null;
-                    mob.Die();
-                    return false;
-                }
+                if (cell.Movements != null || cell.IsBlocking(mirror, false)) continue;
+
+                if (!mirror.Spawn(CurrentMap, cell.Location)) return false;
+
                 mirror.Owner = this;
                 return true;
             }
+
             return false;
         }
 
@@ -62,17 +64,18 @@ namespace Server.Models.Monsters
                         minions.Add(monster);
                     }
                 }
-                for(int i = 0; i < count * 2; i++)
+                for(int i = 0; i < count * 2 && minions.Count > 1; i++)
                 {
                     SwapRandomLocations(false);
                 }
             }
 
-            if (CanAttack || CanMove)
+            if (minions.Count > 1 && SEnvir.Now >= NextSwapTime && (CanAttack || CanMove))
             {
                 if (SEnvir.Random.Next(10) == 0)
                 {
                     SwapRandomLocations(true);
+                    NextSwapTime = SEnvir.Now.AddSeconds(1);
                 }
             }
 
@@ -101,12 +104,14 @@ namespace Server.Models.Monsters
 
         public override void Die()
         {
-            for(int i = minions.Count - 1; i >= 0; i--)
+            MonsterObject[] currentMinions = minions.ToArray();
+
+            for(int i = currentMinions.Length - 1; i >= 0; i--)
             {
-                if(minions[i] != this)
+                if(currentMinions[i] != this)
                 {
-                    minions[i].EXPOwner = null;
-                    minions[i].Die();
+                    currentMinions[i].EXPOwner = null;
+                    currentMinions[i].Die();
                 }
             }
             base.Die();
@@ -114,6 +119,8 @@ namespace Server.Models.Monsters
 
         private void SwapRandomLocations(bool leaveEffect)
         {
+            if (minions.Count < 2) return;
+
             int first = SEnvir.Random.Next(minions.Count);
             int second = 0;
             do
