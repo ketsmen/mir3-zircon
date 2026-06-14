@@ -964,6 +964,21 @@ namespace Library.Network.ServerPackets
         public ClientUserHero Hero { get; set; }
     }
 
+    public sealed class HeroMagicLeveled : Packet
+    {
+        public int HeroIndex { get; set; }
+        public int InfoIndex { get; set; }
+        public MagicInfo Info;
+        public int Level { get; set; }
+        public long Experience { get; set; }
+
+        [CompleteObject]
+        public void Complete()
+        {
+            Info = Globals.MagicInfoList.Binding.FirstOrDefault(x => x.Index == InfoIndex);
+        }
+    }
+
     public sealed class HeroHealthChanged : Packet
     {
         public int CurrentHP { get; set; }

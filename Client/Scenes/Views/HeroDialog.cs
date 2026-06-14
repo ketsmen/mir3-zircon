@@ -519,6 +519,23 @@ namespace Client.Scenes.Views
             UpdateLabels();
         }
 
+        public void UpdateMagic(MagicInfo info)
+        {
+            if (info == null) return;
+
+            ClientUserHero hero = GameScene.Game?.CurrentHero;
+            ClientUserMagic magic = hero?.Magics.FirstOrDefault(x => x.Info == info);
+
+            foreach (HeroMagicCell cell in SkillCells)
+            {
+                if (cell.Info != info) continue;
+
+                cell.Magic = magic;
+                cell.Refresh();
+                return;
+            }
+        }
+
         public void UpdateLabels()
         {
             ClientUserHero hero = GameScene.Game?.CurrentHero;

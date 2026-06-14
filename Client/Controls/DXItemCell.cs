@@ -1780,6 +1780,15 @@ namespace Client.Controls
                     CEnvir.Enqueue(new C.ItemUse { Link = new CellLinkInfo { GridType = GridType, Slot = Slot, Count = 1 } });
                     PlayItemSound();
                     break;
+                case ItemType.Book:
+                    if (CEnvir.Now < GameScene.Game.UseItemTime) return false;
+
+                    GameScene.Game.UseItemTime = CEnvir.Now.AddMilliseconds(250);
+                    Locked = true;
+
+                    CEnvir.Enqueue(new C.ItemUse { Link = new CellLinkInfo { GridType = GridType, Slot = Slot, Count = 1 } });
+                    PlayItemSound();
+                    break;
                 default:
                     return false;
             }

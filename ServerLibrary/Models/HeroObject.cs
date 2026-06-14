@@ -237,10 +237,15 @@ namespace Server.Models
                 case ActionType.DelayAttack:
                     MapObject target = (MapObject)action.Data[0];
                     MagicType magic = action.Data.Length > 3 ? (MagicType)action.Data[3] : MagicType.None;
-                    int damage = Attack(target, (int)action.Data[1], (Element)action.Data[2]);
+                    Element element = (Element)action.Data[2];
+                    int damage = Attack(target, (int)action.Data[1], element);
 
                     if (damage > 0)
+                    {
+                        LevelAttackMagic(magic);
+                        LevelAttackPassives(target, magic, element);
                         OnAttackLanded(target, magic, damage);
+                    }
                     return;
             }
 
@@ -773,6 +778,9 @@ namespace Server.Models
                 SearchTime = DateTime.MinValue;
             }
 
+            if (power > 0)
+                LevelDefencePassives(element);
+
             return power;
         }
 
@@ -879,6 +887,8 @@ namespace Server.Models
                 if (element != Stat.None)
                     Stats[element] += item.Stats.GetWeaponElementValue() + item.Info.Stats.GetWeaponElementValue();
             }
+
+            ApplyPassiveMagicStats();
 
             foreach (BuffInfo buff in Buffs)
             {
@@ -1026,6 +1036,60 @@ namespace Server.Models
             Stats[Stat.BaseMana] = Stats[Stat.Mana];
         }
 
+        private void ApplyPassiveMagicStats()
+        {
+            if (Info?.Magics == null) return;
+
+            foreach (UserMagic magic in Info.Magics)
+            {
+                if (!CanUseKnownMagic(magic)) continue;
+
+                Stats stats = GetPassiveMagicStats(magic);
+                if (stats == null) continue;
+
+                Stats.Add(stats);
+            }
+        }
+
+        private Stats GetPassiveMagicStats(UserMagic magic)
+        {
+            switch (magic.Info.Magic)
+            {
+                case MagicType.Swordsmanship:
+                case MagicType.SpiritSword:
+                case MagicType.VineTreeDance:
+                    return new Stats { [Stat.Accuracy] = magic.GetPower() };
+                case MagicType.Slaying:
+                    return new Stats
+                    {
+                        [Stat.Accuracy] = magic.Level * 2,
+                        [Stat.MinDC] = magic.Level * 2,
+                        [Stat.MaxDC] = magic.Level * 2,
+                    };
+                case MagicType.DefensiveMastery:
+                    return new Stats { [Stat.DefensiveMastery] = magic.GetPower() };
+                case MagicType.Renounce:
+                    return new Stats { [Stat.MCPercent] = (1 + magic.Level) * 10 };
+                case MagicType.WillowDance:
+                    return new Stats { [Stat.Agility] = magic.GetPower() };
+                case MagicType.AdventOfDemon:
+                    return new Stats { [Stat.MaxAC] = magic.GetPower() };
+                case MagicType.AdventOfDevil:
+                    return new Stats { [Stat.MaxMR] = magic.GetPower() };
+                case MagicType.BloodyFlower:
+                    return new Stats { [Stat.LifeSteal] = magic.GetPower() };
+                case MagicType.Discipline:
+                    int power = magic.GetPower();
+                    return new Stats
+                    {
+                        [Stat.Accuracy] = power / 3,
+                        [Stat.MinDC] = power,
+                    };
+                default:
+                    return null;
+            }
+        }
+
         public void GainExperience(decimal amount, bool rateEffected = true)
         {
             if (rateEffected)
@@ -1079,6 +1143,57 @@ namespace Server.Models
             Owner?.Enqueue(new S.HeroLevelChanged { Level = Level, Experience = Info.Experience, MaxExperience = MaxExperience });
             Owner?.Enqueue(new S.HeroInformation { Hero = ToClientHero() });
             Owner?.Connection?.ReceiveChat($"{Name}升到了 {Level} 级。", MessageType.System);
+        }
+
+        public void LevelMagic(UserMagic magic)
+        {
+            if (!CanUseKnownMagic(magic)) return;
+
+            int maxExperience;
+            switch (magic.Level)
+            {
+                case 0:
+                    if (Level < magic.Info.NeedLevel1) return;
+
+                    maxExperience = magic.Info.Experience1;
+                    break;
+                case 1:
+                    if (Level < magic.Info.NeedLevel2) return;
+
+                    maxExperience = magic.Info.Experience2;
+                    break;
+                case 2:
+                    if (Level < magic.Info.NeedLevel3) return;
+
+                    maxExperience = magic.Info.Experience3;
+                    break;
+                default:
+                    return;
+            }
+
+            int experience = (SEnvir.Random.Next(Config.SkillExp) + 1) * Math.Max(1, Stats[Stat.SkillRate]);
+            magic.Experience += experience;
+
+            bool leveled = false;
+            if (magic.Experience >= maxExperience)
+            {
+                magic.Experience -= maxExperience;
+                magic.Level++;
+                leveled = true;
+
+                RefreshStats();
+            }
+
+            Owner?.Enqueue(new S.HeroMagicLeveled
+            {
+                HeroIndex = Info.Index,
+                InfoIndex = magic.Info.Index,
+                Level = magic.Level,
+                Experience = magic.Experience,
+            });
+
+            if (leveled)
+                SendInformation();
         }
 
         public override void ProcessHPMP()
@@ -1652,7 +1767,111 @@ namespace Server.Models
                     return false;
             }
 
+            if (item.Info.ItemType == ItemType.Book)
+            {
+                MagicInfo magic = SEnvir.GetMagicInfo(item.Info.Shape);
+                if (magic == null || magic.School == MagicSchool.None) return false;
+                if (TryGetMagic(magic.Magic, out UserMagic userMagic) && (userMagic.Level < 3 || (item.Flags & UserItemFlags.NonRefinable) == UserItemFlags.NonRefinable)) return false;
+            }
+
             return true;
+        }
+
+        private bool TryGetMagic(MagicType magicType, out UserMagic magic)
+        {
+            magic = Info?.Magics?.FirstOrDefault(x => x?.Info?.Magic == magicType);
+            return magic != null;
+        }
+
+        protected bool TryGetUsableMagic(MagicType magicType, out UserMagic magic)
+        {
+            return TryGetMagic(magicType, out magic) && CanUseKnownMagic(magic);
+        }
+
+        private bool CanUseKnownMagic(UserMagic magic)
+        {
+            return magic?.Info != null &&
+                   magic.Hero == Info &&
+                   !magic.ItemRequired &&
+                   magic.Info.School != MagicSchool.None &&
+                   Level >= magic.Info.NeedLevel1;
+        }
+
+        private void LevelAttackMagic(MagicType magicType)
+        {
+            if (magicType == MagicType.None) return;
+
+            if (TryGetUsableMagic(magicType, out UserMagic magic))
+                LevelMagic(magic);
+
+            switch (magicType)
+            {
+                case MagicType.FireBall:
+                    if (TryGetUsableMagic(MagicType.Burning, out UserMagic burning))
+                        LevelMagic(burning);
+                    break;
+            }
+        }
+
+        private void LevelAttackPassives(MapObject target, MagicType magicType, Element element)
+        {
+            if (target?.Node == null) return;
+
+            bool physical = element == Element.None;
+            bool melee = physical && Functions.InRange(CurrentLocation, target.CurrentLocation, 1);
+
+            switch (Class)
+            {
+                case MirClass.Warrior:
+                    if (!melee) break;
+
+                    LevelKnownMagic(MagicType.Swordsmanship);
+
+                    if (SEnvir.Random.Next(5) == 0)
+                        LevelKnownMagic(MagicType.Slaying);
+                    break;
+                case MirClass.Wizard:
+                    if (magicType != MagicType.None)
+                        LevelKnownMagic(MagicType.Renounce);
+                    break;
+                case MirClass.Taoist:
+                    if (melee)
+                        LevelKnownMagic(MagicType.SpiritSword);
+                    break;
+                case MirClass.Assassin:
+                    if (!melee) break;
+
+                    LevelKnownMagic(MagicType.VineTreeDance);
+                    LevelKnownMagic(MagicType.Discipline);
+
+                    if (Stats[Stat.LifeSteal] > 0)
+                        LevelKnownMagic(MagicType.BloodyFlower);
+                    break;
+            }
+        }
+
+        private void LevelDefencePassives(Element element)
+        {
+            switch (Class)
+            {
+                case MirClass.Warrior:
+                    LevelKnownMagic(MagicType.DefensiveMastery);
+                    break;
+                case MirClass.Assassin:
+                    LevelKnownMagic(MagicType.WillowDance);
+
+                    if (element == Element.None)
+                        LevelKnownMagic(MagicType.AdventOfDemon);
+                    else
+                        LevelKnownMagic(MagicType.AdventOfDevil);
+                    break;
+            }
+        }
+
+        private void LevelKnownMagic(MagicType magicType)
+        {
+            if (TryGetUsableMagic(magicType, out UserMagic magic))
+                LevelMagic(magic);
         }
 
         public bool CanWearItem(UserItem item, EquipmentSlot slot)
@@ -1756,35 +1975,50 @@ namespace Server.Models
 
             if (Dead || Owner?.Node == null) return;
             if (!CanUseItem(item)) return;
-            if (item.Info.ItemType != ItemType.Consumable) return;
-            if (SEnvir.Now < UseItemTime && item.Info.ItemEffect != ItemEffect.ElixirOfPurification) return;
 
-            switch (item.Info.Shape)
+            bool checkAutoPotion = false;
+
+            switch (item.Info.ItemType)
             {
-                case 0:
-                    ChangeHP(item.Info.Stats[Stat.Health]);
-                    ChangeMP(item.Info.Stats[Stat.Mana]);
+                case ItemType.Consumable:
+                    if (SEnvir.Now < UseItemTime && item.Info.ItemEffect != ItemEffect.ElixirOfPurification) return;
 
-                    if (item.Info.Stats[Stat.Experience] > 0)
-                        GainExperience(item.Info.Stats[Stat.Experience]);
-                    break;
-                case 14:
-                    if (!UsePurificationElixir()) return;
-                    break;
-                case 15:
-                    if (CurrentHP >= Stats[Stat.Health] && CurrentMP >= Stats[Stat.Mana]) return;
+                    switch (item.Info.Shape)
+                    {
+                        case 0:
+                            ChangeHP(item.Info.Stats[Stat.Health]);
+                            ChangeMP(item.Info.Stats[Stat.Mana]);
 
-                    SetHP(Stats[Stat.Health]);
-                    SetMP(Stats[Stat.Mana]);
+                            if (item.Info.Stats[Stat.Experience] > 0)
+                                GainExperience(item.Info.Stats[Stat.Experience]);
+                            break;
+                        case 14:
+                            if (!UsePurificationElixir()) return;
+                            break;
+                        case 15:
+                            if (CurrentHP >= Stats[Stat.Health] && CurrentMP >= Stats[Stat.Mana]) return;
+
+                            SetHP(Stats[Stat.Health]);
+                            SetMP(Stats[Stat.Mana]);
+                            break;
+                        default:
+                            return;
+                    }
+
+                    if (item.Info.ItemEffect != ItemEffect.ElixirOfPurification || UseItemTime < SEnvir.Now)
+                        UseItemTime = SEnvir.Now.AddMilliseconds(item.Info.Durability);
+                    else
+                        UseItemTime = UseItemTime.AddMilliseconds(item.Info.Durability);
+
+                    checkAutoPotion = true;
+                    break;
+                case ItemType.Book:
+                    if (SEnvir.Now < UseItemTime) return;
+                    if (!UseBook(item)) return;
                     break;
                 default:
                     return;
             }
-
-            if (item.Info.ItemEffect != ItemEffect.ElixirOfPurification || UseItemTime < SEnvir.Now)
-                UseItemTime = SEnvir.Now.AddMilliseconds(item.Info.Durability);
-            else
-                UseItemTime = UseItemTime.AddMilliseconds(item.Info.Durability);
 
             result.Success = true;
 
@@ -1802,8 +2036,69 @@ namespace Server.Models
             }
 
             RefreshWeight();
-            CheckAutoPotionAfterUse(item.Info.Index, item.Info.ItemName);
+            if (checkAutoPotion)
+                CheckAutoPotionAfterUse(item.Info.Index, item.Info.ItemName);
             SendInformation();
+        }
+
+        private bool UseBook(UserItem item)
+        {
+            MagicInfo info = SEnvir.GetMagicInfo(item.Info.Shape);
+            if (info == null || info.School == MagicSchool.None) return false;
+
+            TryGetMagic(info.Magic, out UserMagic magic);
+
+            if (magic != null)
+            {
+                if (magic.ItemRequired)
+                    magic.ItemRequired = false;
+
+                if (magic.Level < 3) return false;
+
+                if (magic.Level >= Globals.MagicMaxLevel)
+                {
+                    Owner.Connection.ReceiveChatWithObservers(con => string.Format(con.Language.MagicMaxLevelReached, magic.Info.Name), MessageType.System);
+                    return false;
+                }
+            }
+
+            if (SEnvir.Random.Next(100) >= item.CurrentDurability)
+            {
+                Owner.Connection.ReceiveChatWithObservers(con => con.Language.LearnBookFailed, MessageType.System);
+                return true;
+            }
+
+            if (magic != null)
+            {
+                int rate = (magic.Level - 2) * 500;
+
+                magic.Experience += item.CurrentDurability;
+
+                if (magic.Experience >= rate || (magic.Level == 3 && SEnvir.Random.Next(rate) == 0))
+                {
+                    magic.Level++;
+                    magic.Experience = 0;
+
+                    Owner.Connection.ReceiveChatWithObservers(con => string.Format(con.Language.LearnBook4Success, magic.Info.Name, magic.Level), MessageType.System);
+                    RefreshStats();
+                }
+                else
+                {
+                    long remaining = rate - magic.Experience;
+                    Owner.Connection.ReceiveChatWithObservers(con => string.Format(con.Language.LearnBook4Failed, remaining, magic.Level + 1), MessageType.System);
+                }
+            }
+            else
+            {
+                magic = SEnvir.UserMagicList.CreateNewObject();
+                magic.Hero = Info;
+                magic.Info = info;
+
+                Owner.Connection.ReceiveChatWithObservers(con => string.Format(con.Language.LearnBookSuccess, magic.Info.Name), MessageType.System);
+                RefreshStats();
+            }
+
+            return true;
         }
 
         private bool UsePurificationElixir()
@@ -2009,6 +2304,24 @@ namespace Server.Models
         protected override Element AutoMagicElement => Level >= 20 ? Element.Lightning : Element.Fire;
         protected override int AutoMagicCost => Math.Max(3, Level / 6);
 
+        protected override MagicType GetAutoMagic()
+        {
+            if (CurrentMP < AutoMagicCost || !CanCast) return MagicType.None;
+
+            if (Level >= 20 && TryGetUsableMagic(MagicType.ThunderBolt, out _))
+                return MagicType.ThunderBolt;
+
+            if (TryGetUsableMagic(MagicType.FireBall, out _))
+                return MagicType.FireBall;
+
+            return base.GetAutoMagic();
+        }
+
+        protected override Element GetAutoMagicElement()
+        {
+            return GetAutoMagic() == MagicType.ThunderBolt ? Element.Lightning : Element.Fire;
+        }
+
         protected override int GetAutoMagicPower()
         {
             return Math.Max(GetMC(), GetDC()) + Level + Stats[Stat.FireAttack] + Stats[Stat.LightningAttack];
@@ -2051,6 +2364,7 @@ namespace Server.Models
 
             Direction = Functions.DirectionFromPoint(CurrentLocation, healTarget.CurrentLocation);
 
+            bool hasHealMagic = TryGetUsableMagic(MagicType.Heal, out UserMagic healMagic);
             Broadcast(new S.ObjectMagic
             {
                 ObjectID = ObjectID,
@@ -2066,14 +2380,27 @@ namespace Server.Models
             ChangeMP(-cost);
             UpdateMagicAttackTime();
 
-            int healing = Math.Max(10, GetSC() + Level + Stats[Stat.HolyAttack] * 2);
+            int bonus = 0;
             int cap = Math.Max(20, 30 + Level / 2);
+
+            if (TryGetUsableMagic(MagicType.EmpoweredHealing, out UserMagic empoweredHealing))
+            {
+                bonus = empoweredHealing.GetPower();
+                cap += (1 + empoweredHealing.Level) * 30;
+                LevelMagic(empoweredHealing);
+            }
+
+            int basePower = hasHealMagic ? healMagic.GetPower() : Level;
+            int healing = Math.Max(10, GetSC() + basePower + Stats[Stat.HolyAttack] * 2 + bonus);
 
             healTarget.BuffAdd(BuffType.Heal, TimeSpan.FromSeconds(Math.Max(1, healing / cap)), new Stats
             {
                 [Stat.Healing] = healing,
                 [Stat.HealingCap] = cap,
             }, false, false, TimeSpan.FromSeconds(1));
+
+            if (hasHealMagic)
+                LevelMagic(healMagic);
         }
 
         private MapObject GetHealTarget()

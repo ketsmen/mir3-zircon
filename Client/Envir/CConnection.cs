@@ -3724,6 +3724,20 @@ namespace Client.Envir
             GameScene.Game.HeroBox.HeroChanged();
         }
 
+        public void Process(S.HeroMagicLeveled p)
+        {
+            ClientUserHero hero = GameScene.Game.CurrentHero;
+            if (hero == null || hero.Index != p.HeroIndex || p.Info == null) return;
+
+            ClientUserMagic magic = hero.Magics.FirstOrDefault(x => x.Info == p.Info);
+            if (magic == null) return;
+
+            magic.Level = p.Level;
+            magic.Experience = p.Experience;
+
+            GameScene.Game.HeroBox.UpdateMagic(p.Info);
+        }
+
         public void Process(S.HeroHealthChanged p)
         {
             if (GameScene.Game.CurrentHero == null) return;
