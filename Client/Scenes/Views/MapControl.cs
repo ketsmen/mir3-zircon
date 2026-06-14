@@ -902,6 +902,9 @@ namespace Client.Scenes.Views
                     case MouseButtons.Left:
                         Mining = false;
 
+                        if (GameScene.Game.AutoPath)
+                            GameScene.Game.AutoPath = false;
+
                         if (CEnvir.Shift && MapObject.TargetObject == null)
                         {
                             if (FishingState != FishingState.None) return;
@@ -1034,6 +1037,68 @@ namespace Client.Scenes.Views
                 {
                     Mining = false;
                 }
+            }
+
+            if (GameScene.Game.AutoPath)
+            {
+                if (GameScene.Game.PathFinder == null || GameScene.Game.CurrentPath == null || GameScene.Game.CurrentPath.Count == 0)
+                {
+                    GameScene.Game.AutoPath = false;
+                    return;
+                }
+
+                int pathIndex = GameScene.Game.CurrentPathIndex;
+
+                for (int i = pathIndex; i < Math.Min(pathIndex + 3, GameScene.Game.CurrentPath.Count); i++)
+                {
+                    if (GameScene.Game.CurrentPath[i].Location != User.CurrentLocation) continue;
+
+                    GameScene.Game.CurrentPathIndex = i + 1;
+                    break;
+                }
+
+                if (GameScene.Game.CurrentPathIndex >= GameScene.Game.CurrentPath.Count)
+                {
+                    GameScene.Game.AutoPath = false;
+                    return;
+                }
+
+                Node nextNode = GameScene.Game.CurrentPath[GameScene.Game.CurrentPathIndex];
+                MirDirection dir = Functions.DirectionFromPoint(User.CurrentLocation, nextNode.Location);
+                bool canMove = CanMove(dir, 1);
+
+                if (!canMove)
+                {
+                    Point target = GameScene.Game.CurrentPath[GameScene.Game.CurrentPath.Count - 1].Location;
+                    List<Node> path = GameScene.Game.PathFinder.FindPath(MapObject.User.CurrentLocation, target);
+
+                    if (path == null || path.Count == 0)
+                    {
+                        GameScene.Game.AutoPath = false;
+                        return;
+                    }
+
+                    GameScene.Game.CurrentPath = path;
+                    GameScene.Game.CurrentPathIndex = 0;
+                    return;
+                }
+
+                Point runLocation = Functions.Move(User.CurrentLocation, dir, 2);
+                bool canRunOnPath = GameScene.Game.CurrentPathIndex + 1 < GameScene.Game.CurrentPath.Count &&
+                                    GameScene.Game.CurrentPath[GameScene.Game.CurrentPathIndex + 1].Location == runLocation;
+
+                if (GameScene.Game.CanRun && CEnvir.Now > User.NextRunTime && User.CurrentHP >= 10 && canRunOnPath)
+                {
+                    if (!GameScene.Game.MoveFrame || (User.Poison & PoisonType.WraithGrip) == PoisonType.WraithGrip) return;
+
+                    Run(dir);
+                    return;
+                }
+
+                if (!GameScene.Game.MoveFrame || (User.Poison & PoisonType.WraithGrip) == PoisonType.WraithGrip) return;
+
+                MapObject.User.AttemptAction(new ObjectAction(MirAction.Moving, dir, Functions.Move(MapObject.User.CurrentLocation, dir), 1, MagicType.None));
+                return;
             }
 
             if (FishingState != FishingState.None || AutoCast)
@@ -1323,6 +1388,15 @@ namespace Client.Scenes.Views
                 if (HasTarget(Functions.Move(MapObject.User.CurrentLocation, Functions.ShiftDirection(direction, i)))) return true;
 
             return false;
+        }
+
+        public bool EmptyCell(Point location)
+        {
+            if (location.X < 0 || location.Y < 0 || location.X >= Width || location.Y >= Height) return false;
+
+            Cell cell = Cells[location.X, location.Y];
+
+            return (cell.BackImage & 0x20000000) == 0 && (cell.FrontImage & 0x8000) == 0 && !cell.Blocking();
         }
 
         public bool ValidCell(Point location)

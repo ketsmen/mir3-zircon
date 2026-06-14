@@ -1,6 +1,7 @@
 ﻿using Client.Controls;
 using Client.Envir;
 using Client.Models;
+using Client.Rendering;
 using Client.UserModels;
 using Library;
 using Library.SystemModels;
@@ -272,6 +273,43 @@ namespace Client.Scenes.Views
 
                 CEnvir.Enqueue(new C.TeleportRing { Location = new Point(x, y), Index = SelectedInfo.Index });
             }
+
+            if ((e.Button & MouseButtons.Left) == MouseButtons.Left)
+            {
+                if (GameScene.Game.Observer || MapObject.User == null) return;
+
+                if (SelectedInfo != GameScene.Game.MapControl.MapInfo)
+                {
+                    GameScene.Game.ReceiveChat("只能在当前地图上启动自动寻路。", MessageType.Hint);
+                    return;
+                }
+
+                int x = (int)((e.Location.X - Image.DisplayArea.X) / ScaleX);
+                int y = (int)((e.Location.Y - Image.DisplayArea.Y) / ScaleY);
+                Point target = new Point(x, y);
+
+                if (!GameScene.Game.MapControl.ValidCell(target))
+                {
+                    GameScene.Game.AutoPath = false;
+                    GameScene.Game.ReceiveChat("目标位置不可到达。", MessageType.Hint);
+                    return;
+                }
+
+                GameScene.Game.PathFinder ??= new PathFinder(GameScene.Game.MapControl);
+
+                List<Node> path = GameScene.Game.PathFinder.FindPath(MapObject.User.CurrentLocation, target);
+
+                if (path == null || path.Count == 0)
+                {
+                    GameScene.Game.AutoPath = false;
+                    GameScene.Game.ReceiveChat("没有路径可以前进。", MessageType.Hint);
+                    return;
+                }
+
+                GameScene.Game.CurrentPath = path;
+                GameScene.Game.CurrentPathIndex = 0;
+                GameScene.Game.AutoPath = true;
+            }
         }
 
         #region Methods
@@ -284,9 +322,42 @@ namespace Client.Scenes.Views
             DrawWindow();
             OnBeforeChildrenDraw();
             DrawChildControls();
+            DrawPath();
             TitleLabel.Draw();
             DrawBorder();
             OnAfterDraw();
+        }
+
+        private void DrawPath()
+        {
+            if (!GameScene.Game.AutoPath || GameScene.Game.CurrentPath == null || SelectedInfo != GameScene.Game.MapControl.MapInfo) return;
+
+            List<LinePoint> points = new List<LinePoint>();
+
+            for (int i = Math.Max(0, GameScene.Game.CurrentPathIndex - 1); i < GameScene.Game.CurrentPath.Count; i++)
+            {
+                Node node = GameScene.Game.CurrentPath[i];
+                float x = Image.DisplayArea.X + (node.Location.X + 0.5F) * ScaleX;
+                float y = Image.DisplayArea.Y + (node.Location.Y + 0.5F) * ScaleY;
+
+                if (!Panel.DisplayArea.Contains((int)x, (int)y)) continue;
+
+                points.Add(new LinePoint(x, y));
+            }
+
+            if (points.Count < 2) return;
+
+            float oldWidth = RenderingPipelineManager.GetLineWidth();
+
+            try
+            {
+                RenderingPipelineManager.SetLineWidth(2F);
+                RenderingPipelineManager.DrawLine(points, Color.Red);
+            }
+            finally
+            {
+                RenderingPipelineManager.SetLineWidth(oldWidth);
+            }
         }
 
         public void Update(NPCInfo ob)

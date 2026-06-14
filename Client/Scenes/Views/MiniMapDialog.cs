@@ -120,6 +120,11 @@ namespace Client.Scenes.Views
 
             MapInfoObjects.Clear();
 
+            GameScene.Game.AutoPath = false;
+            GameScene.Game.CurrentPath = null;
+            GameScene.Game.CurrentPathIndex = 0;
+            GameScene.Game.PathFinder = GameScene.Game.MapControl.MapInfo == null ? null : new PathFinder(GameScene.Game.MapControl);
+
             if (GameScene.Game.MapControl.MapInfo == null) return;
 
             TitleLabel.Text = GameScene.Game.MapControl.MapInfo.PlayerDescription;

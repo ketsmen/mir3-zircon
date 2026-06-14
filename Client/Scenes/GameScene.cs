@@ -283,6 +283,10 @@ namespace Client.Scenes
 
         public bool CanRun;
 
+        public PathFinder PathFinder;
+        public List<Node> CurrentPath;
+        public int CurrentPathIndex;
+
         public bool AutoRun
         {
             get => _AutoRun;
@@ -295,6 +299,26 @@ namespace Client.Scenes
             }
         }
         private bool _AutoRun;
+
+        private bool _AutoPath;
+        public bool AutoPath
+        {
+            get => _AutoPath;
+            set
+            {
+                if (_AutoPath == value) return;
+
+                _AutoPath = value;
+
+                if (!_AutoPath)
+                {
+                    CurrentPath = null;
+                    CurrentPathIndex = 0;
+                }
+
+                ReceiveChat(value ? "[自动寻路: 开]" : "[自动寻路: 关]", MessageType.Hint);
+            }
+        }
 
         #region StorageSize
 
@@ -5119,6 +5143,10 @@ namespace Client.Scenes
 
                 CanRun = false;
                 AutoRun = false;
+                AutoPath = false;
+                PathFinder = null;
+                CurrentPath = null;
+                CurrentPathIndex = 0;
                 _NPCID = 0;
                 _Companion = null;
                 _Partner = null;
