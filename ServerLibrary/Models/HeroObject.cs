@@ -405,7 +405,16 @@ namespace Server.Models
                 return;
             }
 
-            if (Target != null || distance <= PreferredOwnerRange) return;
+            if (Target != null) return;
+
+            Point ownerFront = Functions.Move(Owner.CurrentLocation, Owner.Direction);
+            if (CurrentLocation == ownerFront)
+            {
+                MoveTo(Functions.Move(Owner.CurrentLocation, Owner.Direction, -1));
+                return;
+            }
+
+            if (distance <= PreferredOwnerRange) return;
 
             MoveTo(Owner.CurrentLocation);
         }
