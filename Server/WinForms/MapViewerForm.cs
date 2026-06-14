@@ -22,7 +22,7 @@ namespace Server.WinForms
         private readonly ToolStripButton _attributesButton = new ToolStripButton("属性");
         private readonly ToolStripButton _selectionButton = new ToolStripButton("选择");
         private readonly ToolStripButton _blockedOnlyButton = new ToolStripButton("属性选择");
-        private readonly Panel _canvas = new Panel();
+        private readonly Panel _canvas = new DoubleBufferedCanvas();
         private readonly HScrollBar _hScroll = new HScrollBar();
         private readonly VScrollBar _vScroll = new VScrollBar();
         private readonly StatusStrip _status = new StatusStrip();
@@ -273,7 +273,10 @@ namespace Server.WinForms
 
         private void SetZoom(float value)
         {
-            _zoom = Math.Max(0.125F, Math.Min(4F, value));
+            float zoom = Math.Max(0.125F, Math.Min(4F, value));
+            if (Math.Abs(_zoom - zoom) < 0.001F) return;
+
+            _zoom = zoom;
             UpdateScrollBars();
             _canvas.Invalidate();
         }
@@ -405,25 +408,28 @@ namespace Server.WinForms
         {
             if (_map.IsEmpty) return;
 
-            UpdateMouseLocation(e);
+            bool changed = UpdateMouseLocation(e);
 
             if (e.Button == MouseButtons.Middle)
-                FloodToggleSelection();
+                changed |= FloodToggleSelection();
             else
-                ApplySelection(e.Button);
+                changed |= ApplySelection(e.Button);
 
             UpdateStatus();
-            _canvas.Invalidate();
+            if (changed)
+                _canvas.Invalidate();
         }
 
         private void Canvas_MouseMove(object sender, MouseEventArgs e)
         {
             if (_map.IsEmpty) return;
 
-            UpdateMouseLocation(e);
+            bool changed = UpdateMouseLocation(e);
 
             if (e.Button == MouseButtons.Left || e.Button == MouseButtons.Right)
-                ApplySelection(e.Button);
+                changed |= ApplySelection(e.Button);
+
+            if (!changed) return;
 
             UpdateStatus();
             _canvas.Invalidate();
@@ -437,20 +443,30 @@ namespace Server.WinForms
                 return;
             }
 
-            _radius = Math.Max(0, _radius - e.Delta / SystemInformation.MouseWheelScrollDelta);
+            int radius = Math.Max(0, _radius - e.Delta / SystemInformation.MouseWheelScrollDelta);
+            if (_radius == radius) return;
+
+            _radius = radius;
             UpdateStatus();
             _canvas.Invalidate();
         }
 
-        private void UpdateMouseLocation(MouseEventArgs e)
+        private bool UpdateMouseLocation(MouseEventArgs e)
         {
             int x = Math.Min(_map.Width - 1, Math.Max(0, (int)(e.X / CellWidth) + _hScroll.Value));
             int y = Math.Min(_map.Height - 1, Math.Max(0, (int)(e.Y / CellHeight) + _vScroll.Value));
-            _mouseLocation = new Point(x, y);
+            Point location = new Point(x, y);
+
+            if (_mouseLocation == location) return false;
+
+            _mouseLocation = location;
+            return true;
         }
 
-        private void ApplySelection(MouseButtons button)
+        private bool ApplySelection(MouseButtons button)
         {
+            bool changed = false;
+
             for (int y = _mouseLocation.Y - _radius; y <= _mouseLocation.Y + _radius; y++)
             {
                 for (int x = _mouseLocation.X - _radius; x <= _mouseLocation.X + _radius; x++)
@@ -459,18 +475,21 @@ namespace Server.WinForms
 
                     Point point = new Point(x, y);
                     if (button == MouseButtons.Left)
-                        _selection.Add(point);
+                        changed |= _selection.Add(point);
                     else if (button == MouseButtons.Right)
-                        _selection.Remove(point);
+                        changed |= _selection.Remove(point);
                 }
             }
+
+            return changed;
         }
 
-        private void FloodToggleSelection()
+        private bool FloodToggleSelection()
         {
-            if (!CanSelectCell(_mouseLocation.X, _mouseLocation.Y)) return;
+            if (!CanSelectCell(_mouseLocation.X, _mouseLocation.Y)) return false;
 
             bool removing = _selection.Contains(_mouseLocation);
+            bool changed = false;
             HashSet<Point> visited = new HashSet<Point> { _mouseLocation };
             Queue<Point> pending = new Queue<Point>();
             pending.Enqueue(_mouseLocation);
@@ -480,9 +499,9 @@ namespace Server.WinForms
                 Point point = pending.Dequeue();
 
                 if (removing)
-                    _selection.Remove(point);
+                    changed |= _selection.Remove(point);
                 else
-                    _selection.Add(point);
+                    changed |= _selection.Add(point);
 
                 foreach (Point next in GetNeighbours(point))
                 {
@@ -493,6 +512,8 @@ namespace Server.WinForms
                     pending.Enqueue(next);
                 }
             }
+
+            return changed;
         }
 
         private IEnumerable<Point> GetNeighbours(Point point)
@@ -607,6 +628,24 @@ namespace Server.WinForms
             public int MiddleAnimationFrame;
             public int Light;
             public bool Flag;
+        }
+
+        private sealed class DoubleBufferedCanvas : Panel
+        {
+            public DoubleBufferedCanvas()
+            {
+                DoubleBuffered = true;
+                ResizeRedraw = true;
+                SetStyle(ControlStyles.AllPaintingInWmPaint |
+                         ControlStyles.UserPaint |
+                         ControlStyles.OptimizedDoubleBuffer |
+                         ControlStyles.ResizeRedraw, true);
+                UpdateStyles();
+            }
+
+            protected override void OnPaintBackground(PaintEventArgs e)
+            {
+            }
         }
     }
 }

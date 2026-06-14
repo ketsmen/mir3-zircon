@@ -49,38 +49,6 @@
     <PackageReference Include="System.Runtime.Serialization.Schema" Version="8.0.0" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Remove="Views\LocationView.resx" />
-    <EmbeddedResource Remove="SMain.resx" />
-    <EmbeddedResource Remove="Views\**\*.resx" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Remove="SMain.cs" />
-    <Compile Remove="SMain.Designer.cs" />
-    <Compile Remove="Helpers\JsonExporter.cs" />
-    <Compile Remove="Helpers\JsonImporter.cs" />
-    <Compile Remove="Views\**\*.cs" />
-  </ItemGroup>
-  <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Update="Views\OrphanDiagnosticView.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Update="Views\LootBoxInfoView.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Update="Views\EventInfoView.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Update="Views\BundleInfoView.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Update="Views\FameInfoView.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Update="Views\NPCListView.cs">
-      <SubType>Form</SubType>
-    </Compile>
   </ItemGroup>
 </Project>

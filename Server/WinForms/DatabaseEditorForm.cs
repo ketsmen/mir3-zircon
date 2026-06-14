@@ -1,3 +1,4 @@
+using Library.SystemModels;
 using MirDB;
 using System;
 using System.Collections;
@@ -14,6 +15,7 @@ namespace Server.WinForms
         private readonly Session _session;
         private readonly MirDbMetadata _metadata;
         private readonly JsonImportExportService _jsonService;
+        private readonly bool _onlineMode;
         private bool _readOnly;
 
         private readonly TreeView _tree = new TreeView();
@@ -23,19 +25,37 @@ namespace Server.WinForms
         private readonly TabControl _childTabs = new TabControl();
         private readonly ToolStripTextBox _searchText = new ToolStripTextBox();
         private readonly ToolStripLabel _statusLabel = new ToolStripLabel();
+        private ToolStripButton _mapRegionButton;
 
         private MirDbGridControl _rootGrid;
         private MirDbGridControl _activeGrid;
         private Type _currentType;
 
         public DatabaseEditorForm()
+            : this(null, false)
         {
-            Text = "MirDB 数据库编辑器";
+        }
+
+        public DatabaseEditorForm(Session session, bool onlineMode)
+        {
+            _onlineMode = onlineMode;
+
+            Text = onlineMode ? "MirDB 数据库编辑器 - 在线模式" : "MirDB 数据库编辑器";
             Width = 1280;
             Height = 760;
 
-            _session = MirDbSessionFactory.Open(SessionMode.Both);
-            _readOnly = !_lockService.AcquireWriteLocks(out string lockReason);
+            string lockReason = string.Empty;
+            if (onlineMode)
+            {
+                _session = session ?? throw new ArgumentNullException(nameof(session));
+                _readOnly = false;
+            }
+            else
+            {
+                _session = MirDbSessionFactory.Open(SessionMode.Both);
+                _readOnly = !_lockService.AcquireWriteLocks(out lockReason);
+            }
+
             _metadata = new MirDbMetadata(_session);
             _jsonService = new JsonImportExportService(_session);
 
@@ -63,6 +83,7 @@ namespace Server.WinForms
             AddButton(toolStrip, "删除", (_, _) => _activeGrid?.DeleteSelected());
             AddButton(toolStrip, "导入", (_, _) => ImportCurrent());
             AddButton(toolStrip, "导出", (_, _) => ExportCurrent());
+            _mapRegionButton = AddButton(toolStrip, "编辑地图区域", (_, _) => OpenSelectedMapRegion());
             toolStrip.Items.Add(new ToolStripSeparator());
             toolStrip.Items.Add(new ToolStripLabel("搜索"));
             _searchText.AutoSize = false;
@@ -70,7 +91,7 @@ namespace Server.WinForms
             _searchText.TextChanged += (_, _) => _activeGrid?.ApplySearch(_searchText.Text);
             toolStrip.Items.Add(_searchText);
             toolStrip.Items.Add(new ToolStripSeparator());
-            _statusLabel.Text = _readOnly ? "只读" : "可编辑";
+            _statusLabel.Text = GetModeText();
             toolStrip.Items.Add(_statusLabel);
 
             _split.Dock = DockStyle.Fill;
@@ -94,13 +115,16 @@ namespace Server.WinForms
             Controls.Add(_split);
             Controls.Add(toolStrip);
             toolStrip.Dock = DockStyle.Top;
+
+            UpdateMapRegionCommand();
         }
 
-        private static void AddButton(ToolStrip toolStrip, string text, EventHandler click)
+        private static ToolStripButton AddButton(ToolStrip toolStrip, string text, EventHandler click)
         {
             ToolStripButton button = new ToolStripButton(text);
             button.Click += click;
             toolStrip.Items.Add(button);
+            return button;
         }
 
         private void BuildTree()
@@ -140,13 +164,19 @@ namespace Server.WinForms
 
             IList source = _metadata.GetBinding(type);
             _rootGrid = new MirDbGridControl(_session, _metadata, type, source, _metadata.GetCollection(type), _readOnly);
-            _rootGrid.CurrentObjectChanged += (_, _) => ShowChildLists(_rootGrid.CurrentObject);
-            _rootGrid.BecameActive += (_, _) => _activeGrid = _rootGrid;
+            _rootGrid.CurrentObjectChanged += (_, _) =>
+            {
+                ShowChildLists(_rootGrid.CurrentObject);
+                UpdateMapRegionCommand();
+            };
+            _rootGrid.BecameActive += (_, _) => SetActiveGrid(_rootGrid);
 
             _gridHost.Controls.Add(_rootGrid);
-            _activeGrid = _rootGrid;
+            SetActiveGrid(_rootGrid);
             _searchText.Text = string.Empty;
             _statusLabel.Text = $"{type.Name}: {source.Count} 行" + (_readOnly ? "，只读" : string.Empty);
+            if (_onlineMode)
+                _statusLabel.Text += "，在线";
 
             ShowChildLists(_rootGrid.CurrentObject);
         }
@@ -164,10 +194,51 @@ namespace Server.WinForms
                 Type childType = property.PropertyType.GetGenericArguments()[0];
                 TabPage page = new TabPage($"{property.Name} ({list.Count})");
                 MirDbGridControl grid = new MirDbGridControl(_session, _metadata, childType, list, null, _readOnly);
-                grid.BecameActive += (_, _) => _activeGrid = grid;
+                grid.CurrentObjectChanged += (_, _) => UpdateMapRegionCommand();
+                grid.BecameActive += (_, _) => SetActiveGrid(grid);
                 page.Controls.Add(grid);
                 _childTabs.TabPages.Add(page);
             }
+        }
+
+        private void SetActiveGrid(MirDbGridControl grid)
+        {
+            _activeGrid = grid;
+            UpdateMapRegionCommand();
+        }
+
+        private void UpdateMapRegionCommand()
+        {
+            if (_mapRegionButton == null) return;
+
+            _mapRegionButton.Enabled = !_readOnly && _activeGrid?.CurrentObject is MapRegion;
+        }
+
+        private void OpenSelectedMapRegion()
+        {
+            if (_readOnly)
+            {
+                MessageBox.Show(this, "数据库当前以只读模式打开，不能编辑地图区域。", "地图区域", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (_activeGrid?.CurrentObject is not MapRegion region)
+            {
+                MessageBox.Show(this, "请先在 MapRegion 表，或 MapInfo 的 Regions 子表中选择一个地图区域。", "地图区域", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (region.Map == null)
+            {
+                MessageBox.Show(this, "当前 MapRegion 没有关联 Map，不能打开地图区域编辑器。", "地图区域", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            MapViewerForm viewer = new MapViewerForm
+            {
+                MapRegion = region
+            };
+            viewer.Show(this);
         }
 
         private void SaveDatabase()
@@ -178,7 +249,7 @@ namespace Server.WinForms
                 return;
             }
 
-            if (!_lockService.HasWriteLocks && !_lockService.AcquireWriteLocks(out string reason))
+            if (!_onlineMode && !_lockService.HasWriteLocks && !_lockService.AcquireWriteLocks(out string reason))
             {
                 MessageBox.Show(this, reason, "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
@@ -197,12 +268,24 @@ namespace Server.WinForms
 
             try
             {
-                _lockService.ReleaseWriteLocks();
-                _lockService.Backup();
-                _session.Save(true);
+                if (_onlineMode)
+                {
+                    lock (_session)
+                    {
+                        _lockService.Backup();
+                        _session.Save(true);
+                    }
+                }
+                else
+                {
+                    _lockService.ReleaseWriteLocks();
+                    _lockService.Backup();
+                    _session.Save(true);
+                }
+
                 MirDbSessionFactory.Open(SessionMode.Both);
 
-                if (!_lockService.AcquireWriteLocks(out string relockReason))
+                if (!_onlineMode && !_lockService.AcquireWriteLocks(out string relockReason))
                 {
                     _readOnly = true;
                     _statusLabel.Text = "已保存，但重新获取数据库写锁失败，编辑器将关闭。";
@@ -215,7 +298,7 @@ namespace Server.WinForms
             }
             catch (Exception ex)
             {
-                if (!_readOnly && !_lockService.HasWriteLocks)
+                if (!_onlineMode && !_readOnly && !_lockService.HasWriteLocks)
                     _lockService.AcquireWriteLocks(out _);
 
                 MessageBox.Show(this, ex.ToString(), "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -249,6 +332,12 @@ namespace Server.WinForms
             {
                 MessageBox.Show(this, ex.ToString(), "导出失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private string GetModeText()
+        {
+            if (_readOnly) return "只读";
+            return _onlineMode ? "在线可编辑" : "离线可编辑";
         }
     }
 }

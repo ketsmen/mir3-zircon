@@ -29,7 +29,7 @@ namespace Server.WinForms
             }
 
             if (Config.EncryptionEnabled && SEnvir.CryptoKey == null)
-                throw new ApplicationException("已启用数据库加密，但未指定 [System] => DatabaseKey。");
+                throw new ApplicationException("已启用数据库加密，但未指定 [System] => EncryptionKey。");
 
             Encryption.SetKey(Config.EncryptionEnabled ? SEnvir.CryptoKey : null);
         }

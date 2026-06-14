@@ -4,7 +4,6 @@ using PluginCore;
 using Server.Envir;
 using System;
 using System.Drawing;
-using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -56,7 +55,6 @@ namespace Server.WinForms
                 }
             }
 
-            _pluginSession?.Save(true);
             ConfigReader.Save(typeof(Config).Assembly);
         }
 
@@ -72,7 +70,10 @@ namespace Server.WinForms
 
             ToolStripMenuItem databaseMenu = new ToolStripMenuItem("数据库");
             databaseMenu.DropDownItems.Add("打开数据库编辑器", null, (_, _) => OpenDatabaseEditor());
-            databaseMenu.DropDownItems.Add("保存配置", null, (_, _) => ConfigReader.Save(Assembly.GetAssembly(typeof(Config))));
+
+            ToolStripMenuItem configMenu = new ToolStripMenuItem("配置");
+            configMenu.DropDownItems.Add("打开配置编辑器", null, (_, _) => OpenConfigEditor());
+            configMenu.DropDownItems.Add("保存配置", null, (_, _) => ConfigReader.Save(typeof(Config).Assembly));
 
             ToolStripMenuItem toolsMenu = new ToolStripMenuItem("工具");
             toolsMenu.DropDownItems.Add("地图查看器", null, (_, _) => new MapViewerForm().Show(this));
@@ -81,6 +82,7 @@ namespace Server.WinForms
 
             menu.Items.Add(serverMenu);
             menu.Items.Add(databaseMenu);
+            menu.Items.Add(configMenu);
             menu.Items.Add(toolsMenu);
             menu.Items.Add(_pluginsMenu);
 
@@ -88,6 +90,7 @@ namespace Server.WinForms
             AddToolButton(toolStrip, "启动", (_, _) => StartServer());
             AddToolButton(toolStrip, "停止", (_, _) => StopServer());
             AddToolButton(toolStrip, "数据库", (_, _) => OpenDatabaseEditor());
+            AddToolButton(toolStrip, "配置", (_, _) => OpenConfigEditor());
             AddToolButton(toolStrip, "地图", (_, _) => new MapViewerForm().Show(this));
 
             _logList.Dock = DockStyle.Fill;
@@ -163,11 +166,24 @@ namespace Server.WinForms
         {
             if (SEnvir.EnvirThread != null)
             {
-                MessageBox.Show(this, "服务端运行中不能离线编辑 System.db / Users.db。请先停止服务端。", "数据库", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                if (SEnvir.Session == null)
+                {
+                    MessageBox.Show(this, "服务端数据库正在加载中，请稍后再打开数据库编辑器。", "数据库", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                DatabaseEditorForm onlineForm = new DatabaseEditorForm(SEnvir.Session, true);
+                onlineForm.Show(this);
                 return;
             }
 
             DatabaseEditorForm form = new DatabaseEditorForm();
+            form.Show(this);
+        }
+
+        private void OpenConfigEditor()
+        {
+            ConfigEditorForm form = new ConfigEditorForm();
             form.Show(this);
         }
 

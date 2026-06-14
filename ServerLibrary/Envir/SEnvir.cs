@@ -467,7 +467,7 @@ namespace Server.Envir
         {
             Random = new Random();
 
-            Session = new Session(SessionMode.Users)
+            Session = new Session(SessionMode.Both)
             {
                 BackUpDelay = 60,
             };
@@ -1820,9 +1820,11 @@ namespace Server.Envir
             if (Session == null) return;
 
             Saving = true;
-            Session.Save(false);
-
-            WebServer.Save();
+            lock (Session)
+            {
+                Session.Save(false);
+                WebServer.Save();
+            }
 
             Thread saveThread = new Thread(CommitChanges) { IsBackground = true };
             saveThread.Start(Session);
@@ -1830,11 +1832,21 @@ namespace Server.Envir
         private static void CommitChanges(object data)
         {
             Session session = (Session)data;
-            session?.Commit();
-
-            WebServer.CommitChanges(data);
-
-            Saving = false;
+            try
+            {
+                if (session != null)
+                {
+                    lock (session)
+                    {
+                        session.Commit();
+                        WebServer.CommitChanges(data);
+                    }
+                }
+            }
+            finally
+            {
+                Saving = false;
+            }
         }
         private static void WriteLogsLoop()
         {
