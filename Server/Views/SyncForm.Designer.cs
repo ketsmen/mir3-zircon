@@ -42,7 +42,7 @@
             this.label1.Name = "label1";
             this.label1.Size = new System.Drawing.Size(70, 16);
             this.label1.TabIndex = 0;
-            this.label1.Text = "Remote IP";
+            this.label1.Text = "远程 IP";
             // 
             // txtRemoteIP
             // 
@@ -57,7 +57,7 @@
             this.btnSync.Name = "btnSync";
             this.btnSync.Size = new System.Drawing.Size(282, 23);
             this.btnSync.TabIndex = 2;
-            this.btnSync.Text = "Sync";
+            this.btnSync.Text = "同步";
             this.btnSync.UseVisualStyleBackColor = true;
             this.btnSync.Click += new System.EventHandler(this.btnSync_Click);
             // 
@@ -68,7 +68,7 @@
             this.label2.Name = "label2";
             this.label2.Size = new System.Drawing.Size(30, 16);
             this.label2.TabIndex = 3;
-            this.label2.Text = "Key";
+            this.label2.Text = "密钥";
             // 
             // txtKey
             // 
@@ -89,7 +89,7 @@
             this.Controls.Add(this.label1);
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedToolWindow;
             this.Name = "SyncForm";
-            this.Text = "Syncronization Remote DB";
+            this.Text = "同步远程数据库";
             this.ResumeLayout(false);
             this.PerformLayout();
 

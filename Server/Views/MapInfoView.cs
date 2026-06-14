@@ -47,10 +47,10 @@ namespace Server.Views
                 {
                     DataSource = filteredDataSource,
                     DisplayMember = "Description",
-                    NullText = "[Region is null]"
+                    NullText = "[未选择区域]"
                 };
 
-                lookupEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Description", "Description"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Size", "Size") });
+                lookupEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Description", "描述"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Size", "大小") });
 
                 e.RepositoryItem = lookupEdit;
             }

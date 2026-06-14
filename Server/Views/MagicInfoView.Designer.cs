@@ -84,7 +84,7 @@
             // 
             // SaveButton
             // 
-            SaveButton.Caption = "Save Database";
+            SaveButton.Caption = "保存数据库";
             SaveButton.Id = 1;
             SaveButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("SaveButton.ImageOptions.Image");
             SaveButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("SaveButton.ImageOptions.LargeImage");
@@ -94,7 +94,7 @@
             // 
             // ImportButton
             // 
-            ImportButton.Caption = "Import";
+            ImportButton.Caption = "导入";
             ImportButton.Id = 2;
             ImportButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("ImportButton.ImageOptions.Image");
             ImportButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("ImportButton.ImageOptions.LargeImage");
@@ -103,7 +103,7 @@
             // 
             // ExportButton
             // 
-            ExportButton.Caption = "Export";
+            ExportButton.Caption = "导出";
             ExportButton.Id = 3;
             ExportButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("ExportButton.ImageOptions.Image");
             ExportButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("ExportButton.ImageOptions.LargeImage");
@@ -114,7 +114,7 @@
             // 
             ribbonPage1.Groups.AddRange(new DevExpress.XtraBars.Ribbon.RibbonPageGroup[] { ribbonPageGroup1, JsonImportExport });
             ribbonPage1.Name = "ribbonPage1";
-            ribbonPage1.Text = "Home";
+            ribbonPage1.Text = "主页";
             // 
             // ribbonPageGroup1
             // 
@@ -122,14 +122,14 @@
             ribbonPageGroup1.CaptionButtonVisible = DevExpress.Utils.DefaultBoolean.False;
             ribbonPageGroup1.ItemLinks.Add(SaveButton);
             ribbonPageGroup1.Name = "ribbonPageGroup1";
-            ribbonPageGroup1.Text = "Saving";
+            ribbonPageGroup1.Text = "保存";
             // 
             // JsonImportExport
             // 
             JsonImportExport.ItemLinks.Add(ImportButton);
             JsonImportExport.ItemLinks.Add(ExportButton);
             JsonImportExport.Name = "JsonImportExport";
-            JsonImportExport.Text = "Json";
+            JsonImportExport.Text = "JSON";
             // 
             // MagicImageComboBox
             // 
@@ -163,6 +163,7 @@
             // gridColumn15
             // 
             gridColumn15.FieldName = "Index";
+            gridColumn15.Caption = "序号";
             gridColumn15.Name = "gridColumn15";
             gridColumn15.OptionsColumn.AllowEdit = false;
             gridColumn15.OptionsColumn.ReadOnly = true;
@@ -172,6 +173,7 @@
             // gridColumn1
             // 
             gridColumn1.FieldName = "Name";
+            gridColumn1.Caption = "名称";
             gridColumn1.Name = "gridColumn1";
             gridColumn1.Visible = true;
             gridColumn1.VisibleIndex = 1;
@@ -180,6 +182,7 @@
             // 
             gridColumn2.ColumnEdit = MagicImageComboBox;
             gridColumn2.FieldName = "Magic";
+            gridColumn2.Caption = "技能";
             gridColumn2.Name = "gridColumn2";
             gridColumn2.Visible = true;
             gridColumn2.VisibleIndex = 2;
@@ -188,6 +191,7 @@
             // 
             gridColumn3.ColumnEdit = SchoolImageComboBox;
             gridColumn3.FieldName = "School";
+            gridColumn3.Caption = "派系";
             gridColumn3.Name = "gridColumn3";
             gridColumn3.Visible = true;
             gridColumn3.VisibleIndex = 3;
@@ -196,6 +200,7 @@
             // 
             gridColumn4.ColumnEdit = ClassImageComboBox;
             gridColumn4.FieldName = "Class";
+            gridColumn4.Caption = "职业";
             gridColumn4.Name = "gridColumn4";
             gridColumn4.Visible = true;
             gridColumn4.VisibleIndex = 5;
@@ -203,6 +208,7 @@
             // gridColumn16
             // 
             gridColumn16.FieldName = "Icon";
+            gridColumn16.Caption = "图标";
             gridColumn16.Name = "gridColumn16";
             gridColumn16.Visible = true;
             gridColumn16.VisibleIndex = 6;
@@ -210,6 +216,7 @@
             // gridColumn5
             // 
             gridColumn5.FieldName = "BaseCost";
+            gridColumn5.Caption = "基础消耗";
             gridColumn5.Name = "gridColumn5";
             gridColumn5.Visible = true;
             gridColumn5.VisibleIndex = 7;
@@ -217,6 +224,7 @@
             // gridColumn6
             // 
             gridColumn6.FieldName = "LevelCost";
+            gridColumn6.Caption = "升级消耗";
             gridColumn6.Name = "gridColumn6";
             gridColumn6.Visible = true;
             gridColumn6.VisibleIndex = 8;
@@ -224,6 +232,7 @@
             // gridColumn7
             // 
             gridColumn7.FieldName = "MinBasePower";
+            gridColumn7.Caption = "最小基础威力";
             gridColumn7.Name = "gridColumn7";
             gridColumn7.Visible = true;
             gridColumn7.VisibleIndex = 9;
@@ -231,6 +240,7 @@
             // gridColumn13
             // 
             gridColumn13.FieldName = "MaxBasePower";
+            gridColumn13.Caption = "最大基础威力";
             gridColumn13.Name = "gridColumn13";
             gridColumn13.Visible = true;
             gridColumn13.VisibleIndex = 10;
@@ -238,6 +248,7 @@
             // gridColumn8
             // 
             gridColumn8.FieldName = "MinLevelPower";
+            gridColumn8.Caption = "最小等级威力";
             gridColumn8.Name = "gridColumn8";
             gridColumn8.Visible = true;
             gridColumn8.VisibleIndex = 11;
@@ -245,13 +256,14 @@
             // gridColumn17
             // 
             gridColumn17.FieldName = "MaxLevelPower";
+            gridColumn17.Caption = "最大等级威力";
             gridColumn17.Name = "gridColumn17";
             gridColumn17.Visible = true;
             gridColumn17.VisibleIndex = 12;
             // 
             // gridColumn9
             // 
-            gridColumn9.Caption = "Need Level 1";
+            gridColumn9.Caption = "所需等级1";
             gridColumn9.FieldName = "NeedLevel1";
             gridColumn9.Name = "gridColumn9";
             gridColumn9.Visible = true;
@@ -259,7 +271,7 @@
             // 
             // gridColumn10
             // 
-            gridColumn10.Caption = "Need Level 2";
+            gridColumn10.Caption = "所需等级2";
             gridColumn10.FieldName = "NeedLevel2";
             gridColumn10.Name = "gridColumn10";
             gridColumn10.Visible = true;
@@ -267,7 +279,7 @@
             // 
             // gridColumn11
             // 
-            gridColumn11.Caption = "Need Level 3";
+            gridColumn11.Caption = "所需等级3";
             gridColumn11.FieldName = "NeedLevel3";
             gridColumn11.Name = "gridColumn11";
             gridColumn11.Visible = true;
@@ -275,7 +287,7 @@
             // 
             // gridColumn12
             // 
-            gridColumn12.Caption = "Experience 1";
+            gridColumn12.Caption = "经验1";
             gridColumn12.FieldName = "Experience1";
             gridColumn12.Name = "gridColumn12";
             gridColumn12.Visible = true;
@@ -283,7 +295,7 @@
             // 
             // gridColumn18
             // 
-            gridColumn18.Caption = "Experience 2";
+            gridColumn18.Caption = "经验2";
             gridColumn18.FieldName = "Experience2";
             gridColumn18.Name = "gridColumn18";
             gridColumn18.Visible = true;
@@ -291,7 +303,7 @@
             // 
             // gridColumn19
             // 
-            gridColumn19.Caption = "Experience 3";
+            gridColumn19.Caption = "经验3";
             gridColumn19.FieldName = "Experience3";
             gridColumn19.Name = "gridColumn19";
             gridColumn19.Visible = true;
@@ -300,6 +312,7 @@
             // gridColumn14
             // 
             gridColumn14.FieldName = "Delay";
+            gridColumn14.Caption = "延迟";
             gridColumn14.Name = "gridColumn14";
             gridColumn14.Visible = true;
             gridColumn14.VisibleIndex = 19;
@@ -307,6 +320,7 @@
             // gridColumn20
             // 
             gridColumn20.FieldName = "Description";
+            gridColumn20.Caption = "描述";
             gridColumn20.Name = "gridColumn20";
             gridColumn20.Visible = true;
             gridColumn20.VisibleIndex = 20;
@@ -333,6 +347,7 @@
             // 
             gridColumn21.ColumnEdit = PropertyImageComboBox;
             gridColumn21.FieldName = "Property";
+            gridColumn21.Caption = "属性";
             gridColumn21.Name = "gridColumn21";
             gridColumn21.Visible = true;
             gridColumn21.VisibleIndex = 4;
@@ -346,7 +361,7 @@
             Controls.Add(ribbon);
             Name = "MagicInfoView";
             Ribbon = ribbon;
-            Text = "Magic Info";
+            Text = "技能信息";
             Load += MagicInfoView_Load;
             ((System.ComponentModel.ISupportInitialize)ribbon).EndInit();
             ((System.ComponentModel.ISupportInitialize)MagicImageComboBox).EndInit();

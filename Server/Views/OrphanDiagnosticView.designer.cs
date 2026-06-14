@@ -62,7 +62,7 @@ namespace Server.Views
             // 
             // ScanOrphansButton
             // 
-            ScanOrphansButton.Caption = "Scan";
+            ScanOrphansButton.Caption = "扫描";
             ScanOrphansButton.Id = 6;
             ScanOrphansButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("ScanOrphansButton.ImageOptions.Image");
             ScanOrphansButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("ScanOrphansButton.ImageOptions.LargeImage");
@@ -72,7 +72,7 @@ namespace Server.Views
             // 
             // CleanOrphansButton
             // 
-            CleanOrphansButton.Caption = "Clean";
+            CleanOrphansButton.Caption = "清理";
             CleanOrphansButton.Id = 7;
             CleanOrphansButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("CleanOrphansButton.ImageOptions.Image");
             CleanOrphansButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("CleanOrphansButton.ImageOptions.LargeImage");
@@ -84,7 +84,7 @@ namespace Server.Views
             // 
             ribbonPage1.Groups.AddRange(new DevExpress.XtraBars.Ribbon.RibbonPageGroup[] { ribbonPageGroup1 });
             ribbonPage1.Name = "ribbonPage1";
-            ribbonPage1.Text = "Home";
+            ribbonPage1.Text = "主页";
             // 
             // ribbonPageGroup1
             // 
@@ -93,14 +93,14 @@ namespace Server.Views
             ribbonPageGroup1.ItemLinks.Add(ScanOrphansButton);
             ribbonPageGroup1.ItemLinks.Add(CleanOrphansButton);
             ribbonPageGroup1.Name = "ribbonPageGroup1";
-            ribbonPageGroup1.Text = "Diagnostics";
+            ribbonPageGroup1.Text = "诊断";
             // 
             // repositoryItemToggleSwitch1
             // 
             repositoryItemToggleSwitch1.AutoHeight = false;
             repositoryItemToggleSwitch1.Name = "repositoryItemToggleSwitch1";
-            repositoryItemToggleSwitch1.OffText = "Off";
-            repositoryItemToggleSwitch1.OnText = "On";
+            repositoryItemToggleSwitch1.OffText = "关";
+            repositoryItemToggleSwitch1.OnText = "开";
             // 
             // DiagnosticGridControl
             // 
@@ -126,6 +126,7 @@ namespace Server.Views
             // gridColumn1
             // 
             gridColumn1.FieldName = "ObjectType";
+            gridColumn1.Caption = "对象类型";
             gridColumn1.Name = "gridColumn1";
             gridColumn1.Visible = true;
             gridColumn1.VisibleIndex = 0;
@@ -133,6 +134,7 @@ namespace Server.Views
             // gridColumn2
             // 
             gridColumn2.FieldName = "ParentType";
+            gridColumn2.Caption = "父对象类型";
             gridColumn2.Name = "gridColumn2";
             gridColumn2.Visible = true;
             gridColumn2.VisibleIndex = 1;
@@ -140,6 +142,7 @@ namespace Server.Views
             // gridColumn3
             // 
             gridColumn3.FieldName = "ParentProperty";
+            gridColumn3.Caption = "父对象属性";
             gridColumn3.Name = "gridColumn3";
             gridColumn3.Visible = true;
             gridColumn3.VisibleIndex = 2;
@@ -147,6 +150,7 @@ namespace Server.Views
             // gridColumn4
             // 
             gridColumn4.FieldName = "ParentList";
+            gridColumn4.Caption = "父对象列表";
             gridColumn4.Name = "gridColumn4";
             gridColumn4.Visible = true;
             gridColumn4.VisibleIndex = 3;
@@ -154,6 +158,7 @@ namespace Server.Views
             // gridColumn5
             // 
             gridColumn5.FieldName = "TotalRows";
+            gridColumn5.Caption = "总行数";
             gridColumn5.Name = "gridColumn5";
             gridColumn5.Visible = true;
             gridColumn5.VisibleIndex = 4;
@@ -161,6 +166,7 @@ namespace Server.Views
             // gridColumn6
             // 
             gridColumn6.FieldName = "LinkedRows";
+            gridColumn6.Caption = "已关联行数";
             gridColumn6.Name = "gridColumn6";
             gridColumn6.Visible = true;
             gridColumn6.VisibleIndex = 5;
@@ -168,6 +174,7 @@ namespace Server.Views
             // gridColumn7
             // 
             gridColumn7.FieldName = "CleanableOrphans";
+            gridColumn7.Caption = "可清理孤儿数";
             gridColumn7.Name = "gridColumn7";
             gridColumn7.Visible = true;
             gridColumn7.VisibleIndex = 6;
@@ -175,6 +182,7 @@ namespace Server.Views
             // gridColumn8
             // 
             gridColumn8.FieldName = "ExistingTemporaryOrphans";
+            gridColumn8.Caption = "已有临时孤儿数";
             gridColumn8.Name = "gridColumn8";
             gridColumn8.Visible = true;
             gridColumn8.VisibleIndex = 7;
@@ -182,6 +190,7 @@ namespace Server.Views
             // gridColumn9
             // 
             gridColumn9.FieldName = "MissingParent";
+            gridColumn9.Caption = "缺失父对象";
             gridColumn9.Name = "gridColumn9";
             gridColumn9.Visible = true;
             gridColumn9.VisibleIndex = 8;
@@ -189,6 +198,7 @@ namespace Server.Views
             // gridColumn10
             // 
             gridColumn10.FieldName = "DeletedParent";
+            gridColumn10.Caption = "已删除父对象";
             gridColumn10.Name = "gridColumn10";
             gridColumn10.Visible = true;
             gridColumn10.VisibleIndex = 9;
@@ -196,6 +206,7 @@ namespace Server.Views
             // gridColumn11
             // 
             gridColumn11.FieldName = "MissingParentListLink";
+            gridColumn11.Caption = "缺失父列表关联";
             gridColumn11.Name = "gridColumn11";
             gridColumn11.Visible = true;
             gridColumn11.VisibleIndex = 10;
@@ -203,6 +214,7 @@ namespace Server.Views
             // gridColumn12
             // 
             gridColumn12.FieldName = "MarkedTemporary";
+            gridColumn12.Caption = "已标记临时";
             gridColumn12.Name = "gridColumn12";
             gridColumn12.Visible = true;
             gridColumn12.VisibleIndex = 11;
@@ -210,6 +222,7 @@ namespace Server.Views
             // gridColumn13
             // 
             gridColumn13.FieldName = "SampleIndices";
+            gridColumn13.Caption = "示例序号";
             gridColumn13.Name = "gridColumn13";
             gridColumn13.Visible = true;
             gridColumn13.VisibleIndex = 12;
@@ -247,7 +260,7 @@ namespace Server.Views
             Controls.Add(ribbon);
             Name = "OrphanDiagnosticView";
             Ribbon = ribbon;
-            Text = "Orphan Diagnostics";
+            Text = "孤儿数据诊断";
             ((System.ComponentModel.ISupportInitialize)ribbon).EndInit();
             ((System.ComponentModel.ISupportInitialize)repositoryItemToggleSwitch1).EndInit();
             ((System.ComponentModel.ISupportInitialize)DiagnosticGridControl).EndInit();

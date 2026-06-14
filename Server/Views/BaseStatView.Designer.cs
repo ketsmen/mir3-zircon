@@ -80,7 +80,7 @@
             // 
             // SaveButton
             // 
-            this.SaveButton.Caption = "Save Database";
+            this.SaveButton.Caption = "保存数据库";
             this.SaveButton.Id = 1;
             this.SaveButton.ImageOptions.Image = ((System.Drawing.Image)(resources.GetObject("SaveButton.ImageOptions.Image")));
             this.SaveButton.ImageOptions.LargeImage = ((System.Drawing.Image)(resources.GetObject("SaveButton.ImageOptions.LargeImage")));
@@ -90,7 +90,7 @@
             // 
             // ImportButton
             // 
-            this.ImportButton.Caption = "Import";
+            this.ImportButton.Caption = "导入";
             this.ImportButton.Id = 2;
             this.ImportButton.ImageOptions.Image = ((System.Drawing.Image)(resources.GetObject("ImportButton.ImageOptions.Image")));
             this.ImportButton.ImageOptions.LargeImage = ((System.Drawing.Image)(resources.GetObject("ImportButton.ImageOptions.LargeImage")));
@@ -99,7 +99,7 @@
             // 
             // ExportButton
             // 
-            this.ExportButton.Caption = "Export";
+            this.ExportButton.Caption = "导出";
             this.ExportButton.Id = 3;
             this.ExportButton.ImageOptions.Image = ((System.Drawing.Image)(resources.GetObject("ExportButton.ImageOptions.Image")));
             this.ExportButton.ImageOptions.LargeImage = ((System.Drawing.Image)(resources.GetObject("ExportButton.ImageOptions.LargeImage")));
@@ -112,7 +112,7 @@
             this.ribbonPageGroup1,
             this.JsonImportExport});
             this.ribbonPage1.Name = "ribbonPage1";
-            this.ribbonPage1.Text = "Home";
+            this.ribbonPage1.Text = "主页";
             // 
             // ribbonPageGroup1
             // 
@@ -120,14 +120,14 @@
             this.ribbonPageGroup1.CaptionButtonVisible = DevExpress.Utils.DefaultBoolean.False;
             this.ribbonPageGroup1.ItemLinks.Add(this.SaveButton);
             this.ribbonPageGroup1.Name = "ribbonPageGroup1";
-            this.ribbonPageGroup1.Text = "Saving";
+            this.ribbonPageGroup1.Text = "保存";
             // 
             // JsonImportExport
             // 
             this.JsonImportExport.ItemLinks.Add(this.ImportButton);
             this.JsonImportExport.ItemLinks.Add(this.ExportButton);
             this.JsonImportExport.Name = "JsonImportExport";
-            this.JsonImportExport.Text = "Json";
+            this.JsonImportExport.Text = "JSON";
             // 
             // BaseStatGridControl
             // 
@@ -174,6 +174,7 @@
             // gridColumn1
             // 
             this.gridColumn1.FieldName = "Class";
+            this.gridColumn1.Caption = "职业";
             this.gridColumn1.Name = "gridColumn1";
             this.gridColumn1.Visible = true;
             this.gridColumn1.VisibleIndex = 0;
@@ -181,6 +182,7 @@
             // gridColumn2
             // 
             this.gridColumn2.FieldName = "Level";
+            this.gridColumn2.Caption = "等级";
             this.gridColumn2.Name = "gridColumn2";
             this.gridColumn2.Visible = true;
             this.gridColumn2.VisibleIndex = 1;
@@ -188,6 +190,7 @@
             // gridColumn3
             // 
             this.gridColumn3.FieldName = "Health";
+            this.gridColumn3.Caption = "生命";
             this.gridColumn3.Name = "gridColumn3";
             this.gridColumn3.Visible = true;
             this.gridColumn3.VisibleIndex = 2;
@@ -195,6 +198,7 @@
             // gridColumn4
             // 
             this.gridColumn4.FieldName = "Mana";
+            this.gridColumn4.Caption = "魔法";
             this.gridColumn4.Name = "gridColumn4";
             this.gridColumn4.Visible = true;
             this.gridColumn4.VisibleIndex = 3;
@@ -202,6 +206,7 @@
             // gridColumn5
             // 
             this.gridColumn5.FieldName = "BagWeight";
+            this.gridColumn5.Caption = "背包负重";
             this.gridColumn5.Name = "gridColumn5";
             this.gridColumn5.Visible = true;
             this.gridColumn5.VisibleIndex = 4;
@@ -209,6 +214,7 @@
             // gridColumn6
             // 
             this.gridColumn6.FieldName = "WearWeight";
+            this.gridColumn6.Caption = "穿戴负重";
             this.gridColumn6.Name = "gridColumn6";
             this.gridColumn6.Visible = true;
             this.gridColumn6.VisibleIndex = 5;
@@ -216,6 +222,7 @@
             // gridColumn7
             // 
             this.gridColumn7.FieldName = "HandWeight";
+            this.gridColumn7.Caption = "手持负重";
             this.gridColumn7.Name = "gridColumn7";
             this.gridColumn7.Visible = true;
             this.gridColumn7.VisibleIndex = 6;
@@ -223,6 +230,7 @@
             // gridColumn8
             // 
             this.gridColumn8.FieldName = "Accuracy";
+            this.gridColumn8.Caption = "准确";
             this.gridColumn8.Name = "gridColumn8";
             this.gridColumn8.Visible = true;
             this.gridColumn8.VisibleIndex = 7;
@@ -230,6 +238,7 @@
             // gridColumn9
             // 
             this.gridColumn9.FieldName = "Agility";
+            this.gridColumn9.Caption = "敏捷";
             this.gridColumn9.Name = "gridColumn9";
             this.gridColumn9.Visible = true;
             this.gridColumn9.VisibleIndex = 8;
@@ -237,6 +246,7 @@
             // gridColumn10
             // 
             this.gridColumn10.FieldName = "MinAC";
+            this.gridColumn10.Caption = "最小AC";
             this.gridColumn10.Name = "gridColumn10";
             this.gridColumn10.Visible = true;
             this.gridColumn10.VisibleIndex = 9;
@@ -244,6 +254,7 @@
             // gridColumn11
             // 
             this.gridColumn11.FieldName = "MaxAC";
+            this.gridColumn11.Caption = "最大AC";
             this.gridColumn11.Name = "gridColumn11";
             this.gridColumn11.Visible = true;
             this.gridColumn11.VisibleIndex = 10;
@@ -251,6 +262,7 @@
             // gridColumn12
             // 
             this.gridColumn12.FieldName = "MinMR";
+            this.gridColumn12.Caption = "最小MR";
             this.gridColumn12.Name = "gridColumn12";
             this.gridColumn12.Visible = true;
             this.gridColumn12.VisibleIndex = 11;
@@ -258,6 +270,7 @@
             // gridColumn13
             // 
             this.gridColumn13.FieldName = "MaxMR";
+            this.gridColumn13.Caption = "最大MR";
             this.gridColumn13.Name = "gridColumn13";
             this.gridColumn13.Visible = true;
             this.gridColumn13.VisibleIndex = 12;
@@ -265,6 +278,7 @@
             // gridColumn14
             // 
             this.gridColumn14.FieldName = "MinDC";
+            this.gridColumn14.Caption = "最小DC";
             this.gridColumn14.Name = "gridColumn14";
             this.gridColumn14.Visible = true;
             this.gridColumn14.VisibleIndex = 13;
@@ -272,6 +286,7 @@
             // gridColumn15
             // 
             this.gridColumn15.FieldName = "MaxDC";
+            this.gridColumn15.Caption = "最大DC";
             this.gridColumn15.Name = "gridColumn15";
             this.gridColumn15.Visible = true;
             this.gridColumn15.VisibleIndex = 14;
@@ -279,6 +294,7 @@
             // gridColumn16
             // 
             this.gridColumn16.FieldName = "MinMC";
+            this.gridColumn16.Caption = "最小MC";
             this.gridColumn16.Name = "gridColumn16";
             this.gridColumn16.Visible = true;
             this.gridColumn16.VisibleIndex = 15;
@@ -286,6 +302,7 @@
             // gridColumn17
             // 
             this.gridColumn17.FieldName = "MaxMC";
+            this.gridColumn17.Caption = "最大MC";
             this.gridColumn17.Name = "gridColumn17";
             this.gridColumn17.Visible = true;
             this.gridColumn17.VisibleIndex = 16;
@@ -293,6 +310,7 @@
             // gridColumn18
             // 
             this.gridColumn18.FieldName = "MinSC";
+            this.gridColumn18.Caption = "最小SC";
             this.gridColumn18.Name = "gridColumn18";
             this.gridColumn18.Visible = true;
             this.gridColumn18.VisibleIndex = 17;
@@ -300,6 +318,7 @@
             // gridColumn19
             // 
             this.gridColumn19.FieldName = "MaxSC";
+            this.gridColumn19.Caption = "最大SC";
             this.gridColumn19.Name = "gridColumn19";
             this.gridColumn19.Visible = true;
             this.gridColumn19.VisibleIndex = 18;
@@ -313,7 +332,7 @@
             this.Controls.Add(this.ribbon);
             this.Name = "BaseStatView";
             this.Ribbon = this.ribbon;
-            this.Text = "Base Stats";
+            this.Text = "基础属性";
             ((System.ComponentModel.ISupportInitialize)(this.ribbon)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.BaseStatGridControl)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.BaseStatGridView)).EndInit();

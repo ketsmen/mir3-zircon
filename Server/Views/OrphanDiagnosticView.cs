@@ -37,8 +37,8 @@ namespace Server.Views
         private void CleanOrphansButton_ItemClick(object sender, ItemClickEventArgs e)
         {
             if (XtraMessageBox.Show(this,
-                "This will mark all cleanable orphan aggregate-child rows as temporary so they are skipped on the next database save. Continue?",
-                "Clean DB orphans",
+                "此操作会把所有可清理的孤儿聚合子行标记为临时数据，使其在下次保存数据库时被跳过。是否继续？",
+                "清理数据库孤儿数据",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
@@ -67,10 +67,10 @@ namespace Server.Views
             }
             catch (Exception ex)
             {
-                string message = cleanRun ? "DB orphan clean failed: " + ex.Message : "DB orphan scan failed: " + ex.Message;
+                string message = cleanRun ? "数据库孤儿数据清理失败: " + ex.Message : "数据库孤儿数据扫描失败: " + ex.Message;
                 memoEdit1.EditValue = message;
                 SEnvir.Log(message);
-                XtraMessageBox.Show(this, message, "DB Orphans", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                XtraMessageBox.Show(this, message, "数据库孤儿数据", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {

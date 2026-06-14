@@ -74,6 +74,7 @@
             // 
             this.gridColumn2.ColumnEdit = this.StatImageComboBox;
             this.gridColumn2.FieldName = "Stat";
+            this.gridColumn2.Caption = "属性";
             this.gridColumn2.Name = "gridColumn2";
             this.gridColumn2.Visible = true;
             this.gridColumn2.VisibleIndex = 0;
@@ -88,6 +89,7 @@
             // gridColumn3
             // 
             this.gridColumn3.FieldName = "Amount";
+            this.gridColumn3.Caption = "数量";
             this.gridColumn3.Name = "gridColumn3";
             this.gridColumn3.Visible = true;
             this.gridColumn3.VisibleIndex = 1;
@@ -96,6 +98,7 @@
             // 
             this.gridColumn4.ColumnEdit = this.RequiredClassImageComboBox;
             this.gridColumn4.FieldName = "Class";
+            this.gridColumn4.Caption = "职业";
             this.gridColumn4.Name = "gridColumn4";
             this.gridColumn4.Visible = true;
             this.gridColumn4.VisibleIndex = 2;
@@ -110,6 +113,7 @@
             // gridColumn5
             // 
             this.gridColumn5.FieldName = "Level";
+            this.gridColumn5.Caption = "等级";
             this.gridColumn5.Name = "gridColumn5";
             this.gridColumn5.Visible = true;
             this.gridColumn5.VisibleIndex = 3;
@@ -151,6 +155,7 @@
             // gridColumn1
             // 
             this.gridColumn1.FieldName = "SetName";
+            this.gridColumn1.Caption = "套装名";
             this.gridColumn1.Name = "gridColumn1";
             this.gridColumn1.Visible = true;
             this.gridColumn1.VisibleIndex = 0;
@@ -173,7 +178,7 @@
             // 
             // SaveDatabaseButton
             // 
-            this.SaveDatabaseButton.Caption = "Save Database";
+            this.SaveDatabaseButton.Caption = "保存数据库";
             this.SaveDatabaseButton.Id = 1;
             this.SaveDatabaseButton.ImageOptions.Image = ((System.Drawing.Image)(resources.GetObject("SaveDatabaseButton.ImageOptions.Image")));
             this.SaveDatabaseButton.ImageOptions.LargeImage = ((System.Drawing.Image)(resources.GetObject("SaveDatabaseButton.ImageOptions.LargeImage")));
@@ -187,7 +192,7 @@
             this.ribbonPageGroup1,
             this.JsonImportExport});
             this.ribbonPage1.Name = "ribbonPage1";
-            this.ribbonPage1.Text = "Home";
+            this.ribbonPage1.Text = "主页";
             // 
             // ribbonPageGroup1
             // 
@@ -195,18 +200,18 @@
             this.ribbonPageGroup1.CaptionButtonVisible = DevExpress.Utils.DefaultBoolean.False;
             this.ribbonPageGroup1.ItemLinks.Add(this.SaveDatabaseButton);
             this.ribbonPageGroup1.Name = "ribbonPageGroup1";
-            this.ribbonPageGroup1.Text = "Saving";
+            this.ribbonPageGroup1.Text = "保存";
             // 
             // JsonImportExport
             // 
             this.JsonImportExport.ItemLinks.Add(this.ImportButton);
             this.JsonImportExport.ItemLinks.Add(this.ExportButton);
             this.JsonImportExport.Name = "JsonImportExport";
-            this.JsonImportExport.Text = "Json";
+            this.JsonImportExport.Text = "JSON";
             // 
             // ImportButton
             // 
-            this.ImportButton.Caption = "Import";
+            this.ImportButton.Caption = "导入";
             this.ImportButton.Id = 2;
             this.ImportButton.ImageOptions.Image = ((System.Drawing.Image)(resources.GetObject("ImportButton.ImageOptions.Image")));
             this.ImportButton.ImageOptions.LargeImage = ((System.Drawing.Image)(resources.GetObject("ImportButton.ImageOptions.LargeImage")));
@@ -215,7 +220,7 @@
             // 
             // ExportButton
             // 
-            this.ExportButton.Caption = "Export";
+            this.ExportButton.Caption = "导出";
             this.ExportButton.Id = 3;
             this.ExportButton.ImageOptions.Image = ((System.Drawing.Image)(resources.GetObject("ExportButton.ImageOptions.Image")));
             this.ExportButton.ImageOptions.LargeImage = ((System.Drawing.Image)(resources.GetObject("ExportButton.ImageOptions.LargeImage")));
@@ -231,7 +236,7 @@
             this.Controls.Add(this.ribbon);
             this.Name = "SetInfoView";
             this.Ribbon = this.ribbon;
-            this.Text = "Set Info";
+            this.Text = "套装信息";
             ((System.ComponentModel.ISupportInitialize)(this.SetStatsGridView)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.StatImageComboBox)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.RequiredClassImageComboBox)).EndInit();

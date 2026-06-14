@@ -72,7 +72,7 @@
             // 
             // SavingButton
             // 
-            this.SavingButton.Caption = "Save Database";
+            this.SavingButton.Caption = "保存数据库";
             this.SavingButton.Id = 1;
             this.SavingButton.ImageOptions.Image = ((System.Drawing.Image)(resources.GetObject("SavingButton.ImageOptions.Image")));
             this.SavingButton.ImageOptions.LargeImage = ((System.Drawing.Image)(resources.GetObject("SavingButton.ImageOptions.LargeImage")));
@@ -82,7 +82,7 @@
             // 
             // ImportButton
             // 
-            this.ImportButton.Caption = "Import";
+            this.ImportButton.Caption = "导入";
             this.ImportButton.Id = 2;
             this.ImportButton.ImageOptions.Image = ((System.Drawing.Image)(resources.GetObject("ImportButton.ImageOptions.Image")));
             this.ImportButton.ImageOptions.LargeImage = ((System.Drawing.Image)(resources.GetObject("ImportButton.ImageOptions.LargeImage")));
@@ -91,7 +91,7 @@
             // 
             // ExportButton
             // 
-            this.ExportButton.Caption = "Export";
+            this.ExportButton.Caption = "导出";
             this.ExportButton.Id = 3;
             this.ExportButton.ImageOptions.Image = ((System.Drawing.Image)(resources.GetObject("ExportButton.ImageOptions.Image")));
             this.ExportButton.ImageOptions.LargeImage = ((System.Drawing.Image)(resources.GetObject("ExportButton.ImageOptions.LargeImage")));
@@ -104,7 +104,7 @@
             this.ribbonPageGroup1,
             this.JsonImportExport});
             this.ribbonPage1.Name = "ribbonPage1";
-            this.ribbonPage1.Text = "Home";
+            this.ribbonPage1.Text = "主页";
             // 
             // ribbonPageGroup1
             // 
@@ -112,14 +112,14 @@
             this.ribbonPageGroup1.CaptionButtonVisible = DevExpress.Utils.DefaultBoolean.False;
             this.ribbonPageGroup1.ItemLinks.Add(this.SavingButton);
             this.ribbonPageGroup1.Name = "ribbonPageGroup1";
-            this.ribbonPageGroup1.Text = "Saving";
+            this.ribbonPageGroup1.Text = "保存";
             // 
             // JsonImportExport
             // 
             this.JsonImportExport.ItemLinks.Add(this.ImportButton);
             this.JsonImportExport.ItemLinks.Add(this.ExportButton);
             this.JsonImportExport.Name = "JsonImportExport";
-            this.JsonImportExport.Text = "Json";
+            this.JsonImportExport.Text = "JSON";
             // 
             // DropInfoGridControl
             // 
@@ -158,6 +158,7 @@
             // 
             this.gridColumn1.ColumnEdit = this.MonsterLookUpEdit;
             this.gridColumn1.FieldName = "Monster";
+            this.gridColumn1.Caption = "怪物";
             this.gridColumn1.Name = "gridColumn1";
             this.gridColumn1.OptionsColumn.AllowSort = DevExpress.Utils.DefaultBoolean.True;
             this.gridColumn1.SortMode = DevExpress.XtraGrid.ColumnSortMode.DisplayText;
@@ -171,20 +172,21 @@
             this.MonsterLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] {
             new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo)});
             this.MonsterLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] {
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("MonsterName", "Monster Name"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("MonsterName", "怪物名"),
             new DevExpress.XtraEditors.Controls.LookUpColumnInfo("AI", "AI"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Level", "Level"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Experience", "Experience"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("IsBoss", "Is Boss")});
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Level", "等级"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Experience", "经验"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("IsBoss", "Boss")});
             this.MonsterLookUpEdit.DisplayMember = "MonsterName";
             this.MonsterLookUpEdit.Name = "MonsterLookUpEdit";
-            this.MonsterLookUpEdit.NullText = "[Monster is null]";
+            this.MonsterLookUpEdit.NullText = "[未选择怪物]";
             // 
             // gridColumn2
             // 
             this.gridColumn2.ColumnEdit = this.ItemLookUpEdit;
             this.gridColumn2.FieldName = "Item";
+            this.gridColumn2.Caption = "物品";
             this.gridColumn2.Name = "gridColumn2";
             this.gridColumn2.OptionsColumn.AllowSort = DevExpress.Utils.DefaultBoolean.True;
             this.gridColumn2.SortMode = DevExpress.XtraGrid.ColumnSortMode.DisplayText;
@@ -198,18 +200,19 @@
             this.ItemLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] {
             new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo)});
             this.ItemLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] {
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemName", "Item Name"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemType", "Item Type"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Price", "Price"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("StackSize", "Stack Size")});
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemName", "物品名"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemType", "物品类型"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Price", "价格"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("StackSize", "堆叠数量")});
             this.ItemLookUpEdit.DisplayMember = "ItemName";
             this.ItemLookUpEdit.Name = "ItemLookUpEdit";
-            this.ItemLookUpEdit.NullText = "[Item is null]";
+            this.ItemLookUpEdit.NullText = "[未选择物品]";
             // 
             // gridColumn3
             // 
             this.gridColumn3.FieldName = "Chance";
+            this.gridColumn3.Caption = "几率";
             this.gridColumn3.Name = "gridColumn3";
             this.gridColumn3.Visible = true;
             this.gridColumn3.VisibleIndex = 2;
@@ -217,6 +220,7 @@
             // gridColumn4
             // 
             this.gridColumn4.FieldName = "Amount";
+            this.gridColumn4.Caption = "数量";
             this.gridColumn4.Name = "gridColumn4";
             this.gridColumn4.Visible = true;
             this.gridColumn4.VisibleIndex = 3;
@@ -224,6 +228,7 @@
             // gridColumn5
             // 
             this.gridColumn5.FieldName = "DropSet";
+            this.gridColumn5.Caption = "掉落组";
             this.gridColumn5.Name = "gridColumn5";
             this.gridColumn5.Visible = true;
             this.gridColumn5.VisibleIndex = 4;
@@ -231,6 +236,7 @@
             // gridColumn6
             // 
             this.gridColumn6.FieldName = "PartOnly";
+            this.gridColumn6.Caption = "仅部件";
             this.gridColumn6.Name = "gridColumn6";
             this.gridColumn6.Visible = true;
             this.gridColumn6.VisibleIndex = 5;
@@ -238,6 +244,7 @@
             // gridColumn7
             // 
             this.gridColumn7.FieldName = "EasterEvent";
+            this.gridColumn7.Caption = "复活节活动";
             this.gridColumn7.Name = "gridColumn7";
             this.gridColumn7.Visible = true;
             this.gridColumn7.VisibleIndex = 6;
@@ -251,7 +258,7 @@
             this.Controls.Add(this.ribbon);
             this.Name = "DropInfoView";
             this.Ribbon = this.ribbon;
-            this.Text = "Drop Info";
+            this.Text = "掉落信息";
             ((System.ComponentModel.ISupportInitialize)(this.ribbon)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.DropInfoGridControl)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.DropInfoGridView)).EndInit();

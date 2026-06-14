@@ -103,6 +103,7 @@
             // 
             colStat.ColumnEdit = StatComboBox;
             colStat.FieldName = "Stat";
+            colStat.Caption = "属性";
             colStat.Name = "colStat";
             colStat.Visible = true;
             colStat.VisibleIndex = 0;
@@ -116,6 +117,7 @@
             // colAmount
             // 
             colAmount.FieldName = "Amount";
+            colAmount.Caption = "数量";
             colAmount.Name = "colAmount";
             colAmount.Visible = true;
             colAmount.VisibleIndex = 1;
@@ -155,6 +157,7 @@
             // 
             colRegion.ColumnEdit = RegionLookUpEdit;
             colRegion.FieldName = "Region";
+            colRegion.Caption = "区域";
             colRegion.Name = "colRegion";
             colRegion.SortMode = DevExpress.XtraGrid.ColumnSortMode.DisplayText;
             colRegion.Visible = true;
@@ -165,14 +168,15 @@
             RegionLookUpEdit.AutoHeight = false;
             RegionLookUpEdit.BestFitMode = DevExpress.XtraEditors.Controls.BestFitMode.BestFitResizePopup;
             RegionLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] { new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo) });
-            RegionLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("FileName", "File Name"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Description", "Description") });
+            RegionLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("FileName", "文件名"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Description", "描述") });
             RegionLookUpEdit.DisplayMember = "ServerDescription";
             RegionLookUpEdit.Name = "RegionLookUpEdit";
-            RegionLookUpEdit.NullText = "[Region is null]";
+            RegionLookUpEdit.NullText = "[未选择区域]";
             // 
             // colDelay
             // 
             colDelay.FieldName = "Delay";
+            colDelay.Caption = "延迟";
             colDelay.Name = "colDelay";
             colDelay.Visible = true;
             colDelay.VisibleIndex = 1;
@@ -180,6 +184,7 @@
             // colCount
             // 
             colCount.FieldName = "Count";
+            colCount.Caption = "数量";
             colCount.Name = "colCount";
             colCount.Visible = true;
             colCount.VisibleIndex = 2;
@@ -199,6 +204,7 @@
             // 
             ColItem.ColumnEdit = ItemLookUpEdit;
             ColItem.FieldName = "Item";
+            ColItem.Caption = "物品";
             ColItem.Name = "ColItem";
             ColItem.OptionsColumn.AllowSort = DevExpress.Utils.DefaultBoolean.True;
             ColItem.SortMode = DevExpress.XtraGrid.ColumnSortMode.DisplayText;
@@ -210,14 +216,15 @@
             ItemLookUpEdit.AutoHeight = false;
             ItemLookUpEdit.BestFitMode = DevExpress.XtraEditors.Controls.BestFitMode.BestFitResizePopup;
             ItemLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] { new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo) });
-            ItemLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemName", "Item Name"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemType", "Item Type"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Price", "Price"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("StackSize", "Stack Size"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("PartCount", "Part Count") });
+            ItemLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemName", "物品名"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemType", "物品类型"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Price", "价格"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("StackSize", "堆叠数量"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("PartCount", "部件数量") });
             ItemLookUpEdit.DisplayMember = "ItemName";
             ItemLookUpEdit.Name = "ItemLookUpEdit";
-            ItemLookUpEdit.NullText = "[Item is null]";
+            ItemLookUpEdit.NullText = "[未选择物品]";
             // 
             // colChance
             // 
             colChance.FieldName = "Chance";
+            colChance.Caption = "几率";
             colChance.Name = "colChance";
             colChance.Visible = true;
             colChance.VisibleIndex = 1;
@@ -225,6 +232,7 @@
             // colDAmount
             // 
             colDAmount.FieldName = "Amount";
+            colDAmount.Caption = "数量";
             colDAmount.Name = "colDAmount";
             colDAmount.Visible = true;
             colDAmount.VisibleIndex = 2;
@@ -232,6 +240,7 @@
             // gridColumn1
             // 
             gridColumn1.FieldName = "DropSet";
+            gridColumn1.Caption = "掉落组";
             gridColumn1.Name = "gridColumn1";
             gridColumn1.Visible = true;
             gridColumn1.VisibleIndex = 3;
@@ -239,6 +248,7 @@
             // gridColumn6
             // 
             gridColumn6.FieldName = "PartOnly";
+            gridColumn6.Caption = "仅部件";
             gridColumn6.Name = "gridColumn6";
             gridColumn6.Visible = true;
             gridColumn6.VisibleIndex = 4;
@@ -246,6 +256,7 @@
             // gridColumn7
             // 
             gridColumn7.FieldName = "EasterEvent";
+            gridColumn7.Caption = "复活节活动";
             gridColumn7.Name = "gridColumn7";
             gridColumn7.Visible = true;
             gridColumn7.VisibleIndex = 5;
@@ -265,6 +276,7 @@
             // colMonsterName
             // 
             colMonsterName.FieldName = "MonsterName";
+            colMonsterName.Caption = "怪物名";
             colMonsterName.Name = "colMonsterName";
             colMonsterName.Visible = true;
             colMonsterName.VisibleIndex = 0;
@@ -273,6 +285,7 @@
             // 
             colImage.ColumnEdit = MonsterImageComboBox;
             colImage.FieldName = "Image";
+            colImage.Caption = "图像";
             colImage.Name = "colImage";
             colImage.Visible = true;
             colImage.VisibleIndex = 1;
@@ -286,6 +299,7 @@
             // colAI
             // 
             colAI.FieldName = "AI";
+            colAI.Caption = "AI";
             colAI.Name = "colAI";
             colAI.Visible = true;
             colAI.VisibleIndex = 2;
@@ -293,6 +307,7 @@
             // colLevel
             // 
             colLevel.FieldName = "Level";
+            colLevel.Caption = "等级";
             colLevel.Name = "colLevel";
             colLevel.Visible = true;
             colLevel.VisibleIndex = 3;
@@ -300,6 +315,7 @@
             // colExperience
             // 
             colExperience.FieldName = "Experience";
+            colExperience.Caption = "经验";
             colExperience.Name = "colExperience";
             colExperience.Visible = true;
             colExperience.VisibleIndex = 4;
@@ -307,6 +323,7 @@
             // colViewRange
             // 
             colViewRange.FieldName = "ViewRange";
+            colViewRange.Caption = "视野范围";
             colViewRange.Name = "colViewRange";
             colViewRange.Visible = true;
             colViewRange.VisibleIndex = 5;
@@ -314,6 +331,7 @@
             // colCoolEye
             // 
             colCoolEye.FieldName = "CoolEye";
+            colCoolEye.Caption = "反隐";
             colCoolEye.Name = "colCoolEye";
             colCoolEye.Visible = true;
             colCoolEye.VisibleIndex = 6;
@@ -321,6 +339,7 @@
             // colAttackDelay
             // 
             colAttackDelay.FieldName = "AttackDelay";
+            colAttackDelay.Caption = "攻击延迟";
             colAttackDelay.Name = "colAttackDelay";
             colAttackDelay.Visible = true;
             colAttackDelay.VisibleIndex = 7;
@@ -328,6 +347,7 @@
             // colMoveDelay
             // 
             colMoveDelay.FieldName = "MoveDelay";
+            colMoveDelay.Caption = "移动延迟";
             colMoveDelay.Name = "colMoveDelay";
             colMoveDelay.Visible = true;
             colMoveDelay.VisibleIndex = 8;
@@ -335,6 +355,7 @@
             // colIsBoss
             // 
             colIsBoss.FieldName = "IsBoss";
+            colIsBoss.Caption = "Boss";
             colIsBoss.Name = "colIsBoss";
             colIsBoss.Visible = true;
             colIsBoss.VisibleIndex = 9;
@@ -342,6 +363,7 @@
             // colUndead
             // 
             colUndead.FieldName = "Undead";
+            colUndead.Caption = "不死系";
             colUndead.Name = "colUndead";
             colUndead.Visible = true;
             colUndead.VisibleIndex = 10;
@@ -349,6 +371,7 @@
             // gridColumn3
             // 
             gridColumn3.FieldName = "CanPush";
+            gridColumn3.Caption = "可推动";
             gridColumn3.Name = "gridColumn3";
             gridColumn3.Visible = true;
             gridColumn3.VisibleIndex = 11;
@@ -356,6 +379,7 @@
             // gridColumn4
             // 
             gridColumn4.FieldName = "CanTame";
+            gridColumn4.Caption = "可驯服";
             gridColumn4.Name = "gridColumn4";
             gridColumn4.Visible = true;
             gridColumn4.VisibleIndex = 12;
@@ -363,13 +387,14 @@
             // gridColumn5
             // 
             gridColumn5.FieldName = "Flag";
+            gridColumn5.Caption = "标记";
             gridColumn5.Name = "gridColumn5";
             gridColumn5.Visible = true;
             gridColumn5.VisibleIndex = 13;
             // 
             // colFaceImage
             // 
-            colFaceImage.Caption = "Face Image";
+            colFaceImage.Caption = "头像图像";
             colFaceImage.FieldName = "FaceImage";
             colFaceImage.Name = "colFaceImage";
             colFaceImage.Visible = true;
@@ -387,7 +412,7 @@
             // 
             // SaveButton
             // 
-            SaveButton.Caption = "Save Database";
+            SaveButton.Caption = "保存数据库";
             SaveButton.Id = 1;
             SaveButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("SaveButton.ImageOptions.Image");
             SaveButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("SaveButton.ImageOptions.LargeImage");
@@ -397,7 +422,7 @@
             // 
             // ImportButton
             // 
-            ImportButton.Caption = "Import";
+            ImportButton.Caption = "导入";
             ImportButton.Id = 2;
             ImportButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("ImportButton.ImageOptions.Image");
             ImportButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("ImportButton.ImageOptions.LargeImage");
@@ -406,7 +431,7 @@
             // 
             // ExportButton
             // 
-            ExportButton.Caption = "Export";
+            ExportButton.Caption = "导出";
             ExportButton.Id = 3;
             ExportButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("ExportButton.ImageOptions.Image");
             ExportButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("ExportButton.ImageOptions.LargeImage");
@@ -415,7 +440,7 @@
             // 
             // UpdateMonsterImageButton
             // 
-            UpdateMonsterImageButton.Caption = "Convert Old to New";
+            UpdateMonsterImageButton.Caption = "旧图转新图";
             UpdateMonsterImageButton.Id = 4;
             UpdateMonsterImageButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("UpdateMonsterImageButton.ImageOptions.Image");
             UpdateMonsterImageButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("UpdateMonsterImageButton.ImageOptions.LargeImage");
@@ -426,7 +451,7 @@
             // 
             ribbonPage1.Groups.AddRange(new DevExpress.XtraBars.Ribbon.RibbonPageGroup[] { ribbonPageGroup1, JsonImportExport, ribbonPageGroup2 });
             ribbonPage1.Name = "ribbonPage1";
-            ribbonPage1.Text = "Home";
+            ribbonPage1.Text = "主页";
             // 
             // ribbonPageGroup1
             // 
@@ -434,20 +459,20 @@
             ribbonPageGroup1.CaptionButtonVisible = DevExpress.Utils.DefaultBoolean.False;
             ribbonPageGroup1.ItemLinks.Add(SaveButton);
             ribbonPageGroup1.Name = "ribbonPageGroup1";
-            ribbonPageGroup1.Text = "Saving";
+            ribbonPageGroup1.Text = "保存";
             // 
             // JsonImportExport
             // 
             JsonImportExport.ItemLinks.Add(ImportButton);
             JsonImportExport.ItemLinks.Add(ExportButton);
             JsonImportExport.Name = "JsonImportExport";
-            JsonImportExport.Text = "Json";
+            JsonImportExport.Text = "JSON";
             // 
             // ribbonPageGroup2
             // 
             ribbonPageGroup2.ItemLinks.Add(UpdateMonsterImageButton);
             ribbonPageGroup2.Name = "ribbonPageGroup2";
-            ribbonPageGroup2.Text = "Monster Image";
+            ribbonPageGroup2.Text = "怪物图像";
             // 
             // MonsterInfoView
             // 
@@ -458,7 +483,7 @@
             Controls.Add(ribbon);
             Name = "MonsterInfoView";
             Ribbon = ribbon;
-            Text = "Monster Info";
+            Text = "怪物信息";
             ((System.ComponentModel.ISupportInitialize)MonsterInfoStatsGridView).EndInit();
             ((System.ComponentModel.ISupportInitialize)StatComboBox).EndInit();
             ((System.ComponentModel.ISupportInitialize)MonsterInfoGridControl).EndInit();

@@ -191,9 +191,9 @@ namespace Server.Views
                 Map.Animation++;
             }
 
-            MapSizeLabel.Caption = string.Format(@"Map Size: {0},{1}", Map.Width, Map.Height);
-            PositionLabel.Caption = string.Format(@"Position: {0},{1}", Map.MouseLocation.X, Map.MouseLocation.Y);
-            SelectedCellsLabel.Caption = string.Format(@"Selected Cells: {0}", Map.Selection.Count);
+            MapSizeLabel.Caption = string.Format(@"地图大小: {0},{1}", Map.Width, Map.Height);
+            PositionLabel.Caption = string.Format(@"坐标: {0},{1}", Map.MouseLocation.X, Map.MouseLocation.Y);
+            SelectedCellsLabel.Caption = string.Format(@"已选格子: {0}", Map.Selection.Count);
         }
 
         private void RenderEnvironment()

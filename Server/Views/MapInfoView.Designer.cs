@@ -134,6 +134,7 @@ namespace Server.Views
             // gridColumn18
             // 
             gridColumn18.FieldName = "Description";
+            gridColumn18.Caption = "描述";
             gridColumn18.Name = "gridColumn18";
             gridColumn18.Visible = true;
             gridColumn18.VisibleIndex = 0;
@@ -141,13 +142,14 @@ namespace Server.Views
             // gridColumn19
             // 
             gridColumn19.FieldName = "Size";
+            gridColumn19.Caption = "大小";
             gridColumn19.Name = "gridColumn19";
             gridColumn19.Visible = true;
             gridColumn19.VisibleIndex = 1;
             // 
             // gridColumn20
             // 
-            gridColumn20.Caption = "Edit";
+            gridColumn20.Caption = "编辑";
             gridColumn20.ColumnEdit = EditButtonEdit;
             gridColumn20.Name = "gridColumn20";
             gridColumn20.Visible = true;
@@ -199,6 +201,7 @@ namespace Server.Views
             // 
             gridColumn1.ColumnEdit = MonsterLookUpEdit;
             gridColumn1.FieldName = "Monster";
+            gridColumn1.Caption = "怪物";
             gridColumn1.Name = "gridColumn1";
             gridColumn1.Visible = true;
             gridColumn1.VisibleIndex = 0;
@@ -208,14 +211,15 @@ namespace Server.Views
             MonsterLookUpEdit.AutoHeight = false;
             MonsterLookUpEdit.BestFitMode = DevExpress.XtraEditors.Controls.BestFitMode.BestFitResizePopup;
             MonsterLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] { new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo) });
-            MonsterLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("MonsterName", "Monster Name"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("AI", "AI"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Level", "Level"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Experience", "Experience"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("IsBoss", "Is Boss") });
+            MonsterLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("MonsterName", "怪物名"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("AI", "AI"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Level", "等级"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Experience", "经验"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("IsBoss", "Boss") });
             MonsterLookUpEdit.DisplayMember = "MonsterName";
             MonsterLookUpEdit.Name = "MonsterLookUpEdit";
-            MonsterLookUpEdit.NullText = "[Monster is null]";
+            MonsterLookUpEdit.NullText = "[未选择怪物]";
             // 
             // gridColumn2
             // 
             gridColumn2.FieldName = "X";
+            gridColumn2.Caption = "X 坐标";
             gridColumn2.Name = "gridColumn2";
             gridColumn2.Visible = true;
             gridColumn2.VisibleIndex = 1;
@@ -223,6 +227,7 @@ namespace Server.Views
             // gridColumn3
             // 
             gridColumn3.FieldName = "Y";
+            gridColumn3.Caption = "Y 坐标";
             gridColumn3.Name = "gridColumn3";
             gridColumn3.Visible = true;
             gridColumn3.VisibleIndex = 2;
@@ -231,6 +236,7 @@ namespace Server.Views
             // 
             gridColumn4.ColumnEdit = DirectionImageComboBox;
             gridColumn4.FieldName = "Direction";
+            gridColumn4.Caption = "方向";
             gridColumn4.Name = "gridColumn4";
             gridColumn4.Visible = true;
             gridColumn4.VisibleIndex = 3;
@@ -256,6 +262,7 @@ namespace Server.Views
             // 
             gridColumn7.ColumnEdit = ItemLookUpEdit;
             gridColumn7.FieldName = "Item";
+            gridColumn7.Caption = "物品";
             gridColumn7.Name = "gridColumn7";
             gridColumn7.Visible = true;
             gridColumn7.VisibleIndex = 0;
@@ -265,14 +272,15 @@ namespace Server.Views
             ItemLookUpEdit.AutoHeight = false;
             ItemLookUpEdit.BestFitMode = DevExpress.XtraEditors.Controls.BestFitMode.BestFitResizePopup;
             ItemLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] { new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo) });
-            ItemLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemName", "Item Name"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemType", "Item Type"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Price", "Price"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("StackSize", "Stack Size") });
+            ItemLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemName", "物品名"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemType", "物品类型"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Price", "价格"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("StackSize", "堆叠数量") });
             ItemLookUpEdit.DisplayMember = "ItemName";
             ItemLookUpEdit.Name = "ItemLookUpEdit";
-            ItemLookUpEdit.NullText = "[Item is null]";
+            ItemLookUpEdit.NullText = "[未选择物品]";
             // 
             // gridColumn8
             // 
             gridColumn8.FieldName = "Chance";
+            gridColumn8.Caption = "几率";
             gridColumn8.Name = "gridColumn8";
             gridColumn8.Visible = true;
             gridColumn8.VisibleIndex = 1;
@@ -281,6 +289,7 @@ namespace Server.Views
             // 
             gridColumn21.ColumnEdit = RegionLookUpEdit;
             gridColumn21.FieldName = "Region";
+            gridColumn21.Caption = "区域";
             gridColumn21.Name = "gridColumn21";
             gridColumn21.Visible = true;
             gridColumn21.VisibleIndex = 4;
@@ -289,21 +298,22 @@ namespace Server.Views
             // 
             RegionLookUpEdit.AutoHeight = false;
             RegionLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] { new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo) });
-            RegionLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Description", "Description"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Size", "Size") });
+            RegionLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Description", "描述"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Size", "大小") });
             RegionLookUpEdit.DisplayMember = "Description";
             RegionLookUpEdit.Name = "RegionLookUpEdit";
-            RegionLookUpEdit.NullText = "[Region is null]";
+            RegionLookUpEdit.NullText = "[未选择区域]";
             // 
             // gridColumn22
             // 
             gridColumn22.FieldName = "Quantity";
+            gridColumn22.Caption = "数量";
             gridColumn22.Name = "gridColumn22";
             gridColumn22.Visible = true;
             gridColumn22.VisibleIndex = 2;
             // 
             // gridColumn23
             // 
-            gridColumn23.Caption = "Restock Time (In Minutes)";
+            gridColumn23.Caption = "补货时间（分钟）";
             gridColumn23.FieldName = "RestockTimeInMinutes";
             gridColumn23.Name = "gridColumn23";
             gridColumn23.Visible = true;
@@ -324,6 +334,7 @@ namespace Server.Views
             // 
             gridColumn11.ColumnEdit = StatImageComboBox;
             gridColumn11.FieldName = "Stat";
+            gridColumn11.Caption = "属性";
             gridColumn11.Name = "gridColumn11";
             gridColumn11.Visible = true;
             gridColumn11.VisibleIndex = 0;
@@ -337,6 +348,7 @@ namespace Server.Views
             // gridColumn14
             // 
             gridColumn14.FieldName = "Amount";
+            gridColumn14.Caption = "数量";
             gridColumn14.Name = "gridColumn14";
             gridColumn14.Visible = true;
             gridColumn14.VisibleIndex = 1;
@@ -356,6 +368,7 @@ namespace Server.Views
             // colFileName
             // 
             colFileName.FieldName = "FileName";
+            colFileName.Caption = "文件名";
             colFileName.Name = "colFileName";
             colFileName.Visible = true;
             colFileName.VisibleIndex = 0;
@@ -364,6 +377,7 @@ namespace Server.Views
             // colDescription
             // 
             colDescription.FieldName = "Description";
+            colDescription.Caption = "描述";
             colDescription.Name = "colDescription";
             colDescription.Visible = true;
             colDescription.VisibleIndex = 1;
@@ -372,6 +386,7 @@ namespace Server.Views
             // colMiniMap
             // 
             colMiniMap.FieldName = "MiniMap";
+            colMiniMap.Caption = "小地图";
             colMiniMap.Name = "colMiniMap";
             colMiniMap.Visible = true;
             colMiniMap.VisibleIndex = 2;
@@ -381,6 +396,7 @@ namespace Server.Views
             // 
             colLight.ColumnEdit = LightComboBox;
             colLight.FieldName = "Light";
+            colLight.Caption = "光照";
             colLight.Name = "colLight";
             colLight.Visible = true;
             colLight.VisibleIndex = 3;
@@ -394,7 +410,7 @@ namespace Server.Views
             // 
             // gridColumn12
             // 
-            gridColumn12.Caption = "Fight";
+            gridColumn12.Caption = "战斗";
             gridColumn12.FieldName = "Fight";
             gridColumn12.Name = "gridColumn12";
             gridColumn12.Visible = true;
@@ -403,7 +419,7 @@ namespace Server.Views
             // 
             // colRequiredClass
             // 
-            colRequiredClass.Caption = "Required Class";
+            colRequiredClass.Caption = "所需职业";
             colRequiredClass.FieldName = "RequiredClass";
             colRequiredClass.Name = "colRequiredClass";
             colRequiredClass.Visible = true;
@@ -413,6 +429,7 @@ namespace Server.Views
             // colAllowRT
             // 
             colAllowRT.FieldName = "AllowRT";
+            colAllowRT.Caption = "允许随机传送";
             colAllowRT.Name = "colAllowRT";
             colAllowRT.Visible = true;
             colAllowRT.VisibleIndex = 7;
@@ -421,6 +438,7 @@ namespace Server.Views
             // gridColumn13
             // 
             gridColumn13.FieldName = "CanHorse";
+            gridColumn13.Caption = "可骑马";
             gridColumn13.Name = "gridColumn13";
             gridColumn13.Visible = true;
             gridColumn13.VisibleIndex = 8;
@@ -429,6 +447,7 @@ namespace Server.Views
             // gridColumn15
             // 
             gridColumn15.FieldName = "AllowTT";
+            gridColumn15.Caption = "允许回城传送";
             gridColumn15.Name = "gridColumn15";
             gridColumn15.Visible = true;
             gridColumn15.VisibleIndex = 9;
@@ -437,6 +456,7 @@ namespace Server.Views
             // gridColumn16
             // 
             gridColumn16.FieldName = "SkillDelay";
+            gridColumn16.Caption = "技能延迟";
             gridColumn16.Name = "gridColumn16";
             gridColumn16.Visible = true;
             gridColumn16.VisibleIndex = 10;
@@ -446,6 +466,7 @@ namespace Server.Views
             // 
             gridColumn17.ColumnEdit = MapInfoLookUpEdit;
             gridColumn17.FieldName = "ReconnectMap";
+            gridColumn17.Caption = "重连地图";
             gridColumn17.Name = "gridColumn17";
             gridColumn17.Visible = true;
             gridColumn17.VisibleIndex = 11;
@@ -456,14 +477,15 @@ namespace Server.Views
             MapInfoLookUpEdit.AutoHeight = false;
             MapInfoLookUpEdit.BestFitMode = DevExpress.XtraEditors.Controls.BestFitMode.BestFitResizePopup;
             MapInfoLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] { new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo) });
-            MapInfoLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("FileName", "File Name"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Description", "Description") });
+            MapInfoLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("FileName", "文件名"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Description", "描述") });
             MapInfoLookUpEdit.DisplayMember = "Description";
             MapInfoLookUpEdit.Name = "MapInfoLookUpEdit";
-            MapInfoLookUpEdit.NullText = "[Map is null]";
+            MapInfoLookUpEdit.NullText = "[未选择地图]";
             // 
             // gridColumn5
             // 
             gridColumn5.FieldName = "MinimumLevel";
+            gridColumn5.Caption = "最低等级";
             gridColumn5.Name = "gridColumn5";
             gridColumn5.Visible = true;
             gridColumn5.VisibleIndex = 12;
@@ -472,6 +494,7 @@ namespace Server.Views
             // gridColumn24
             // 
             gridColumn24.FieldName = "MaximumLevel";
+            gridColumn24.Caption = "最高等级";
             gridColumn24.Name = "gridColumn24";
             gridColumn24.Visible = true;
             gridColumn24.VisibleIndex = 13;
@@ -480,6 +503,7 @@ namespace Server.Views
             // gridColumn6
             // 
             gridColumn6.FieldName = "CanMine";
+            gridColumn6.Caption = "可挖矿";
             gridColumn6.Name = "gridColumn6";
             gridColumn6.Visible = true;
             gridColumn6.VisibleIndex = 14;
@@ -488,6 +512,7 @@ namespace Server.Views
             // gridColumn9
             // 
             gridColumn9.FieldName = "Music";
+            gridColumn9.Caption = "音乐";
             gridColumn9.Name = "gridColumn9";
             gridColumn9.Visible = true;
             gridColumn9.VisibleIndex = 17;
@@ -496,6 +521,7 @@ namespace Server.Views
             // gridColumn10
             // 
             gridColumn10.FieldName = "CanMarriageRecall";
+            gridColumn10.Caption = "可夫妻传送";
             gridColumn10.Name = "gridColumn10";
             gridColumn10.Visible = true;
             gridColumn10.VisibleIndex = 15;
@@ -503,7 +529,7 @@ namespace Server.Views
             // 
             // colWeather
             // 
-            colWeather.Caption = "Weather";
+            colWeather.Caption = "天气";
             colWeather.ColumnEdit = WeatherComboBox;
             colWeather.FieldName = "Weather";
             colWeather.Name = "colWeather";
@@ -520,6 +546,7 @@ namespace Server.Views
             // colBackground
             // 
             colBackground.FieldName = "Background";
+            colBackground.Caption = "背景";
             colBackground.Name = "colBackground";
             colBackground.Visible = true;
             colBackground.VisibleIndex = 16;
@@ -537,7 +564,7 @@ namespace Server.Views
             // 
             // SaveButton
             // 
-            SaveButton.Caption = "Save Database";
+            SaveButton.Caption = "保存数据库";
             SaveButton.Id = 1;
             SaveButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("SaveButton.ImageOptions.Image");
             SaveButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("SaveButton.ImageOptions.LargeImage");
@@ -547,7 +574,7 @@ namespace Server.Views
             // 
             // ImportButton
             // 
-            ImportButton.Caption = "Import";
+            ImportButton.Caption = "导入";
             ImportButton.Id = 4;
             ImportButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("ImportButton.ImageOptions.Image");
             ImportButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("ImportButton.ImageOptions.LargeImage");
@@ -556,7 +583,7 @@ namespace Server.Views
             // 
             // ExportButton
             // 
-            ExportButton.Caption = "Export";
+            ExportButton.Caption = "导出";
             ExportButton.Id = 5;
             ExportButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("ExportButton.ImageOptions.Image");
             ExportButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("ExportButton.ImageOptions.LargeImage");
@@ -565,7 +592,7 @@ namespace Server.Views
             // 
             // InsertRowButton
             // 
-            InsertRowButton.Caption = "Insert Row";
+            InsertRowButton.Caption = "插入行";
             InsertRowButton.Id = 6;
             InsertRowButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("InsertRowButton.ImageOptions.Image");
             InsertRowButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("InsertRowButton.ImageOptions.LargeImage");
@@ -576,7 +603,7 @@ namespace Server.Views
             // 
             ribbonPage1.Groups.AddRange(new DevExpress.XtraBars.Ribbon.RibbonPageGroup[] { ribbonPageGroup1, JsonImportExport, EditGroup });
             ribbonPage1.Name = "ribbonPage1";
-            ribbonPage1.Text = "Home";
+            ribbonPage1.Text = "主页";
             // 
             // ribbonPageGroup1
             // 
@@ -584,20 +611,20 @@ namespace Server.Views
             ribbonPageGroup1.CaptionButtonVisible = DevExpress.Utils.DefaultBoolean.False;
             ribbonPageGroup1.ItemLinks.Add(SaveButton);
             ribbonPageGroup1.Name = "ribbonPageGroup1";
-            ribbonPageGroup1.Text = "Saving";
+            ribbonPageGroup1.Text = "保存";
             // 
             // JsonImportExport
             // 
             JsonImportExport.ItemLinks.Add(ImportButton);
             JsonImportExport.ItemLinks.Add(ExportButton);
             JsonImportExport.Name = "JsonImportExport";
-            JsonImportExport.Text = "Json";
+            JsonImportExport.Text = "JSON";
             // 
             // EditGroup
             // 
             EditGroup.ItemLinks.Add(InsertRowButton);
             EditGroup.Name = "EditGroup";
-            EditGroup.Text = "Edit";
+            EditGroup.Text = "编辑";
             // 
             // MapIconImageComboBox
             // 
@@ -630,7 +657,7 @@ namespace Server.Views
             Controls.Add(ribbon);
             Name = "MapInfoView";
             Ribbon = ribbon;
-            Text = "Map Info";
+            Text = "地图信息";
             ((System.ComponentModel.ISupportInitialize)RegionGridView).EndInit();
             ((System.ComponentModel.ISupportInitialize)EditButtonEdit).EndInit();
             ((System.ComponentModel.ISupportInitialize)MapInfoGridControl).EndInit();

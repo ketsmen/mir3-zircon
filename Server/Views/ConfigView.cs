@@ -36,13 +36,13 @@ namespace Server.Views
 
         private void SyncronizeLocalButton_Click(object sender, EventArgs e)
         {
-            SEnvir.Log($"Starting local syncronization...");
+            SEnvir.Log($"开始同步本地数据库...");
 
             SMain.Session.Save(true);
 
             File.Copy(SMain.Session.SystemPath, Path.Combine(Config.ClientPath, "Data\\", Path.GetFileName(SMain.Session.SystemPath)), true);
 
-            SEnvir.Log($"Syncronization completed...");
+            SEnvir.Log($"本地数据库同步完成。");
         }
 
         protected override void OnLoad(EventArgs e)
@@ -324,7 +324,7 @@ namespace Server.Views
 
             if (Functions.IsMatch(old, Config.ClientHash) || !SEnvir.Started) return;
 
-            SEnvir.Broadcast(new S.Chat { Text = "A new version has been made available, please update when possible.", Type = MessageType.Announcement });
+            SEnvir.Broadcast(new S.Chat { Text = "新版本已发布，请尽快更新。", Type = MessageType.Announcement });
         }
         private void VersionPathEdit_ButtonClick(object sender, DevExpress.XtraEditors.Controls.ButtonPressedEventArgs e)
         {

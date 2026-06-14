@@ -94,6 +94,7 @@
             this.gridColumn1.DisplayFormat.FormatString = "f";
             this.gridColumn1.DisplayFormat.FormatType = DevExpress.Utils.FormatType.DateTime;
             this.gridColumn1.FieldName = "WarStartDate";
+            this.gridColumn1.Caption = "攻城开始日期";
             this.gridColumn1.Name = "gridColumn1";
             this.gridColumn1.Visible = true;
             this.gridColumn1.VisibleIndex = 0;
@@ -101,6 +102,7 @@
             // gridColumn2
             // 
             this.gridColumn2.FieldName = "CastleName";
+            this.gridColumn2.Caption = "城堡名";
             this.gridColumn2.Name = "gridColumn2";
             this.gridColumn2.Visible = true;
             this.gridColumn2.VisibleIndex = 1;
@@ -108,6 +110,7 @@
             // gridColumn3
             // 
             this.gridColumn3.FieldName = "CharacterName";
+            this.gridColumn3.Caption = "角色名";
             this.gridColumn3.Name = "gridColumn3";
             this.gridColumn3.Visible = true;
             this.gridColumn3.VisibleIndex = 2;
@@ -115,6 +118,7 @@
             // gridColumn4
             // 
             this.gridColumn4.FieldName = "GuildName";
+            this.gridColumn4.Caption = "行会名";
             this.gridColumn4.Name = "gridColumn4";
             this.gridColumn4.Visible = true;
             this.gridColumn4.VisibleIndex = 3;
@@ -122,6 +126,7 @@
             // gridColumn5
             // 
             this.gridColumn5.FieldName = "Level";
+            this.gridColumn5.Caption = "等级";
             this.gridColumn5.Name = "gridColumn5";
             this.gridColumn5.Visible = true;
             this.gridColumn5.VisibleIndex = 4;
@@ -129,6 +134,7 @@
             // gridColumn6
             // 
             this.gridColumn6.FieldName = "Class";
+            this.gridColumn6.Caption = "职业";
             this.gridColumn6.Name = "gridColumn6";
             this.gridColumn6.Visible = true;
             this.gridColumn6.VisibleIndex = 5;
@@ -138,6 +144,7 @@
             this.gridColumn7.DisplayFormat.FormatString = "#,##0";
             this.gridColumn7.DisplayFormat.FormatType = DevExpress.Utils.FormatType.Numeric;
             this.gridColumn7.FieldName = "BossDamageTaken";
+            this.gridColumn7.Caption = "Boss 承受伤害";
             this.gridColumn7.Name = "gridColumn7";
             this.gridColumn7.Visible = true;
             this.gridColumn7.VisibleIndex = 6;
@@ -147,6 +154,7 @@
             this.gridColumn8.DisplayFormat.FormatString = "#,##0";
             this.gridColumn8.DisplayFormat.FormatType = DevExpress.Utils.FormatType.Numeric;
             this.gridColumn8.FieldName = "BossDamageDealt";
+            this.gridColumn8.Caption = "Boss 造成伤害";
             this.gridColumn8.Name = "gridColumn8";
             this.gridColumn8.Visible = true;
             this.gridColumn8.VisibleIndex = 7;
@@ -156,6 +164,7 @@
             this.gridColumn9.DisplayFormat.FormatString = "#,##0";
             this.gridColumn9.DisplayFormat.FormatType = DevExpress.Utils.FormatType.Numeric;
             this.gridColumn9.FieldName = "BossDeathCount";
+            this.gridColumn9.Caption = "Boss 死亡数";
             this.gridColumn9.Name = "gridColumn9";
             this.gridColumn9.Visible = true;
             this.gridColumn9.VisibleIndex = 8;
@@ -165,13 +174,14 @@
             this.gridColumn10.DisplayFormat.FormatString = "#,##0";
             this.gridColumn10.DisplayFormat.FormatType = DevExpress.Utils.FormatType.Numeric;
             this.gridColumn10.FieldName = "BossKillCount";
+            this.gridColumn10.Caption = "Boss 击杀数";
             this.gridColumn10.Name = "gridColumn10";
             this.gridColumn10.Visible = true;
             this.gridColumn10.VisibleIndex = 9;
             // 
             // gridColumn11
             // 
-            this.gridColumn11.Caption = "PvP Damage Taken";
+            this.gridColumn11.Caption = "PvP 承受伤害";
             this.gridColumn11.DisplayFormat.FormatString = "#,##0";
             this.gridColumn11.DisplayFormat.FormatType = DevExpress.Utils.FormatType.Numeric;
             this.gridColumn11.FieldName = "PvPDamageTaken";
@@ -181,7 +191,7 @@
             // 
             // gridColumn12
             // 
-            this.gridColumn12.Caption = "PvP Damage Dealt";
+            this.gridColumn12.Caption = "PvP 造成伤害";
             this.gridColumn12.DisplayFormat.FormatString = "#,##0";
             this.gridColumn12.DisplayFormat.FormatType = DevExpress.Utils.FormatType.Numeric;
             this.gridColumn12.FieldName = "PvPDamageDealt";
@@ -191,7 +201,7 @@
             // 
             // gridColumn13
             // 
-            this.gridColumn13.Caption = "PvP Death Count";
+            this.gridColumn13.Caption = "PvP 死亡数";
             this.gridColumn13.DisplayFormat.FormatString = "#,##0";
             this.gridColumn13.DisplayFormat.FormatType = DevExpress.Utils.FormatType.Numeric;
             this.gridColumn13.FieldName = "PvPDeathCount";
@@ -201,7 +211,7 @@
             // 
             // gridColumn14
             // 
-            this.gridColumn14.Caption = "PvP Kill Count";
+            this.gridColumn14.Caption = "PvP 击杀数";
             this.gridColumn14.DisplayFormat.FormatString = "#,##0";
             this.gridColumn14.DisplayFormat.FormatType = DevExpress.Utils.FormatType.Numeric;
             this.gridColumn14.FieldName = "PvPKillCount";
@@ -216,10 +226,10 @@
             this.AccountLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] {
             new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo)});
             this.AccountLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] {
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("EMailAddress", "EMail")});
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("EMailAddress", "邮箱地址")});
             this.AccountLookUpEdit.DisplayMember = "EMailAddress";
             this.AccountLookUpEdit.Name = "AccountLookUpEdit";
-            this.AccountLookUpEdit.NullText = "[Account is null]";
+            this.AccountLookUpEdit.NullText = "[未选择账号]";
             // 
             // ItemLookUpEdit
             // 
@@ -228,11 +238,11 @@
             this.ItemLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] {
             new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo)});
             this.ItemLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] {
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemName", "Item Name"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemType", "Item Type"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Price", "Price"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("StackSize", "Stack Size")});
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemName", "物品名"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemType", "物品类型"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Price", "价格"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("StackSize", "堆叠数量")});
             this.ItemLookUpEdit.DisplayMember = "ItemName";
             this.ItemLookUpEdit.Name = "ItemLookUpEdit";
             // 
@@ -243,7 +253,7 @@
             this.ClientSize = new System.Drawing.Size(693, 408);
             this.Controls.Add(this.UserDropGridControl);
             this.Name = "UserConquestStatsView";
-            this.Text = "Conquest Stats";
+            this.Text = "攻城统计";
             ((System.ComponentModel.ISupportInitialize)(this.UserDropGridControl)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.UserDropGridView)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.AccountLookUpEdit)).EndInit();

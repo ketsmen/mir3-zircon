@@ -47,7 +47,7 @@ namespace Server
                 }
             }
 
-            if (XtraMessageBox.Show($"You're about to export {selectedItems.Count} rows, are you sure?", "Confirmation", MessageBoxButtons.YesNo) != DialogResult.Yes)
+            if (XtraMessageBox.Show($"即将导出 {selectedItems.Count} 行，确定继续吗？", "确认", MessageBoxButtons.YesNo) != DialogResult.Yes)
             {
                 return;
             }
@@ -63,7 +63,7 @@ namespace Server
 
             file.WriteLine(json);
 
-            XtraMessageBox.Show($"All selected rows have been exported to '{path}'.", "Success", MessageBoxButtons.OK);
+            XtraMessageBox.Show($"已将选中的行导出到 '{path}'。", "成功", MessageBoxButtons.OK);
         }
     }
 }

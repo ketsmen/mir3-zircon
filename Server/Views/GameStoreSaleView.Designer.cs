@@ -79,6 +79,7 @@
             // gridColumn1
             // 
             this.gridColumn1.FieldName = "Index";
+            this.gridColumn1.Caption = "序号";
             this.gridColumn1.Name = "gridColumn1";
             this.gridColumn1.Visible = true;
             this.gridColumn1.VisibleIndex = 0;
@@ -87,6 +88,7 @@
             // 
             this.gridColumn5.ColumnEdit = this.AccountLookUpEdit;
             this.gridColumn5.FieldName = "Account";
+            this.gridColumn5.Caption = "账号";
             this.gridColumn5.Name = "gridColumn5";
             this.gridColumn5.Visible = true;
             this.gridColumn5.VisibleIndex = 1;
@@ -98,10 +100,10 @@
             this.AccountLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] {
             new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo)});
             this.AccountLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] {
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("EMailAddress", "EMailAddress"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Referral", "Referral"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Banned", "Banned")});
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("EMailAddress", "邮箱地址"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Referral", "推荐人"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Banned", "已封禁")});
             this.AccountLookUpEdit.DisplayMember = "EMailAddress";
             this.AccountLookUpEdit.Name = "AccountLookUpEdit";
             this.AccountLookUpEdit.NullText = "";
@@ -110,6 +112,7 @@
             // 
             this.gridColumn2.ColumnEdit = this.ItemLookUpEdit;
             this.gridColumn2.FieldName = "Item";
+            this.gridColumn2.Caption = "物品";
             this.gridColumn2.Name = "gridColumn2";
             this.gridColumn2.Visible = true;
             this.gridColumn2.VisibleIndex = 2;
@@ -121,20 +124,21 @@
             this.ItemLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] {
             new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo)});
             this.ItemLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] {
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemName", "Item Name"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemType", "Item Type"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Price", "Price"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("StackSize", "Stack Szie")});
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemName", "物品名"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemType", "物品类型"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Price", "价格"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("StackSize", "堆叠数量")});
             this.ItemLookUpEdit.DisplayMember = "ItemName";
             this.ItemLookUpEdit.Name = "ItemLookUpEdit";
-            this.ItemLookUpEdit.NullText = "[Item is null]";
+            this.ItemLookUpEdit.NullText = "[未选择物品]";
             // 
             // gridColumn3
             // 
             this.gridColumn3.DisplayFormat.FormatString = "F";
             this.gridColumn3.DisplayFormat.FormatType = DevExpress.Utils.FormatType.DateTime;
             this.gridColumn3.FieldName = "Date";
+            this.gridColumn3.Caption = "日期";
             this.gridColumn3.Name = "gridColumn3";
             this.gridColumn3.Visible = true;
             this.gridColumn3.VisibleIndex = 3;
@@ -142,6 +146,7 @@
             // gridColumn4
             // 
             this.gridColumn4.FieldName = "Price";
+            this.gridColumn4.Caption = "价格";
             this.gridColumn4.Name = "gridColumn4";
             this.gridColumn4.Visible = true;
             this.gridColumn4.VisibleIndex = 4;
@@ -149,6 +154,7 @@
             // gridColumn6
             // 
             this.gridColumn6.FieldName = "Count";
+            this.gridColumn6.Caption = "数量";
             this.gridColumn6.Name = "gridColumn6";
             this.gridColumn6.Visible = true;
             this.gridColumn6.VisibleIndex = 5;
@@ -156,6 +162,7 @@
             // gridColumn7
             // 
             this.gridColumn7.FieldName = "HuntGold";
+            this.gridColumn7.Caption = "狩猎金币";
             this.gridColumn7.Name = "gridColumn7";
             this.gridColumn7.Visible = true;
             this.gridColumn7.VisibleIndex = 6;
@@ -167,7 +174,7 @@
             this.ClientSize = new System.Drawing.Size(937, 373);
             this.Controls.Add(this.GameStoreSaleGridControl);
             this.Name = "GameStoreSaleView";
-            this.Text = "Store Sales";
+            this.Text = "商城销售";
             ((System.ComponentModel.ISupportInitialize)(this.GameStoreSaleGridControl)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.GameStoreSaleGridView)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.AccountLookUpEdit)).EndInit();

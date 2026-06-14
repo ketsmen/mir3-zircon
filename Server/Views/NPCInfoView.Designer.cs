@@ -89,7 +89,7 @@
             // 
             // gridColumn2
             // 
-            gridColumn2.Caption = "Requirement";
+            gridColumn2.Caption = "条件";
             gridColumn2.ColumnEdit = RequirementImageComboBox;
             gridColumn2.FieldName = "Requirement";
             gridColumn2.Name = "gridColumn2";
@@ -104,7 +104,7 @@
             // 
             // gridColumn3
             // 
-            gridColumn3.Caption = "Int Parameter 1";
+            gridColumn3.Caption = "整数参数1";
             gridColumn3.FieldName = "IntParameter1";
             gridColumn3.Name = "gridColumn3";
             gridColumn3.Visible = true;
@@ -112,7 +112,7 @@
             // 
             // gridColumn4
             // 
-            gridColumn4.Caption = "Quest Parameter";
+            gridColumn4.Caption = "任务参数";
             gridColumn4.ColumnEdit = QuestInfoLookUpEdit;
             gridColumn4.FieldName = "QuestParameter";
             gridColumn4.Name = "gridColumn4";
@@ -123,14 +123,14 @@
             // 
             QuestInfoLookUpEdit.AutoHeight = false;
             QuestInfoLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] { new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo) });
-            QuestInfoLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("QuestName", "Quest Name") });
+            QuestInfoLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("QuestName", "任务名") });
             QuestInfoLookUpEdit.DisplayMember = "QuestName";
             QuestInfoLookUpEdit.Name = "QuestInfoLookUpEdit";
-            QuestInfoLookUpEdit.NullText = "[Quest is null]";
+            QuestInfoLookUpEdit.NullText = "[未选择任务]";
             // 
             // gridColumn5
             // 
-            gridColumn5.Caption = "Class";
+            gridColumn5.Caption = "职业";
             gridColumn5.ColumnEdit = RequiredClassImageComboBox;
             gridColumn5.FieldName = "Class";
             gridColumn5.Name = "gridColumn5";
@@ -145,7 +145,7 @@
             // 
             // gridColumn6
             // 
-            gridColumn6.Caption = "Days Of Week";
+            gridColumn6.Caption = "星期";
             gridColumn6.ColumnEdit = DaysOfWeekImageComboBox;
             gridColumn6.FieldName = "DaysOfWeek";
             gridColumn6.Name = "gridColumn6";
@@ -187,6 +187,7 @@
             // colNPCName
             // 
             colNPCName.FieldName = "NPCName";
+            colNPCName.Caption = "NPC 名称";
             colNPCName.Name = "colNPCName";
             colNPCName.Visible = true;
             colNPCName.VisibleIndex = 1;
@@ -194,6 +195,7 @@
             // colImage
             // 
             colImage.FieldName = "Image";
+            colImage.Caption = "图像";
             colImage.Name = "colImage";
             colImage.Visible = true;
             colImage.VisibleIndex = 2;
@@ -202,6 +204,7 @@
             // 
             colEntryPage.ColumnEdit = PageLookUpEdit;
             colEntryPage.FieldName = "EntryPage";
+            colEntryPage.Caption = "入口页面";
             colEntryPage.Name = "colEntryPage";
             colEntryPage.Visible = true;
             colEntryPage.VisibleIndex = 3;
@@ -211,15 +214,16 @@
             PageLookUpEdit.AutoHeight = false;
             PageLookUpEdit.BestFitMode = DevExpress.XtraEditors.Controls.BestFitMode.BestFitResizePopup;
             PageLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] { new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo) });
-            PageLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Description", "Description"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("DialogType", "DialogType"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Say", "Say") });
+            PageLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Description", "描述"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("DialogType", "对话类型"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Say", "对白") });
             PageLookUpEdit.DisplayMember = "Description";
             PageLookUpEdit.Name = "PageLookUpEdit";
-            PageLookUpEdit.NullText = "[Page is null]";
+            PageLookUpEdit.NullText = "[未选择页面]";
             // 
             // gridColumn1
             // 
             gridColumn1.ColumnEdit = RegionLookUpEdit;
             gridColumn1.FieldName = "Region";
+            gridColumn1.Caption = "区域";
             gridColumn1.Name = "gridColumn1";
             gridColumn1.OptionsColumn.AllowSort = DevExpress.Utils.DefaultBoolean.True;
             gridColumn1.SortMode = DevExpress.XtraGrid.ColumnSortMode.DisplayText;
@@ -231,14 +235,14 @@
             RegionLookUpEdit.AutoHeight = false;
             RegionLookUpEdit.BestFitMode = DevExpress.XtraEditors.Controls.BestFitMode.BestFitResizePopup;
             RegionLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] { new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo) });
-            RegionLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ServerDescription", "Server Description"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Size", "Size") });
+            RegionLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ServerDescription", "服务端描述"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Size", "大小") });
             RegionLookUpEdit.DisplayMember = "ServerDescription";
             RegionLookUpEdit.Name = "RegionLookUpEdit";
-            RegionLookUpEdit.NullText = "[Region is null]";
+            RegionLookUpEdit.NullText = "[未选择区域]";
             // 
             // colFaceImage
             // 
-            colFaceImage.Caption = "Face Image";
+            colFaceImage.Caption = "头像图像";
             colFaceImage.FieldName = "FaceImage";
             colFaceImage.Name = "colFaceImage";
             colFaceImage.Visible = true;
@@ -248,6 +252,7 @@
             // 
             colMapIcon.ColumnEdit = MapIconImageComboBox;
             colMapIcon.FieldName = "MapIcon";
+            colMapIcon.Caption = "地图图标";
             colMapIcon.Name = "colMapIcon";
             colMapIcon.Visible = true;
             colMapIcon.VisibleIndex = 5;
@@ -270,7 +275,7 @@
             // 
             // SaveButton
             // 
-            SaveButton.Caption = "Save Database";
+            SaveButton.Caption = "保存数据库";
             SaveButton.Id = 1;
             SaveButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("SaveButton.ImageOptions.Image");
             SaveButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("SaveButton.ImageOptions.LargeImage");
@@ -280,7 +285,7 @@
             // 
             // barButtonItem1
             // 
-            barButtonItem1.Caption = "Import";
+            barButtonItem1.Caption = "导入";
             barButtonItem1.Id = 2;
             barButtonItem1.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("barButtonItem1.ImageOptions.Image");
             barButtonItem1.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("barButtonItem1.ImageOptions.LargeImage");
@@ -289,7 +294,7 @@
             // 
             // ExportButton
             // 
-            ExportButton.Caption = "Export";
+            ExportButton.Caption = "导出";
             ExportButton.Id = 3;
             ExportButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("ExportButton.ImageOptions.Image");
             ExportButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("ExportButton.ImageOptions.LargeImage");
@@ -300,7 +305,7 @@
             // 
             ribbonPage1.Groups.AddRange(new DevExpress.XtraBars.Ribbon.RibbonPageGroup[] { ribbonPageGroup1, JsonImportExport, EditGroup });
             ribbonPage1.Name = "ribbonPage1";
-            ribbonPage1.Text = "Home";
+            ribbonPage1.Text = "主页";
             // 
             // ribbonPageGroup1
             // 
@@ -308,38 +313,38 @@
             ribbonPageGroup1.CaptionButtonVisible = DevExpress.Utils.DefaultBoolean.False;
             ribbonPageGroup1.ItemLinks.Add(SaveButton);
             ribbonPageGroup1.Name = "ribbonPageGroup1";
-            ribbonPageGroup1.Text = "Saving";
+            ribbonPageGroup1.Text = "保存";
             // 
             // JsonImportExport
             // 
             JsonImportExport.ItemLinks.Add(barButtonItem1);
             JsonImportExport.ItemLinks.Add(ExportButton);
             JsonImportExport.Name = "JsonImportExport";
-            JsonImportExport.Text = "Json";
+            JsonImportExport.Text = "JSON";
             // 
             // ItemInfoLookUpEdit
             // 
             ItemInfoLookUpEdit.AutoHeight = false;
             ItemInfoLookUpEdit.BestFitMode = DevExpress.XtraEditors.Controls.BestFitMode.BestFitResizePopup;
             ItemInfoLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] { new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo) });
-            ItemInfoLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemName", "Item Name"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemType", "Item Type"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Price", "Price"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("StackSize", "Stack Size") });
+            ItemInfoLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemName", "物品名"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemType", "物品类型"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Price", "价格"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("StackSize", "堆叠数量") });
             ItemInfoLookUpEdit.Name = "ItemInfoLookUpEdit";
-            ItemInfoLookUpEdit.NullText = "[Reward is null]";
+            ItemInfoLookUpEdit.NullText = "[未选择奖励]";
             // 
             // ribbonPageGroup2
             // 
             ribbonPageGroup2.Name = "ribbonPageGroup2";
-            ribbonPageGroup2.Text = "Edit";
+            ribbonPageGroup2.Text = "编辑";
             // 
             // EditGroup
             // 
             EditGroup.ItemLinks.Add(InsertRowButton);
             EditGroup.Name = "EditGroup";
-            EditGroup.Text = "Edit";
+            EditGroup.Text = "编辑";
             // 
             // InsertRowButton
             // 
-            InsertRowButton.Caption = "Insert Row";
+            InsertRowButton.Caption = "插入行";
             InsertRowButton.Id = 4;
             InsertRowButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("InsertRowButton.ImageOptions.Image");
             InsertRowButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("InsertRowButton.ImageOptions.LargeImage");
@@ -355,7 +360,7 @@
             Controls.Add(ribbon);
             Name = "NPCInfoView";
             Ribbon = ribbon;
-            Text = "NPC Info";
+            Text = "NPC 信息";
             ((System.ComponentModel.ISupportInitialize)RequirementGridView).EndInit();
             ((System.ComponentModel.ISupportInitialize)RequirementImageComboBox).EndInit();
             ((System.ComponentModel.ISupportInitialize)QuestInfoLookUpEdit).EndInit();

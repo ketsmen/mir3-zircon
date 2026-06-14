@@ -122,6 +122,7 @@
             // 
             this.gridColumn5.ColumnEdit = this.RequirementImageComboBox;
             this.gridColumn5.FieldName = "Requirement";
+            this.gridColumn5.Caption = "条件";
             this.gridColumn5.Name = "gridColumn5";
             this.gridColumn5.Visible = true;
             this.gridColumn5.VisibleIndex = 0;
@@ -135,7 +136,7 @@
             // 
             // gridColumn6
             // 
-            this.gridColumn6.Caption = "Int Parameter 1";
+            this.gridColumn6.Caption = "整数参数1";
             this.gridColumn6.FieldName = "IntParameter1";
             this.gridColumn6.Name = "gridColumn6";
             this.gridColumn6.Visible = true;
@@ -145,6 +146,7 @@
             // 
             this.gridColumn7.ColumnEdit = this.QuestInfoLookUpEdit;
             this.gridColumn7.FieldName = "QuestParameter";
+            this.gridColumn7.Caption = "任务参数";
             this.gridColumn7.Name = "gridColumn7";
             this.gridColumn7.Visible = true;
             this.gridColumn7.VisibleIndex = 2;
@@ -156,16 +158,17 @@
             this.QuestInfoLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] {
             new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo)});
             this.QuestInfoLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] {
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("QuestName", "Quest Name")});
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("QuestName", "任务名")});
             this.QuestInfoLookUpEdit.DisplayMember = "QuestName";
             this.QuestInfoLookUpEdit.Name = "QuestInfoLookUpEdit";
-            this.QuestInfoLookUpEdit.NullText = "[Quest is null]";
+            this.QuestInfoLookUpEdit.NullText = "[未选择任务]";
             // 
             // gridColumn24
             // 
             this.gridColumn24.ColumnEdit = this.RequiredClassImageComboBox;
             this.gridColumn24.FieldName = "Class";
+            this.gridColumn24.Caption = "职业";
             this.gridColumn24.Name = "gridColumn24";
             this.gridColumn24.Visible = true;
             this.gridColumn24.VisibleIndex = 3;
@@ -239,6 +242,7 @@
             // 
             this.gridColumn8.ColumnEdit = this.TaskImageComboBox;
             this.gridColumn8.FieldName = "Task";
+            this.gridColumn8.Caption = "任务目标";
             this.gridColumn8.Name = "gridColumn8";
             this.gridColumn8.Visible = true;
             this.gridColumn8.VisibleIndex = 0;
@@ -254,6 +258,7 @@
             // 
             this.gridColumn9.ColumnEdit = this.ItemInfoLookUpEdit;
             this.gridColumn9.FieldName = "ItemParameter";
+            this.gridColumn9.Caption = "物品参数";
             this.gridColumn9.Name = "gridColumn9";
             this.gridColumn9.Visible = true;
             this.gridColumn9.VisibleIndex = 1;
@@ -265,25 +270,26 @@
             this.ItemInfoLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] {
             new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo)});
             this.ItemInfoLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] {
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemName", "Item Name"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemType", "Item Type"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Price", "Price"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("StackSize", "Stack Size")});
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemName", "物品名"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ItemType", "物品类型"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Price", "价格"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("StackSize", "堆叠数量")});
             this.ItemInfoLookUpEdit.DisplayMember = "ItemName";
             this.ItemInfoLookUpEdit.Name = "ItemInfoLookUpEdit";
-            this.ItemInfoLookUpEdit.NullText = "[Item is null]";
+            this.ItemInfoLookUpEdit.NullText = "[未选择物品]";
             // 
             // gridColumn10
             // 
             this.gridColumn10.FieldName = "Amount";
+            this.gridColumn10.Caption = "数量";
             this.gridColumn10.Name = "gridColumn10";
             this.gridColumn10.Visible = true;
             this.gridColumn10.VisibleIndex = 3;
             // 
             // gridColumn28
             // 
-            this.gridColumn28.Caption = "Region Parameter";
+            this.gridColumn28.Caption = "区域参数";
             this.gridColumn28.ColumnEdit = this.RegionLookUpEdit;
             this.gridColumn28.FieldName = "RegionParameter";
             this.gridColumn28.Name = "gridColumn28";
@@ -296,16 +302,17 @@
             this.RegionLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] {
             new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo)});
             this.RegionLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] {
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ServerDescription", "Server Description"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Size", "Size")});
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ServerDescription", "服务端描述"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Size", "大小")});
             this.RegionLookUpEdit.DisplayMember = "ServerDescription";
             this.RegionLookUpEdit.Name = "RegionLookUpEdit";
-            this.RegionLookUpEdit.NullText = "[Region is null]";
+            this.RegionLookUpEdit.NullText = "[未选择区域]";
             // 
             // gridColumn18
             // 
             this.gridColumn18.FieldName = "MobDescription";
+            this.gridColumn18.Caption = "怪物描述";
             this.gridColumn18.Name = "gridColumn18";
             this.gridColumn18.Visible = true;
             this.gridColumn18.VisibleIndex = 4;
@@ -330,6 +337,7 @@
             // 
             this.gridColumn11.ColumnEdit = this.MonsterInfoLookUpEdit;
             this.gridColumn11.FieldName = "Monster";
+            this.gridColumn11.Caption = "怪物";
             this.gridColumn11.Name = "gridColumn11";
             this.gridColumn11.Visible = true;
             this.gridColumn11.VisibleIndex = 0;
@@ -341,20 +349,21 @@
             this.MonsterInfoLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] {
             new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo)});
             this.MonsterInfoLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] {
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("MonsterName", "Monster Name"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("MonsterName", "怪物名"),
             new DevExpress.XtraEditors.Controls.LookUpColumnInfo("AI", "AI"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Level", "Level"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Experience", "Experience"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("IsBoss", "IsBoss")});
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Level", "等级"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Experience", "经验"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("IsBoss", "Boss")});
             this.MonsterInfoLookUpEdit.DisplayMember = "MonsterName";
             this.MonsterInfoLookUpEdit.Name = "MonsterInfoLookUpEdit";
-            this.MonsterInfoLookUpEdit.NullText = "[Monster is null]";
+            this.MonsterInfoLookUpEdit.NullText = "[未选择怪物]";
             // 
             // gridColumn12
             // 
             this.gridColumn12.ColumnEdit = this.MapInfoLookUpEdit;
             this.gridColumn12.FieldName = "Map";
+            this.gridColumn12.Caption = "地图";
             this.gridColumn12.Name = "gridColumn12";
             this.gridColumn12.Visible = true;
             this.gridColumn12.VisibleIndex = 1;
@@ -366,16 +375,17 @@
             this.MapInfoLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] {
             new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo)});
             this.MapInfoLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] {
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("FileName", "File Name"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Description", "Description")});
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("FileName", "文件名"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Description", "描述")});
             this.MapInfoLookUpEdit.DisplayMember = "Description";
             this.MapInfoLookUpEdit.Name = "MapInfoLookUpEdit";
-            this.MapInfoLookUpEdit.NullText = "[Map is null]";
+            this.MapInfoLookUpEdit.NullText = "[未选择地图]";
             // 
             // gridColumn13
             // 
             this.gridColumn13.FieldName = "Chance";
+            this.gridColumn13.Caption = "几率";
             this.gridColumn13.Name = "gridColumn13";
             this.gridColumn13.Visible = true;
             this.gridColumn13.VisibleIndex = 2;
@@ -383,6 +393,7 @@
             // gridColumn14
             // 
             this.gridColumn14.FieldName = "Amount";
+            this.gridColumn14.Caption = "数量";
             this.gridColumn14.Name = "gridColumn14";
             this.gridColumn14.Visible = true;
             this.gridColumn14.VisibleIndex = 3;
@@ -390,6 +401,7 @@
             // gridColumn15
             // 
             this.gridColumn15.FieldName = "DropSet";
+            this.gridColumn15.Caption = "掉落组";
             this.gridColumn15.Name = "gridColumn15";
             this.gridColumn15.Visible = true;
             this.gridColumn15.VisibleIndex = 4;
@@ -415,6 +427,7 @@
             // 
             this.gridColumn19.ColumnEdit = this.ItemInfoLookUpEdit;
             this.gridColumn19.FieldName = "Item";
+            this.gridColumn19.Caption = "物品";
             this.gridColumn19.Name = "gridColumn19";
             this.gridColumn19.Visible = true;
             this.gridColumn19.VisibleIndex = 0;
@@ -422,6 +435,7 @@
             // gridColumn20
             // 
             this.gridColumn20.FieldName = "Amount";
+            this.gridColumn20.Caption = "数量";
             this.gridColumn20.Name = "gridColumn20";
             this.gridColumn20.Visible = true;
             this.gridColumn20.VisibleIndex = 1;
@@ -429,6 +443,7 @@
             // gridColumn22
             // 
             this.gridColumn22.FieldName = "Bound";
+            this.gridColumn22.Caption = "绑定";
             this.gridColumn22.Name = "gridColumn22";
             this.gridColumn22.Visible = true;
             this.gridColumn22.VisibleIndex = 2;
@@ -436,6 +451,7 @@
             // gridColumn23
             // 
             this.gridColumn23.FieldName = "Duration";
+            this.gridColumn23.Caption = "持续时间";
             this.gridColumn23.Name = "gridColumn23";
             this.gridColumn23.Visible = true;
             this.gridColumn23.VisibleIndex = 3;
@@ -444,6 +460,7 @@
             // 
             this.gridColumn25.ColumnEdit = this.RequiredClassImageComboBox;
             this.gridColumn25.FieldName = "Class";
+            this.gridColumn25.Caption = "职业";
             this.gridColumn25.Name = "gridColumn25";
             this.gridColumn25.Visible = true;
             this.gridColumn25.VisibleIndex = 4;
@@ -451,6 +468,7 @@
             // gridColumn21
             // 
             this.gridColumn21.FieldName = "Choice";
+            this.gridColumn21.Caption = "选择";
             this.gridColumn21.Name = "gridColumn21";
             this.gridColumn21.Visible = true;
             this.gridColumn21.VisibleIndex = 5;
@@ -478,6 +496,7 @@
             // gridColumn1
             // 
             this.gridColumn1.FieldName = "QuestName";
+            this.gridColumn1.Caption = "任务名";
             this.gridColumn1.MinWidth = 80;
             this.gridColumn1.Name = "gridColumn1";
             this.gridColumn1.Visible = true;
@@ -486,7 +505,7 @@
             // 
             // gridColumn27
             // 
-            this.gridColumn27.Caption = "Quest Type";
+            this.gridColumn27.Caption = "任务类型";
             this.gridColumn27.ColumnEdit = this.TypeImageComboBox;
             this.gridColumn27.FieldName = "QuestType";
             this.gridColumn27.MinWidth = 80;
@@ -505,6 +524,7 @@
             // gridColumn2
             // 
             this.gridColumn2.FieldName = "AcceptText";
+            this.gridColumn2.Caption = "接取文本";
             this.gridColumn2.Name = "gridColumn2";
             this.gridColumn2.Visible = true;
             this.gridColumn2.VisibleIndex = 2;
@@ -513,6 +533,7 @@
             // gridColumn3
             // 
             this.gridColumn3.FieldName = "ProgressText";
+            this.gridColumn3.Caption = "进行中文本";
             this.gridColumn3.Name = "gridColumn3";
             this.gridColumn3.Visible = true;
             this.gridColumn3.VisibleIndex = 3;
@@ -521,6 +542,7 @@
             // gridColumn4
             // 
             this.gridColumn4.FieldName = "CompletedText";
+            this.gridColumn4.Caption = "完成文本";
             this.gridColumn4.Name = "gridColumn4";
             this.gridColumn4.Visible = true;
             this.gridColumn4.VisibleIndex = 4;
@@ -529,6 +551,7 @@
             // gridColumn26
             // 
             this.gridColumn26.FieldName = "ArchiveText";
+            this.gridColumn26.Caption = "归档文本";
             this.gridColumn26.Name = "gridColumn26";
             this.gridColumn26.Visible = true;
             this.gridColumn26.VisibleIndex = 5;
@@ -538,6 +561,7 @@
             // 
             this.gridColumn16.ColumnEdit = this.NPCLookUpEdit;
             this.gridColumn16.FieldName = "StartNPC";
+            this.gridColumn16.Caption = "起始 NPC";
             this.gridColumn16.MinWidth = 80;
             this.gridColumn16.Name = "gridColumn16";
             this.gridColumn16.Visible = true;
@@ -551,17 +575,18 @@
             this.NPCLookUpEdit.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] {
             new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo)});
             this.NPCLookUpEdit.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] {
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("NPCName", "NPC Name"),
-            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("RegionName", "Region Name")});
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("NPCName", "NPC 名称"),
+            new DevExpress.XtraEditors.Controls.LookUpColumnInfo("RegionName", "区域名称")});
             this.NPCLookUpEdit.DisplayMember = "RegionName";
             this.NPCLookUpEdit.Name = "NPCLookUpEdit";
-            this.NPCLookUpEdit.NullText = "[NPC is null]";
+            this.NPCLookUpEdit.NullText = "[未选择 NPC]";
             // 
             // gridColumn17
             // 
             this.gridColumn17.ColumnEdit = this.NPCLookUpEdit;
             this.gridColumn17.FieldName = "FinishNPC";
+            this.gridColumn17.Caption = "结束 NPC";
             this.gridColumn17.MinWidth = 80;
             this.gridColumn17.Name = "gridColumn17";
             this.gridColumn17.Visible = true;
@@ -586,7 +611,7 @@
             // 
             // SaveButton
             // 
-            this.SaveButton.Caption = "Save Database";
+            this.SaveButton.Caption = "保存数据库";
             this.SaveButton.Id = 1;
             this.SaveButton.ImageOptions.Image = ((System.Drawing.Image)(resources.GetObject("SaveButton.ImageOptions.Image")));
             this.SaveButton.ImageOptions.LargeImage = ((System.Drawing.Image)(resources.GetObject("SaveButton.ImageOptions.LargeImage")));
@@ -596,7 +621,7 @@
             // 
             // ImportButton
             // 
-            this.ImportButton.Caption = "Import";
+            this.ImportButton.Caption = "导入";
             this.ImportButton.Id = 2;
             this.ImportButton.ImageOptions.Image = ((System.Drawing.Image)(resources.GetObject("ImportButton.ImageOptions.Image")));
             this.ImportButton.ImageOptions.LargeImage = ((System.Drawing.Image)(resources.GetObject("ImportButton.ImageOptions.LargeImage")));
@@ -605,7 +630,7 @@
             // 
             // ExportButton
             // 
-            this.ExportButton.Caption = "Export";
+            this.ExportButton.Caption = "导出";
             this.ExportButton.Id = 3;
             this.ExportButton.ImageOptions.Image = ((System.Drawing.Image)(resources.GetObject("ExportButton.ImageOptions.Image")));
             this.ExportButton.ImageOptions.LargeImage = ((System.Drawing.Image)(resources.GetObject("ExportButton.ImageOptions.LargeImage")));
@@ -618,7 +643,7 @@
             this.ribbonPageGroup1,
             this.JsonImportExport});
             this.ribbonPage1.Name = "ribbonPage1";
-            this.ribbonPage1.Text = "Home";
+            this.ribbonPage1.Text = "主页";
             // 
             // ribbonPageGroup1
             // 
@@ -626,14 +651,14 @@
             this.ribbonPageGroup1.CaptionButtonVisible = DevExpress.Utils.DefaultBoolean.False;
             this.ribbonPageGroup1.ItemLinks.Add(this.SaveButton);
             this.ribbonPageGroup1.Name = "ribbonPageGroup1";
-            this.ribbonPageGroup1.Text = "Saving";
+            this.ribbonPageGroup1.Text = "保存";
             // 
             // JsonImportExport
             // 
             this.JsonImportExport.ItemLinks.Add(this.ImportButton);
             this.JsonImportExport.ItemLinks.Add(this.ExportButton);
             this.JsonImportExport.Name = "JsonImportExport";
-            this.JsonImportExport.Text = "Json";
+            this.JsonImportExport.Text = "JSON";
             // 
             // QuestInfoView
             // 
@@ -644,7 +669,7 @@
             this.Controls.Add(this.ribbon);
             this.Name = "QuestInfoView";
             this.Ribbon = this.ribbon;
-            this.Text = "Quest Info";
+            this.Text = "任务信息";
             ((System.ComponentModel.ISupportInitialize)(this.RequirementsGridView)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.RequirementImageComboBox)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.QuestInfoLookUpEdit)).EndInit();

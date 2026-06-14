@@ -368,7 +368,7 @@ namespace Server.Views
             // 
             // SaveButton
             // 
-            SaveButton.Caption = "Save";
+            SaveButton.Caption = "保存";
             SaveButton.Id = 1;
             SaveButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("SaveButton.ImageOptions.Image");
             SaveButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("SaveButton.ImageOptions.LargeImage");
@@ -377,7 +377,7 @@ namespace Server.Views
             // 
             // ReloadButton
             // 
-            ReloadButton.Caption = "Reload";
+            ReloadButton.Caption = "重新加载";
             ReloadButton.Id = 2;
             ReloadButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("ReloadButton.ImageOptions.Image");
             ReloadButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("ReloadButton.ImageOptions.LargeImage");
@@ -388,7 +388,7 @@ namespace Server.Views
             // 
             ribbonPage1.Groups.AddRange(new DevExpress.XtraBars.Ribbon.RibbonPageGroup[] { ribbonPageGroup1 });
             ribbonPage1.Name = "ribbonPage1";
-            ribbonPage1.Text = "Home";
+            ribbonPage1.Text = "主页";
             // 
             // ribbonPageGroup1
             // 
@@ -397,7 +397,7 @@ namespace Server.Views
             ribbonPageGroup1.ItemLinks.Add(SaveButton);
             ribbonPageGroup1.ItemLinks.Add(ReloadButton);
             ribbonPageGroup1.Name = "ribbonPageGroup1";
-            ribbonPageGroup1.Text = "Actions";
+            ribbonPageGroup1.Text = "操作";
             // 
             // xtraTabControl1
             // 
@@ -430,7 +430,7 @@ namespace Server.Views
             xtraTabPage1.Controls.Add(labelControl1);
             xtraTabPage1.Name = "xtraTabPage1";
             xtraTabPage1.Size = new System.Drawing.Size(749, 385);
-            xtraTabPage1.Text = "Network";
+            xtraTabPage1.Text = "网络";
             // 
             // SyncronizeLocalButton
             // 
@@ -438,7 +438,7 @@ namespace Server.Views
             SyncronizeLocalButton.Name = "SyncronizeLocalButton";
             SyncronizeLocalButton.Size = new System.Drawing.Size(200, 23);
             SyncronizeLocalButton.TabIndex = 42;
-            SyncronizeLocalButton.Text = "Syncronize Local DB";
+            SyncronizeLocalButton.Text = "同步本地数据库";
             // 
             // PacketBanTimeEdit
             // 
@@ -458,7 +458,7 @@ namespace Server.Views
             SyncronizeRemoteButton.Name = "SyncronizeRemoteButton";
             SyncronizeRemoteButton.Size = new System.Drawing.Size(200, 23);
             SyncronizeRemoteButton.TabIndex = 41;
-            SyncronizeRemoteButton.Text = "Syncronize Remote DB";
+            SyncronizeRemoteButton.Text = "同步远程数据库";
             // 
             // DatabaseEncryptionButton
             // 
@@ -466,7 +466,7 @@ namespace Server.Views
             DatabaseEncryptionButton.Name = "DatabaseEncryptionButton";
             DatabaseEncryptionButton.Size = new System.Drawing.Size(200, 23);
             DatabaseEncryptionButton.TabIndex = 41;
-            DatabaseEncryptionButton.Text = "Config Database Encryption";
+            DatabaseEncryptionButton.Text = "配置数据库加密";
             // 
             // labelControl86
             // 
@@ -474,7 +474,7 @@ namespace Server.Views
             labelControl86.Name = "labelControl86";
             labelControl86.Size = new System.Drawing.Size(82, 13);
             labelControl86.TabIndex = 39;
-            labelControl86.Text = "Packet Ban Time:";
+            labelControl86.Text = "封包封禁时间:";
             // 
             // labelControl87
             // 
@@ -482,7 +482,7 @@ namespace Server.Views
             labelControl87.Name = "labelControl87";
             labelControl87.Size = new System.Drawing.Size(64, 13);
             labelControl87.TabIndex = 38;
-            labelControl87.Text = "Max Packets:";
+            labelControl87.Text = "最大封包数:";
             // 
             // MaxPacketEdit
             // 
@@ -503,7 +503,7 @@ namespace Server.Views
             labelControl51.Name = "labelControl51";
             labelControl51.Size = new System.Drawing.Size(81, 13);
             labelControl51.TabIndex = 36;
-            labelControl51.Text = "User Count Port:";
+            labelControl51.Text = "在线人数端口:";
             // 
             // UserCountPortEdit
             // 
@@ -524,7 +524,7 @@ namespace Server.Views
             labelControl6.Name = "labelControl6";
             labelControl6.Size = new System.Drawing.Size(54, 13);
             labelControl6.TabIndex = 34;
-            labelControl6.Text = "Ping Delay:";
+            labelControl6.Text = "Ping 延迟:";
             // 
             // PingDelayEdit
             // 
@@ -556,7 +556,7 @@ namespace Server.Views
             labelControl3.Name = "labelControl3";
             labelControl3.Size = new System.Drawing.Size(47, 13);
             labelControl3.TabIndex = 31;
-            labelControl3.Text = "Time Out:";
+            labelControl3.Text = "超时时间:";
             // 
             // labelControl2
             // 
@@ -564,7 +564,7 @@ namespace Server.Views
             labelControl2.Name = "labelControl2";
             labelControl2.Size = new System.Drawing.Size(24, 13);
             labelControl2.TabIndex = 30;
-            labelControl2.Text = "Port:";
+            labelControl2.Text = "端口:";
             // 
             // PortEdit
             // 
@@ -595,7 +595,7 @@ namespace Server.Views
             labelControl1.Name = "labelControl1";
             labelControl1.Size = new System.Drawing.Size(56, 13);
             labelControl1.TabIndex = 28;
-            labelControl1.Text = "IP Address:";
+            labelControl1.Text = "IP 地址:";
             // 
             // xtraTabPage2
             // 
@@ -637,7 +637,7 @@ namespace Server.Views
             xtraTabPage2.Controls.Add(AllowNewAccountEdit);
             xtraTabPage2.Name = "xtraTabPage2";
             xtraTabPage2.Size = new System.Drawing.Size(749, 385);
-            xtraTabPage2.Text = "Control";
+            xtraTabPage2.Text = "控制";
             // 
             // labelControl16
             // 
@@ -645,7 +645,7 @@ namespace Server.Views
             labelControl16.Name = "labelControl16";
             labelControl16.Size = new System.Drawing.Size(117, 13);
             labelControl16.TabIndex = 95;
-            labelControl16.Text = "Allow Manual Activation:";
+            labelControl16.Text = "允许手动激活:";
             // 
             // AllowRequestActivationEdit
             // 
@@ -662,7 +662,7 @@ namespace Server.Views
             labelControl22.Name = "labelControl22";
             labelControl22.Size = new System.Drawing.Size(105, 13);
             labelControl22.TabIndex = 93;
-            labelControl22.Text = "Allow Web Activation:";
+            labelControl22.Text = "允许网页激活:";
             // 
             // AllowWebActivationEdit
             // 
@@ -679,7 +679,7 @@ namespace Server.Views
             labelControl17.Name = "labelControl17";
             labelControl17.Size = new System.Drawing.Size(123, 13);
             labelControl17.TabIndex = 91;
-            labelControl17.Text = "Allow Request Activation:";
+            labelControl17.Text = "允许请求激活:";
             // 
             // AllowManualActivationEdit
             // 
@@ -696,7 +696,7 @@ namespace Server.Views
             labelControl18.Name = "labelControl18";
             labelControl18.Size = new System.Drawing.Size(105, 13);
             labelControl18.TabIndex = 89;
-            labelControl18.Text = "Allow Delete Account:";
+            labelControl18.Text = "允许删除账号:";
             // 
             // AllowDeleteAccountEdit
             // 
@@ -713,7 +713,7 @@ namespace Server.Views
             labelControl19.Name = "labelControl19";
             labelControl19.Size = new System.Drawing.Size(97, 13);
             labelControl19.TabIndex = 87;
-            labelControl19.Text = "Allow Manual Reset:";
+            labelControl19.Text = "允许手动重置:";
             // 
             // AllowManualResetPasswordEdit
             // 
@@ -730,7 +730,7 @@ namespace Server.Views
             labelControl20.Name = "labelControl20";
             labelControl20.Size = new System.Drawing.Size(85, 13);
             labelControl20.TabIndex = 85;
-            labelControl20.Text = "Allow Web Reset:";
+            labelControl20.Text = "允许网页重置:";
             // 
             // AllowWebResetPasswordEdit
             // 
@@ -747,7 +747,7 @@ namespace Server.Views
             labelControl21.Name = "labelControl21";
             labelControl21.Size = new System.Drawing.Size(121, 13);
             labelControl21.TabIndex = 83;
-            labelControl21.Text = "Allow Request Password:";
+            labelControl21.Text = "允许请求密码重置:";
             // 
             // AllowRequestPasswordResetEdit
             // 
@@ -764,7 +764,7 @@ namespace Server.Views
             labelControl40.Name = "labelControl40";
             labelControl40.Size = new System.Drawing.Size(65, 13);
             labelControl40.TabIndex = 81;
-            labelControl40.Text = "Allow Wizard:";
+            labelControl40.Text = "允许法师:";
             // 
             // AllowWizardEdit
             // 
@@ -781,7 +781,7 @@ namespace Server.Views
             labelControl39.Name = "labelControl39";
             labelControl39.Size = new System.Drawing.Size(61, 13);
             labelControl39.TabIndex = 79;
-            labelControl39.Text = "Allow Taoist:";
+            labelControl39.Text = "允许道士:";
             // 
             // AllowTaoistEdit
             // 
@@ -798,7 +798,7 @@ namespace Server.Views
             labelControl38.Name = "labelControl38";
             labelControl38.Size = new System.Drawing.Size(73, 13);
             labelControl38.TabIndex = 77;
-            labelControl38.Text = "Allow Assassin:";
+            labelControl38.Text = "允许刺客:";
             // 
             // AllowAssassinEdit
             // 
@@ -815,7 +815,7 @@ namespace Server.Views
             labelControl36.Name = "labelControl36";
             labelControl36.Size = new System.Drawing.Size(68, 13);
             labelControl36.TabIndex = 73;
-            labelControl36.Text = "Allow Warrior:";
+            labelControl36.Text = "允许战士:";
             // 
             // AllowWarriorEdit
             // 
@@ -832,7 +832,7 @@ namespace Server.Views
             labelControl15.Name = "labelControl15";
             labelControl15.Size = new System.Drawing.Size(61, 13);
             labelControl15.TabIndex = 71;
-            labelControl15.Text = "Relog Delay:";
+            labelControl15.Text = "重登延迟:";
             // 
             // RelogDelayEdit
             // 
@@ -852,7 +852,7 @@ namespace Server.Views
             labelControl14.Name = "labelControl14";
             labelControl14.Size = new System.Drawing.Size(58, 13);
             labelControl14.TabIndex = 69;
-            labelControl14.Text = "Start Game:";
+            labelControl14.Text = "开始游戏:";
             // 
             // AllowStartGameEdit
             // 
@@ -869,7 +869,7 @@ namespace Server.Views
             labelControl12.Name = "labelControl12";
             labelControl12.Size = new System.Drawing.Size(86, 13);
             labelControl12.TabIndex = 67;
-            labelControl12.Text = "Delete Character:";
+            labelControl12.Text = "删除角色:";
             // 
             // AllowDeleteCharacterEdit
             // 
@@ -886,7 +886,7 @@ namespace Server.Views
             labelControl11.Name = "labelControl11";
             labelControl11.Size = new System.Drawing.Size(76, 13);
             labelControl11.TabIndex = 65;
-            labelControl11.Text = "New Character:";
+            labelControl11.Text = "新建角色:";
             // 
             // AllowNewCharacterEdit
             // 
@@ -903,7 +903,7 @@ namespace Server.Views
             labelControl9.Name = "labelControl9";
             labelControl9.Size = new System.Drawing.Size(29, 13);
             labelControl9.TabIndex = 63;
-            labelControl9.Text = "Login:";
+            labelControl9.Text = "登录:";
             // 
             // AllowLoginEdit
             // 
@@ -920,7 +920,7 @@ namespace Server.Views
             labelControl8.Name = "labelControl8";
             labelControl8.Size = new System.Drawing.Size(90, 13);
             labelControl8.TabIndex = 61;
-            labelControl8.Text = "Change Password:";
+            labelControl8.Text = "修改密码:";
             // 
             // AllowChangePasswordEdit
             // 
@@ -937,7 +937,7 @@ namespace Server.Views
             labelControl7.Name = "labelControl7";
             labelControl7.Size = new System.Drawing.Size(67, 13);
             labelControl7.TabIndex = 59;
-            labelControl7.Text = "New Account:";
+            labelControl7.Text = "新建账号:";
             // 
             // AllowNewAccountEdit
             // 
@@ -971,7 +971,7 @@ namespace Server.Views
             xtraTabPage3.Controls.Add(CheckVersionEdit);
             xtraTabPage3.Name = "xtraTabPage3";
             xtraTabPage3.Size = new System.Drawing.Size(749, 385);
-            xtraTabPage3.Text = "System";
+            xtraTabPage3.Text = "系统";
             // 
             // RabbitEventEndEdit
             // 
@@ -992,7 +992,7 @@ namespace Server.Views
             labelControl85.Name = "labelControl85";
             labelControl85.Size = new System.Drawing.Size(66, 13);
             labelControl85.TabIndex = 75;
-            labelControl85.Text = "Rabbit Event:";
+            labelControl85.Text = "兔子活动:";
             // 
             // ReleaseDateEdit
             // 
@@ -1013,7 +1013,7 @@ namespace Server.Views
             labelControl70.Name = "labelControl70";
             labelControl70.Size = new System.Drawing.Size(68, 13);
             labelControl70.TabIndex = 73;
-            labelControl70.Text = "Release Date:";
+            labelControl70.Text = "发布日期:";
             // 
             // ClientPathEdit
             // 
@@ -1031,7 +1031,7 @@ namespace Server.Views
             labelControl96.Name = "labelControl96";
             labelControl96.Size = new System.Drawing.Size(56, 13);
             labelControl96.TabIndex = 70;
-            labelControl96.Text = "Client Path:";
+            labelControl96.Text = "客户端路径:";
             // 
             // MasterPasswordEdit
             // 
@@ -1050,7 +1050,7 @@ namespace Server.Views
             labelControl67.Name = "labelControl67";
             labelControl67.Size = new System.Drawing.Size(86, 13);
             labelControl67.TabIndex = 69;
-            labelControl67.Text = "Master Password:";
+            labelControl67.Text = "管理密码:";
             // 
             // MapPathEdit
             // 
@@ -1068,7 +1068,7 @@ namespace Server.Views
             labelControl97.Name = "labelControl97";
             labelControl97.Size = new System.Drawing.Size(79, 13);
             labelControl97.TabIndex = 77;
-            labelControl97.Text = "Lazy Load Maps:";
+            labelControl97.Text = "延迟加载地图:";
             // 
             // LazyLoadMapsEdit
             // 
@@ -1085,7 +1085,7 @@ namespace Server.Views
             labelControl13.Name = "labelControl13";
             labelControl13.Size = new System.Drawing.Size(49, 13);
             labelControl13.TabIndex = 29;
-            labelControl13.Text = "Map Path:";
+            labelControl13.Text = "地图路径:";
             // 
             // labelControl10
             // 
@@ -1093,7 +1093,7 @@ namespace Server.Views
             labelControl10.Name = "labelControl10";
             labelControl10.Size = new System.Drawing.Size(74, 13);
             labelControl10.TabIndex = 28;
-            labelControl10.Text = "DB Save Delay:";
+            labelControl10.Text = "数据库保存延迟:";
             // 
             // DBSaveDelayEdit
             // 
@@ -1113,7 +1113,7 @@ namespace Server.Views
             CheckVersionButton.Name = "CheckVersionButton";
             CheckVersionButton.Size = new System.Drawing.Size(86, 23);
             CheckVersionButton.TabIndex = 26;
-            CheckVersionButton.Text = "Check Version";
+            CheckVersionButton.Text = "检查版本";
             CheckVersionButton.Click += CheckVersionButton_Click;
             // 
             // VersionPathEdit
@@ -1132,7 +1132,7 @@ namespace Server.Views
             labelControl5.Name = "labelControl5";
             labelControl5.Size = new System.Drawing.Size(64, 13);
             labelControl5.TabIndex = 24;
-            labelControl5.Text = "Version Path:";
+            labelControl5.Text = "版本路径:";
             // 
             // labelControl4
             // 
@@ -1140,7 +1140,7 @@ namespace Server.Views
             labelControl4.Name = "labelControl4";
             labelControl4.Size = new System.Drawing.Size(71, 13);
             labelControl4.TabIndex = 23;
-            labelControl4.Text = "Check Version:";
+            labelControl4.Text = "检查版本:";
             // 
             // CheckVersionEdit
             // 
@@ -1169,7 +1169,7 @@ namespace Server.Views
             xtraTabPage4.Controls.Add(labelControl26);
             xtraTabPage4.Name = "xtraTabPage4";
             xtraTabPage4.Size = new System.Drawing.Size(749, 385);
-            xtraTabPage4.Text = "Mail";
+            xtraTabPage4.Text = "邮件";
             // 
             // MailDisplayNameEdit
             // 
@@ -1187,7 +1187,7 @@ namespace Server.Views
             labelControl31.Name = "labelControl31";
             labelControl31.Size = new System.Drawing.Size(68, 13);
             labelControl31.TabIndex = 71;
-            labelControl31.Text = "Display Name:";
+            labelControl31.Text = "显示名称:";
             // 
             // MailFromEdit
             // 
@@ -1205,7 +1205,7 @@ namespace Server.Views
             labelControl30.Name = "labelControl30";
             labelControl30.Size = new System.Drawing.Size(28, 13);
             labelControl30.TabIndex = 69;
-            labelControl30.Text = "From:";
+            labelControl30.Text = "发件人:";
             // 
             // MailPasswordEdit
             // 
@@ -1224,7 +1224,7 @@ namespace Server.Views
             labelControl29.Name = "labelControl29";
             labelControl29.Size = new System.Drawing.Size(50, 13);
             labelControl29.TabIndex = 67;
-            labelControl29.Text = "Password:";
+            labelControl29.Text = "密码:";
             // 
             // MailAccountEdit
             // 
@@ -1242,7 +1242,7 @@ namespace Server.Views
             labelControl28.Name = "labelControl28";
             labelControl28.Size = new System.Drawing.Size(43, 13);
             labelControl28.TabIndex = 65;
-            labelControl28.Text = "Account:";
+            labelControl28.Text = "账号:";
             // 
             // labelControl27
             // 
@@ -1250,7 +1250,7 @@ namespace Server.Views
             labelControl27.Name = "labelControl27";
             labelControl27.Size = new System.Drawing.Size(42, 13);
             labelControl27.TabIndex = 63;
-            labelControl27.Text = "Use SSL:";
+            labelControl27.Text = "使用 SSL:";
             // 
             // MailUseSSLEdit
             // 
@@ -1267,7 +1267,7 @@ namespace Server.Views
             labelControl25.Name = "labelControl25";
             labelControl25.Size = new System.Drawing.Size(24, 13);
             labelControl25.TabIndex = 34;
-            labelControl25.Text = "Port:";
+            labelControl25.Text = "端口:";
             // 
             // MailPortEdit
             // 
@@ -1298,7 +1298,7 @@ namespace Server.Views
             labelControl26.Name = "labelControl26";
             labelControl26.Size = new System.Drawing.Size(36, 13);
             labelControl26.TabIndex = 32;
-            labelControl26.Text = "Server:";
+            labelControl26.Text = "服务器:";
             // 
             // xtraTabPage5
             // 
@@ -1332,7 +1332,7 @@ namespace Server.Views
             xtraTabPage5.Controls.Add(labelControl42);
             xtraTabPage5.Name = "xtraTabPage5";
             xtraTabPage5.Size = new System.Drawing.Size(749, 385);
-            xtraTabPage5.Text = "Web Server";
+            xtraTabPage5.Text = "Web 服务器";
             // 
             // labelControl81
             // 
@@ -1340,7 +1340,7 @@ namespace Server.Views
             labelControl81.Name = "labelControl81";
             labelControl81.Size = new System.Drawing.Size(104, 13);
             labelControl81.TabIndex = 101;
-            labelControl81.Text = "Allow Buy Game Gold:";
+            labelControl81.Text = "允许购买游戏金币:";
             // 
             // AllowBuyGameGoldEdit
             // 
@@ -1357,7 +1357,7 @@ namespace Server.Views
             labelControl80.Name = "labelControl80";
             labelControl80.Size = new System.Drawing.Size(95, 13);
             labelControl80.TabIndex = 99;
-            labelControl80.Text = "Process Game Gold:";
+            labelControl80.Text = "处理游戏金币:";
             // 
             // ProcessGameGoldEdit
             // 
@@ -1384,7 +1384,7 @@ namespace Server.Views
             labelControl79.Name = "labelControl79";
             labelControl79.Size = new System.Drawing.Size(73, 13);
             labelControl79.TabIndex = 97;
-            labelControl79.Text = "Receiver EMail:";
+            labelControl79.Text = "收款邮箱:";
             // 
             // IPNPrefixEdit
             // 
@@ -1402,7 +1402,7 @@ namespace Server.Views
             labelControl73.Name = "labelControl73";
             labelControl73.Size = new System.Drawing.Size(52, 13);
             labelControl73.TabIndex = 95;
-            labelControl73.Text = "IPN Prefix:";
+            labelControl73.Text = "IPN 前缀:";
             // 
             // BuyAddressEdit
             // 
@@ -1420,7 +1420,7 @@ namespace Server.Views
             labelControl72.Name = "labelControl72";
             labelControl72.Size = new System.Drawing.Size(64, 13);
             labelControl72.TabIndex = 93;
-            labelControl72.Text = "Buy Address:";
+            labelControl72.Text = "购买地址:";
             // 
             // BuyPrefixEdit
             // 
@@ -1438,7 +1438,7 @@ namespace Server.Views
             labelControl71.Name = "labelControl71";
             labelControl71.Size = new System.Drawing.Size(53, 13);
             labelControl71.TabIndex = 91;
-            labelControl71.Text = "Buy Prefix:";
+            labelControl71.Text = "购买前缀:";
             // 
             // DeleteFailLinkEdit
             // 
@@ -1456,7 +1456,7 @@ namespace Server.Views
             labelControl37.Name = "labelControl37";
             labelControl37.Size = new System.Drawing.Size(75, 13);
             labelControl37.TabIndex = 89;
-            labelControl37.Text = "Delete Fail Link:";
+            labelControl37.Text = "删除失败链接:";
             // 
             // DeleteSuccessLinkEdit
             // 
@@ -1474,7 +1474,7 @@ namespace Server.Views
             labelControl43.Name = "labelControl43";
             labelControl43.Size = new System.Drawing.Size(97, 13);
             labelControl43.TabIndex = 87;
-            labelControl43.Text = "Delete Success Link:";
+            labelControl43.Text = "删除成功链接:";
             // 
             // ResetFailLinkEdit
             // 
@@ -1492,7 +1492,7 @@ namespace Server.Views
             labelControl32.Name = "labelControl32";
             labelControl32.Size = new System.Drawing.Size(72, 13);
             labelControl32.TabIndex = 85;
-            labelControl32.Text = "Reset Fail Link:";
+            labelControl32.Text = "重置失败链接:";
             // 
             // ResetSuccessLinkEdit
             // 
@@ -1510,7 +1510,7 @@ namespace Server.Views
             labelControl33.Name = "labelControl33";
             labelControl33.Size = new System.Drawing.Size(94, 13);
             labelControl33.TabIndex = 83;
-            labelControl33.Text = "Reset Success Link:";
+            labelControl33.Text = "重置成功链接:";
             // 
             // ActivationFailLinkEdit
             // 
@@ -1528,7 +1528,7 @@ namespace Server.Views
             labelControl34.Name = "labelControl34";
             labelControl34.Size = new System.Drawing.Size(92, 13);
             labelControl34.TabIndex = 81;
-            labelControl34.Text = "Activation Fail Link:";
+            labelControl34.Text = "激活失败链接:";
             // 
             // ActivationSuccessLinkEdit
             // 
@@ -1546,7 +1546,7 @@ namespace Server.Views
             labelControl35.Name = "labelControl35";
             labelControl35.Size = new System.Drawing.Size(114, 13);
             labelControl35.TabIndex = 79;
-            labelControl35.Text = "Activation Success Link:";
+            labelControl35.Text = "激活成功链接:";
             // 
             // labelControl41
             // 
@@ -1554,7 +1554,7 @@ namespace Server.Views
             labelControl41.Name = "labelControl41";
             labelControl41.Size = new System.Drawing.Size(72, 13);
             labelControl41.TabIndex = 75;
-            labelControl41.Text = "Command Link:";
+            labelControl41.Text = "命令链接:";
             // 
             // WebCommandLinkEdit
             // 
@@ -1585,7 +1585,7 @@ namespace Server.Views
             labelControl42.Name = "labelControl42";
             labelControl42.Size = new System.Drawing.Size(57, 13);
             labelControl42.TabIndex = 73;
-            labelControl42.Text = "Web Prefix:";
+            labelControl42.Text = "Web 前缀:";
             // 
             // xtraTabPage6
             // 
@@ -1632,7 +1632,7 @@ namespace Server.Views
             xtraTabPage6.Controls.Add(labelControl23);
             xtraTabPage6.Name = "xtraTabPage6";
             xtraTabPage6.Size = new System.Drawing.Size(749, 385);
-            xtraTabPage6.Text = "Players";
+            xtraTabPage6.Text = "玩家";
             // 
             // labelControl91
             // 
@@ -1640,7 +1640,7 @@ namespace Server.Views
             labelControl91.Name = "labelControl91";
             labelControl91.Size = new System.Drawing.Size(77, 13);
             labelControl91.TabIndex = 132;
-            labelControl91.Text = "Enable Fortune:";
+            labelControl91.Text = "启用财富:";
             // 
             // EnableFortuneEdit
             // 
@@ -1657,7 +1657,7 @@ namespace Server.Views
             labelControl90.Name = "labelControl90";
             labelControl90.Size = new System.Drawing.Size(70, 13);
             labelControl90.TabIndex = 130;
-            labelControl90.Text = "Enable Hermit:";
+            labelControl90.Text = "启用隐士:";
             // 
             // EnableHermitEdit
             // 
@@ -1674,7 +1674,7 @@ namespace Server.Views
             labelControl88.Name = "labelControl88";
             labelControl88.Size = new System.Drawing.Size(69, 13);
             labelControl88.TabIndex = 128;
-            labelControl88.Text = "Enable Struck:";
+            labelControl88.Text = "启用受击:";
             // 
             // EnableStruckEdit
             // 
@@ -1691,7 +1691,7 @@ namespace Server.Views
             labelControl69.Name = "labelControl69";
             labelControl69.Size = new System.Drawing.Size(93, 13);
             labelControl69.TabIndex = 126;
-            labelControl69.Text = "Auto Revive Delay:";
+            labelControl69.Text = "自动复活延迟:";
             // 
             // AutoReviveDelayEdit
             // 
@@ -1724,7 +1724,7 @@ namespace Server.Views
             labelControl83.Name = "labelControl83";
             labelControl83.Size = new System.Drawing.Size(79, 13);
             labelControl83.TabIndex = 123;
-            labelControl83.Text = "PvP Curse Rate:";
+            labelControl83.Text = "PvP 诅咒几率:";
             // 
             // labelControl84
             // 
@@ -1732,7 +1732,7 @@ namespace Server.Views
             labelControl84.Name = "labelControl84";
             labelControl84.Size = new System.Drawing.Size(97, 13);
             labelControl84.TabIndex = 122;
-            labelControl84.Text = "PvP Curse Duration:";
+            labelControl84.Text = "PvP 诅咒持续时间:";
             // 
             // PvPCurseDurationEdit
             // 
@@ -1765,7 +1765,7 @@ namespace Server.Views
             labelControl77.Name = "labelControl77";
             labelControl77.Size = new System.Drawing.Size(50, 13);
             labelControl77.TabIndex = 111;
-            labelControl77.Text = "Red Point:";
+            labelControl77.Text = "红名点数:";
             // 
             // labelControl78
             // 
@@ -1773,7 +1773,7 @@ namespace Server.Views
             labelControl78.Name = "labelControl78";
             labelControl78.Size = new System.Drawing.Size(90, 13);
             labelControl78.TabIndex = 110;
-            labelControl78.Text = "PK Point Tick Rate:";
+            labelControl78.Text = "PK 点数间隔:";
             // 
             // PKPointTickRateEdit
             // 
@@ -1806,7 +1806,7 @@ namespace Server.Views
             labelControl76.Name = "labelControl76";
             labelControl76.Size = new System.Drawing.Size(69, 13);
             labelControl76.TabIndex = 107;
-            labelControl76.Text = "PK Point Rate:";
+            labelControl76.Text = "PK 点数倍率:";
             // 
             // labelControl75
             // 
@@ -1814,7 +1814,7 @@ namespace Server.Views
             labelControl75.Name = "labelControl75";
             labelControl75.Size = new System.Drawing.Size(78, 13);
             labelControl75.TabIndex = 106;
-            labelControl75.Text = "Brown Duration:";
+            labelControl75.Text = "褐名持续时间:";
             // 
             // BrownDurationEdit
             // 
@@ -1834,7 +1834,7 @@ namespace Server.Views
             labelControl24.Name = "labelControl24";
             labelControl24.Size = new System.Drawing.Size(91, 13);
             labelControl24.TabIndex = 83;
-            labelControl24.Text = "Allow Observation:";
+            labelControl24.Text = "允许观战:";
             // 
             // AllowObservationEdit
             // 
@@ -1864,7 +1864,7 @@ namespace Server.Views
             labelControl53.Name = "labelControl53";
             labelControl53.Size = new System.Drawing.Size(42, 13);
             labelControl53.TabIndex = 80;
-            labelControl53.Text = "Skill Exp:";
+            labelControl53.Text = "技能经验:";
             // 
             // DayCycleCountEdit
             // 
@@ -1885,7 +1885,7 @@ namespace Server.Views
             labelControl52.Name = "labelControl52";
             labelControl52.Size = new System.Drawing.Size(84, 13);
             labelControl52.TabIndex = 78;
-            labelControl52.Text = "Day Cycle Count:";
+            labelControl52.Text = "昼夜循环次数:";
             // 
             // MaxLevelEdit
             // 
@@ -1906,7 +1906,7 @@ namespace Server.Views
             labelControl46.Name = "labelControl46";
             labelControl46.Size = new System.Drawing.Size(52, 13);
             labelControl46.TabIndex = 76;
-            labelControl46.Text = "Max Level:";
+            labelControl46.Text = "最高等级:";
             // 
             // labelControl45
             // 
@@ -1914,7 +1914,7 @@ namespace Server.Views
             labelControl45.Name = "labelControl45";
             labelControl45.Size = new System.Drawing.Size(63, 13);
             labelControl45.TabIndex = 75;
-            labelControl45.Text = "Global Delay:";
+            labelControl45.Text = "全局延迟:";
             // 
             // GlobalDelayEdit
             // 
@@ -1934,7 +1934,7 @@ namespace Server.Views
             labelControl44.Name = "labelControl44";
             labelControl44.Size = new System.Drawing.Size(62, 13);
             labelControl44.TabIndex = 73;
-            labelControl44.Text = "Shout Delay:";
+            labelControl44.Text = "喊话延迟:";
             // 
             // ShoutDelayEdit
             // 
@@ -1967,7 +1967,7 @@ namespace Server.Views
             labelControl23.Name = "labelControl23";
             labelControl23.Size = new System.Drawing.Size(83, 13);
             labelControl23.TabIndex = 34;
-            labelControl23.Text = "Max View Range:";
+            labelControl23.Text = "最大视野范围:";
             // 
             // xtraTabPage7
             // 
@@ -1981,7 +1981,7 @@ namespace Server.Views
             xtraTabPage7.Controls.Add(DeadDurationEdit);
             xtraTabPage7.Name = "xtraTabPage7";
             xtraTabPage7.Size = new System.Drawing.Size(749, 385);
-            xtraTabPage7.Text = "Monsters";
+            xtraTabPage7.Text = "怪物";
             // 
             // LairRegionIndexEdit
             // 
@@ -1990,9 +1990,9 @@ namespace Server.Views
             LairRegionIndexEdit.Name = "LairRegionIndexEdit";
             LairRegionIndexEdit.Properties.BestFitMode = DevExpress.XtraEditors.Controls.BestFitMode.BestFitResizePopup;
             LairRegionIndexEdit.Properties.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] { new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo) });
-            LairRegionIndexEdit.Properties.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ServerDescription", "Server Description"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Size", "Size") });
+            LairRegionIndexEdit.Properties.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ServerDescription", "服务端描述"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Size", "大小") });
             LairRegionIndexEdit.Properties.DisplayMember = "ServerDescription";
-            LairRegionIndexEdit.Properties.NullText = "[Region is null]";
+            LairRegionIndexEdit.Properties.NullText = "[未选择区域]";
             LairRegionIndexEdit.Properties.ValueMember = "Index";
             LairRegionIndexEdit.Size = new System.Drawing.Size(174, 20);
             LairRegionIndexEdit.TabIndex = 125;
@@ -2003,7 +2003,7 @@ namespace Server.Views
             labelControl82.Name = "labelControl82";
             labelControl82.Size = new System.Drawing.Size(57, 13);
             labelControl82.TabIndex = 124;
-            labelControl82.Text = "Lair Region:";
+            labelControl82.Text = "巢穴区域:";
             // 
             // MysteryShipRegionIndexEdit
             // 
@@ -2012,9 +2012,9 @@ namespace Server.Views
             MysteryShipRegionIndexEdit.Name = "MysteryShipRegionIndexEdit";
             MysteryShipRegionIndexEdit.Properties.BestFitMode = DevExpress.XtraEditors.Controls.BestFitMode.BestFitResizePopup;
             MysteryShipRegionIndexEdit.Properties.Buttons.AddRange(new DevExpress.XtraEditors.Controls.EditorButton[] { new DevExpress.XtraEditors.Controls.EditorButton(DevExpress.XtraEditors.Controls.ButtonPredefines.Combo) });
-            MysteryShipRegionIndexEdit.Properties.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "Index"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ServerDescription", "Server Description"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Size", "Size") });
+            MysteryShipRegionIndexEdit.Properties.Columns.AddRange(new DevExpress.XtraEditors.Controls.LookUpColumnInfo[] { new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Index", "序号"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("ServerDescription", "服务端描述"), new DevExpress.XtraEditors.Controls.LookUpColumnInfo("Size", "大小") });
             MysteryShipRegionIndexEdit.Properties.DisplayMember = "ServerDescription";
-            MysteryShipRegionIndexEdit.Properties.NullText = "[Region is null]";
+            MysteryShipRegionIndexEdit.Properties.NullText = "[未选择区域]";
             MysteryShipRegionIndexEdit.Properties.ValueMember = "Index";
             MysteryShipRegionIndexEdit.Size = new System.Drawing.Size(174, 20);
             MysteryShipRegionIndexEdit.TabIndex = 123;
@@ -2025,7 +2025,7 @@ namespace Server.Views
             labelControl89.Name = "labelControl89";
             labelControl89.Size = new System.Drawing.Size(102, 13);
             labelControl89.TabIndex = 117;
-            labelControl89.Text = "Mystery Ship Region:";
+            labelControl89.Text = "神秘船区域:";
             // 
             // labelControl74
             // 
@@ -2033,7 +2033,7 @@ namespace Server.Views
             labelControl74.Name = "labelControl74";
             labelControl74.Size = new System.Drawing.Size(86, 13);
             labelControl74.TabIndex = 104;
-            labelControl74.Text = "Harvest Duration:";
+            labelControl74.Text = "采集持续时间:";
             // 
             // HarvestDurationEdit
             // 
@@ -2053,7 +2053,7 @@ namespace Server.Views
             labelControl47.Name = "labelControl47";
             labelControl47.Size = new System.Drawing.Size(73, 13);
             labelControl47.TabIndex = 75;
-            labelControl47.Text = "Dead Duration:";
+            labelControl47.Text = "死亡持续时间:";
             // 
             // DeadDurationEdit
             // 
@@ -2095,7 +2095,7 @@ namespace Server.Views
             xtraTabPage8.Controls.Add(DropDurationEdit);
             xtraTabPage8.Name = "xtraTabPage8";
             xtraTabPage8.Size = new System.Drawing.Size(749, 385);
-            xtraTabPage8.Text = "Items";
+            xtraTabPage8.Text = "物品";
             // 
             // StrengthLossRateEdit
             // 
@@ -2116,7 +2116,7 @@ namespace Server.Views
             labelControl64.Name = "labelControl64";
             labelControl64.Size = new System.Drawing.Size(96, 13);
             labelControl64.TabIndex = 99;
-            labelControl64.Text = "Strength Loss Rate:";
+            labelControl64.Text = "持久损失率:";
             // 
             // StrengthAddRateEdit
             // 
@@ -2137,7 +2137,7 @@ namespace Server.Views
             labelControl65.Name = "labelControl65";
             labelControl65.Size = new System.Drawing.Size(94, 13);
             labelControl65.TabIndex = 97;
-            labelControl65.Text = "Strength Add Rate:";
+            labelControl65.Text = "持久增加率:";
             // 
             // MaxStrengthEdit
             // 
@@ -2158,7 +2158,7 @@ namespace Server.Views
             labelControl66.Name = "labelControl66";
             labelControl66.Size = new System.Drawing.Size(69, 13);
             labelControl66.TabIndex = 95;
-            labelControl66.Text = "Max Strength:";
+            labelControl66.Text = "最大持久:";
             // 
             // CurseRateEdit
             // 
@@ -2179,7 +2179,7 @@ namespace Server.Views
             labelControl63.Name = "labelControl63";
             labelControl63.Size = new System.Drawing.Size(58, 13);
             labelControl63.TabIndex = 93;
-            labelControl63.Text = "Curse Rate:";
+            labelControl63.Text = "诅咒几率:";
             // 
             // MaxCurseEdit
             // 
@@ -2200,7 +2200,7 @@ namespace Server.Views
             labelControl62.Name = "labelControl62";
             labelControl62.Size = new System.Drawing.Size(55, 13);
             labelControl62.TabIndex = 91;
-            labelControl62.Text = "Max Curse:";
+            labelControl62.Text = "最大诅咒:";
             // 
             // LuckRateEdit
             // 
@@ -2221,7 +2221,7 @@ namespace Server.Views
             labelControl61.Name = "labelControl61";
             labelControl61.Size = new System.Drawing.Size(51, 13);
             labelControl61.TabIndex = 89;
-            labelControl61.Text = "Luck Rate:";
+            labelControl61.Text = "幸运几率:";
             // 
             // MaxLuckEdit
             // 
@@ -2242,7 +2242,7 @@ namespace Server.Views
             labelControl60.Name = "labelControl60";
             labelControl60.Size = new System.Drawing.Size(48, 13);
             labelControl60.TabIndex = 87;
-            labelControl60.Text = "Max Luck:";
+            labelControl60.Text = "最大幸运:";
             // 
             // labelControl59
             // 
@@ -2250,7 +2250,7 @@ namespace Server.Views
             labelControl59.Name = "labelControl59";
             labelControl59.Size = new System.Drawing.Size(101, 13);
             labelControl59.TabIndex = 86;
-            labelControl59.Text = "Special Repair Delay:";
+            labelControl59.Text = "特殊修理延迟:";
             // 
             // SpecialRepairDelayEdit
             // 
@@ -2283,7 +2283,7 @@ namespace Server.Views
             labelControl54.Name = "labelControl54";
             labelControl54.Size = new System.Drawing.Size(57, 13);
             labelControl54.TabIndex = 83;
-            labelControl54.Text = "Torch Rate:";
+            labelControl54.Text = "火把倍率:";
             // 
             // DropLayersEdit
             // 
@@ -2304,7 +2304,7 @@ namespace Server.Views
             labelControl50.Name = "labelControl50";
             labelControl50.Size = new System.Drawing.Size(62, 13);
             labelControl50.TabIndex = 80;
-            labelControl50.Text = "Drop Layers:";
+            labelControl50.Text = "掉落层数:";
             // 
             // DropDistanceEdit
             // 
@@ -2325,7 +2325,7 @@ namespace Server.Views
             labelControl49.Name = "labelControl49";
             labelControl49.Size = new System.Drawing.Size(71, 13);
             labelControl49.TabIndex = 78;
-            labelControl49.Text = "Drop Distance:";
+            labelControl49.Text = "掉落距离:";
             // 
             // labelControl48
             // 
@@ -2333,7 +2333,7 @@ namespace Server.Views
             labelControl48.Name = "labelControl48";
             labelControl48.Size = new System.Drawing.Size(71, 13);
             labelControl48.TabIndex = 77;
-            labelControl48.Text = "Drop Duration:";
+            labelControl48.Text = "掉落持续时间:";
             // 
             // DropDurationEdit
             // 
@@ -2361,7 +2361,7 @@ namespace Server.Views
             xtraTabPage9.Controls.Add(labelControl55);
             xtraTabPage9.Name = "xtraTabPage9";
             xtraTabPage9.Size = new System.Drawing.Size(749, 385);
-            xtraTabPage9.Text = "Rates";
+            xtraTabPage9.Text = "倍率";
             // 
             // CompanionRateEdit
             // 
@@ -2382,7 +2382,7 @@ namespace Server.Views
             labelControl68.Name = "labelControl68";
             labelControl68.Size = new System.Drawing.Size(83, 13);
             labelControl68.TabIndex = 88;
-            labelControl68.Text = "Companion Rate:";
+            labelControl68.Text = "伙伴倍率:";
             // 
             // SkillRateEdit
             // 
@@ -2403,7 +2403,7 @@ namespace Server.Views
             labelControl58.Name = "labelControl58";
             labelControl58.Size = new System.Drawing.Size(47, 13);
             labelControl58.TabIndex = 86;
-            labelControl58.Text = "Skill Rate:";
+            labelControl58.Text = "技能倍率:";
             // 
             // GoldRateEdit
             // 
@@ -2424,7 +2424,7 @@ namespace Server.Views
             labelControl57.Name = "labelControl57";
             labelControl57.Size = new System.Drawing.Size(51, 13);
             labelControl57.TabIndex = 84;
-            labelControl57.Text = "Gold Rate:";
+            labelControl57.Text = "金币倍率:";
             // 
             // DropRateEdit
             // 
@@ -2445,7 +2445,7 @@ namespace Server.Views
             labelControl56.Name = "labelControl56";
             labelControl56.Size = new System.Drawing.Size(53, 13);
             labelControl56.TabIndex = 82;
-            labelControl56.Text = "Drop Rate:";
+            labelControl56.Text = "掉落倍率:";
             // 
             // ExperienceRateEdit
             // 
@@ -2466,7 +2466,7 @@ namespace Server.Views
             labelControl55.Name = "labelControl55";
             labelControl55.Size = new System.Drawing.Size(83, 13);
             labelControl55.TabIndex = 80;
-            labelControl55.Text = "Experience Rate:";
+            labelControl55.Text = "经验倍率:";
             // 
             // OpenDialog
             // 
@@ -2483,7 +2483,7 @@ namespace Server.Views
             labelControl92.Name = "labelControl92";
             labelControl92.Size = new System.Drawing.Size(90, 13);
             labelControl92.TabIndex = 133;
-            labelControl92.Text = "Admin Start Modes";
+            labelControl92.Text = "管理员启动模式";
             // 
             // labelControl93
             // 
@@ -2491,7 +2491,7 @@ namespace Server.Views
             labelControl93.Name = "labelControl93";
             labelControl93.Size = new System.Drawing.Size(64, 13);
             labelControl93.TabIndex = 134;
-            labelControl93.Text = "Gamemaster:";
+            labelControl93.Text = "GM:";
             // 
             // labelControl94
             // 
@@ -2499,7 +2499,7 @@ namespace Server.Views
             labelControl94.Name = "labelControl94";
             labelControl94.Size = new System.Drawing.Size(49, 13);
             labelControl94.TabIndex = 135;
-            labelControl94.Text = "Observer:";
+            labelControl94.Text = "观察者:";
             // 
             // labelControl95
             // 
@@ -2507,7 +2507,7 @@ namespace Server.Views
             labelControl95.Name = "labelControl95";
             labelControl95.Size = new System.Drawing.Size(52, 13);
             labelControl95.TabIndex = 136;
-            labelControl95.Text = "Superman:";
+            labelControl95.Text = "无敌:";
             // 
             // AdminGamemasterStartEdit
             // 
@@ -2545,7 +2545,7 @@ namespace Server.Views
             Controls.Add(ribbon);
             Name = "ConfigView";
             Ribbon = ribbon;
-            Text = "Config";
+            Text = "配置";
             ((System.ComponentModel.ISupportInitialize)ribbon).EndInit();
             ((System.ComponentModel.ISupportInitialize)xtraTabControl1).EndInit();
             xtraTabControl1.ResumeLayout(false);

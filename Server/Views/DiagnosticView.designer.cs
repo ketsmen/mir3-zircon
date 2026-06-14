@@ -52,7 +52,7 @@ namespace Server.Views
             // DiagnosticButton
             // 
             DiagnosticButton.ButtonStyle = DevExpress.XtraBars.BarButtonStyle.Check;
-            DiagnosticButton.Caption = "Diagnostics";
+            DiagnosticButton.Caption = "诊断";
             DiagnosticButton.Id = 4;
             DiagnosticButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("DiagnosticButton.ImageOptions.Image");
             DiagnosticButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("DiagnosticButton.ImageOptions.LargeImage");
@@ -61,7 +61,7 @@ namespace Server.Views
             // 
             // ResetTimeButton
             // 
-            ResetTimeButton.Caption = "Reset Times";
+            ResetTimeButton.Caption = "重置时间";
             ResetTimeButton.Id = 5;
             ResetTimeButton.ImageOptions.Image = (System.Drawing.Image)resources.GetObject("ResetTimeButton.ImageOptions.Image");
             ResetTimeButton.ImageOptions.LargeImage = (System.Drawing.Image)resources.GetObject("ResetTimeButton.ImageOptions.LargeImage");
@@ -73,7 +73,7 @@ namespace Server.Views
             // 
             ribbonPage1.Groups.AddRange(new DevExpress.XtraBars.Ribbon.RibbonPageGroup[] { ribbonPageGroup1 });
             ribbonPage1.Name = "ribbonPage1";
-            ribbonPage1.Text = "Home";
+            ribbonPage1.Text = "主页";
             // 
             // ribbonPageGroup1
             // 
@@ -82,14 +82,14 @@ namespace Server.Views
             ribbonPageGroup1.ItemLinks.Add(DiagnosticButton);
             ribbonPageGroup1.ItemLinks.Add(ResetTimeButton);
             ribbonPageGroup1.Name = "ribbonPageGroup1";
-            ribbonPageGroup1.Text = "Saving";
+            ribbonPageGroup1.Text = "保存";
             // 
             // repositoryItemToggleSwitch1
             // 
             repositoryItemToggleSwitch1.AutoHeight = false;
             repositoryItemToggleSwitch1.Name = "repositoryItemToggleSwitch1";
-            repositoryItemToggleSwitch1.OffText = "Off";
-            repositoryItemToggleSwitch1.OnText = "On";
+            repositoryItemToggleSwitch1.OffText = "关";
+            repositoryItemToggleSwitch1.OnText = "开";
             // 
             // DiagnosticGridControl
             // 
@@ -115,6 +115,7 @@ namespace Server.Views
             // gridColumn1
             // 
             gridColumn1.FieldName = "Name";
+            gridColumn1.Caption = "名称";
             gridColumn1.Name = "gridColumn1";
             gridColumn1.Visible = true;
             gridColumn1.VisibleIndex = 0;
@@ -122,6 +123,7 @@ namespace Server.Views
             // gridColumn2
             // 
             gridColumn2.FieldName = "Count";
+            gridColumn2.Caption = "数量";
             gridColumn2.Name = "gridColumn2";
             gridColumn2.Visible = true;
             gridColumn2.VisibleIndex = 1;
@@ -129,6 +131,7 @@ namespace Server.Views
             // gridColumn3
             // 
             gridColumn3.FieldName = "TotalMilliseconds";
+            gridColumn3.Caption = "总耗时毫秒";
             gridColumn3.Name = "gridColumn3";
             gridColumn3.Visible = true;
             gridColumn3.VisibleIndex = 2;
@@ -136,6 +139,7 @@ namespace Server.Views
             // gridColumn4
             // 
             gridColumn4.FieldName = "LargestMilliseconds";
+            gridColumn4.Caption = "最大耗时毫秒";
             gridColumn4.Name = "gridColumn4";
             gridColumn4.Visible = true;
             gridColumn4.VisibleIndex = 3;
@@ -143,6 +147,7 @@ namespace Server.Views
             // gridColumn5
             // 
             gridColumn5.FieldName = "TotalSize";
+            gridColumn5.Caption = "总大小";
             gridColumn5.Name = "gridColumn5";
             gridColumn5.Visible = true;
             gridColumn5.VisibleIndex = 4;
@@ -150,6 +155,7 @@ namespace Server.Views
             // gridColumn6
             // 
             gridColumn6.FieldName = "LargestSize";
+            gridColumn6.Caption = "最大大小";
             gridColumn6.Name = "gridColumn6";
             gridColumn6.Visible = true;
             gridColumn6.VisibleIndex = 5;
@@ -163,7 +169,7 @@ namespace Server.Views
             Controls.Add(ribbon);
             Name = "DiagnosticView";
             Ribbon = ribbon;
-            Text = "Diagnostics";
+            Text = "诊断";
             ((System.ComponentModel.ISupportInitialize)ribbon).EndInit();
             ((System.ComponentModel.ISupportInitialize)repositoryItemToggleSwitch1).EndInit();
             ((System.ComponentModel.ISupportInitialize)DiagnosticGridControl).EndInit();
