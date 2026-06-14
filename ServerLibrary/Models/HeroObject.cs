@@ -31,6 +31,7 @@ namespace Server.Models
         public MapObject Target;
 
         public DateTime SearchTime;
+        public DateTime ReconsiderTargetTime;
         public DateTime RoamTime;
         public DateTime SupportTime;
         public DateTime AutoPotTime;
@@ -40,6 +41,7 @@ namespace Server.Models
 
         public int MoveDelay = 600;
         public int AttackDelay = 900;
+        private int MoveFailureCount;
 
         private const int RunDistance = 2;
         private const int RunStartDistance = 3;
@@ -49,6 +51,7 @@ namespace Server.Models
         protected virtual int MaxPursuitRange => Math.Max(ViewRange, Math.Min(Config.MaxViewRange, Config.HeroPursuitRange));
         protected virtual int PreferredOwnerRange => 2;
         protected virtual TimeSpan SearchDelay => TimeSpan.FromMilliseconds(800);
+        protected virtual TimeSpan ReconsiderTargetDelay => TimeSpan.FromMilliseconds(500);
         protected virtual TimeSpan RoamDelay => TimeSpan.FromMilliseconds(500);
         protected virtual TimeSpan SupportDelay => TimeSpan.FromSeconds(2);
         protected virtual TimeSpan AutoPotDelay => TimeSpan.FromSeconds(1);
@@ -324,6 +327,13 @@ namespace Server.Models
 
             SearchTime = SEnvir.Now + SearchDelay;
 
+            if (TryFindNearestAttackableMonster(ViewRange, out MapObject monsterTarget, out _))
+            {
+                Target = monsterTarget;
+                MoveFailureCount = 0;
+                return;
+            }
+
             int bestScore = int.MinValue;
             List<MapObject> candidates = new List<MapObject>();
 
@@ -352,6 +362,52 @@ namespace Server.Models
             Target = candidates[SEnvir.Random.Next(candidates.Count)];
         }
 
+        private bool ReconsiderCloserMonsterTarget(bool force)
+        {
+            if (Behaviour != HeroBehaviour.Attack && Behaviour != HeroBehaviour.Custom) return false;
+            if (!force && SEnvir.Now < ReconsiderTargetTime) return false;
+
+            ReconsiderTargetTime = SEnvir.Now + ReconsiderTargetDelay;
+
+            if (!TryFindNearestAttackableMonster(ViewRange, out MapObject monsterTarget, out int monsterDistance)) return false;
+            if (monsterTarget == Target) return false;
+
+            int currentDistance = Target?.CurrentMap == CurrentMap ? Functions.Distance(CurrentLocation, Target.CurrentLocation) : int.MaxValue;
+            if (!force && monsterDistance >= currentDistance) return false;
+
+            Target = monsterTarget;
+            MoveFailureCount = 0;
+            return true;
+        }
+
+        private bool TryFindNearestAttackableMonster(int range, out MapObject target, out int distance)
+        {
+            target = null;
+            distance = int.MaxValue;
+
+            int bestScore = int.MinValue;
+
+            foreach (MapObject ob in GetTargets(CurrentMap, CurrentLocation, range))
+            {
+                if (!(ob is MonsterObject)) continue;
+                if (Owner != null && !Functions.InRange(Owner.CurrentLocation, ob.CurrentLocation, MaxPursuitRange)) continue;
+
+                int currentDistance = Functions.Distance(CurrentLocation, ob.CurrentLocation);
+                if (currentDistance > distance) continue;
+
+                int score = GetTargetScore(ob, currentDistance);
+                if (currentDistance == distance && score < bestScore) continue;
+
+                if (currentDistance == distance && score == bestScore && target != null && SEnvir.Random.Next(2) != 0) continue;
+
+                target = ob;
+                distance = currentDistance;
+                bestScore = score;
+            }
+
+            return target != null;
+        }
+
         public virtual void ProcessTarget()
         {
             if (Behaviour == HeroBehaviour.Follow)
@@ -375,11 +431,27 @@ namespace Server.Models
                 return;
             }
 
+            ReconsiderCloserMonsterTarget(false);
+
             if (!InAttackRange())
             {
+                Point oldLocation = CurrentLocation;
                 MoveTo(Target.CurrentLocation);
+
+                if (CurrentLocation == oldLocation)
+                {
+                    MoveFailureCount++;
+
+                    if (MoveFailureCount >= 2)
+                        ReconsiderCloserMonsterTarget(true);
+                }
+                else
+                    MoveFailureCount = 0;
+
                 return;
             }
+
+            MoveFailureCount = 0;
 
             if (!CanAttack) return;
 

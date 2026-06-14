@@ -327,7 +327,7 @@ namespace Client.Scenes
         private const int AutoFightRangedMinRange = 4;
 
         private bool _AutoFight;
-        private DateTime AutoFightTargetSearchTime, AutoFightPathTime, AutoFightRoamTime, AutoFightHintTime;
+        private DateTime AutoFightTargetSearchTime, AutoFightPathTime, AutoFightRoamTime, AutoFightHintTime, AutoFightReconsiderTargetTime;
         private readonly Dictionary<uint, DateTime> AutoFightUnreachableTargets = new Dictionary<uint, DateTime>();
 
         public bool AutoFight
@@ -351,6 +351,7 @@ namespace Client.Scenes
                     AutoFightPathTime = DateTime.MinValue;
                     AutoFightRoamTime = DateTime.MinValue;
                     AutoFightHintTime = DateTime.MinValue;
+                    AutoFightReconsiderTargetTime = DateTime.MinValue;
                 }
                 else
                 {
@@ -1309,6 +1310,9 @@ namespace Client.Scenes
 
             int attackRange = GetAutoFightRange(User.Class);
 
+            if (!Functions.InRange(target.CurrentLocation, User.CurrentLocation, attackRange))
+                TryReconsiderAutoFightTarget(ref target);
+
             if (Functions.InRange(target.CurrentLocation, User.CurrentLocation, attackRange))
             {
                 ClearAutoFightPath();
@@ -1369,6 +1373,30 @@ namespace Client.Scenes
             }
 
             return best;
+        }
+
+        private bool TryReconsiderAutoFightTarget(ref MapObject target)
+        {
+            if (target == null || CEnvir.Now < AutoFightReconsiderTargetTime) return false;
+
+            AutoFightReconsiderTargetTime = CEnvir.Now.AddMilliseconds(300);
+            RemoveExpiredAutoFightTargets();
+
+            MapObject betterTarget = FindAutoFightTarget(AutoFightSearchRange);
+            if (betterTarget == null || betterTarget == target) return false;
+
+            int currentDistance = Functions.Distance(User.CurrentLocation, target.CurrentLocation);
+            int betterDistance = Functions.Distance(User.CurrentLocation, betterTarget.CurrentLocation);
+            if (betterDistance >= currentDistance) return false;
+
+            ClearAutoFightPath();
+            AutoFightPathTime = DateTime.MinValue;
+
+            target = betterTarget;
+            MapObject.TargetObject = target;
+            MapObject.MagicObject = target;
+
+            return true;
         }
 
         private bool TryAutoFightAttack(MapObject target)
@@ -1642,6 +1670,8 @@ namespace Client.Scenes
         private void MarkAutoFightTargetUnreachable(MapObject target)
         {
             AutoFightUnreachableTargets[target.ObjectID] = CEnvir.Now.AddSeconds(5);
+            AutoFightTargetSearchTime = DateTime.MinValue;
+            AutoFightReconsiderTargetTime = DateTime.MinValue;
 
             if (MapObject.TargetObject == target)
                 MapObject.TargetObject = null;
