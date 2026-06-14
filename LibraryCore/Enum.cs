@@ -889,6 +889,7 @@ namespace Library
         Deer = 31,
         //NF_Man1 = 32,
         Oma = 33,
+        OmaWar = 573,
         OmaHero = 34,
         SpittingSpider = 35,
         Guard = 36,

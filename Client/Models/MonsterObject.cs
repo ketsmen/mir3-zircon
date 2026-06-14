@@ -249,6 +249,13 @@ namespace Client.Models
                     StruckSound = SoundIndex.OmaStruck;
                     DieSound = SoundIndex.OmaDie;
                     break;
+                case MonsterImage.OmaWar:
+                    CEnvir.LibraryList.TryGetValue(LibraryFile.Mon_28, out BodyLibrary);
+                    BodyShape = 4;
+                    AttackSound = SoundIndex.OmaAttack;
+                    StruckSound = SoundIndex.OmaStruck;
+                    DieSound = SoundIndex.OmaDie;
+                    break;
                 case MonsterImage.OmaInfant:
                     CEnvir.LibraryList.TryGetValue(LibraryFile.Mon_28, out BodyLibrary);
                     BodyShape = 4;
