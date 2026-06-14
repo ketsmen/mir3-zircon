@@ -268,7 +268,7 @@ namespace Server.Models
             }
 
             if (Target?.Node == null || Target.Dead || Target.CurrentMap != CurrentMap ||
-                !Functions.InRange(CurrentLocation, Target.CurrentLocation, MaxPursuitRange) ||
+                !CanPursueTarget(Target) ||
                 !CanAttackTarget(Target))
                 Target = null;
 
@@ -714,10 +714,37 @@ namespace Server.Models
         {
             if (Node == null || Dead) return;
             if (Behaviour != HeroBehaviour.Attack && Behaviour != HeroBehaviour.Custom) return;
+            if (!CanAcceptOwnerTarget(target)) return;
+
+            if (Behaviour == HeroBehaviour.Attack)
+            {
+                Target = target;
+                SearchTime = DateTime.MinValue;
+                return;
+            }
+
             if (!ShouldReplaceTarget(target, 5500)) return;
 
             Target = target;
             SearchTime = DateTime.MinValue;
+        }
+
+        protected virtual bool CanPursueTarget(MapObject target)
+        {
+            if (target?.Node == null || target.CurrentMap != CurrentMap) return false;
+            if (Functions.InRange(CurrentLocation, target.CurrentLocation, MaxPursuitRange)) return true;
+
+            return Owner?.Node != null &&
+                   Owner.CurrentMap == CurrentMap &&
+                   Functions.InRange(Owner.CurrentLocation, target.CurrentLocation, MaxPursuitRange);
+        }
+
+        protected virtual bool CanAcceptOwnerTarget(MapObject target)
+        {
+            if (Owner?.Node == null || target?.Node == null || target.CurrentMap != CurrentMap || Owner.CurrentMap != CurrentMap) return false;
+            if (!Functions.InRange(Owner.CurrentLocation, target.CurrentLocation, MaxPursuitRange)) return false;
+
+            return CanAttackTarget(target);
         }
 
         protected virtual bool ShouldReplaceTarget(MapObject attacker, int bonus)
