@@ -26,6 +26,7 @@ namespace Server.WinForms
         private readonly TabPage _chatLogPage = new TabPage("聊天日志");
         private readonly ListBox _systemLogList = new ListBox();
         private readonly ListBox _chatLogList = new ListBox();
+        private readonly ToolStripTextBox _navigationFilterText = new ToolStripTextBox();
         private readonly ToolStripTextBox _logFilterText = new ToolStripTextBox();
         private readonly ToolStripLabel _logStatusLabel = new ToolStripLabel();
         private readonly List<string> _systemLogs = new List<string>();
@@ -380,18 +381,46 @@ namespace Server.WinForms
             _workspaceSplit.FixedPanel = FixedPanel.Panel1;
             _workspaceSplit.SplitterDistance = 230;
 
+            TableLayoutPanel navigationLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
+            navigationLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            navigationLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            ToolStrip navigationToolStrip = new ToolStrip
+            {
+                GripStyle = ToolStripGripStyle.Hidden,
+                Margin = Padding.Empty
+            };
+            navigationToolStrip.Items.Add(new ToolStripLabel("导航过滤"));
+            _navigationFilterText.AutoSize = false;
+            _navigationFilterText.Width = 150;
+            _navigationFilterText.ToolTipText = "按入口名称或数据库类型名过滤左侧导航。";
+            _navigationFilterText.TextChanged += (_, _) => BuildNavigationTree();
+            navigationToolStrip.Items.Add(_navigationFilterText);
+            navigationToolStrip.Items.Add("清空", null, (_, _) => _navigationFilterText.Text = string.Empty);
+
             _navigationTree.Dock = DockStyle.Fill;
             _navigationTree.HideSelection = false;
             _navigationTree.AfterSelect += NavigationTree_AfterSelect;
 
             BuildNavigationTree();
 
-            _workspaceSplit.Panel1.Controls.Add(_navigationTree);
+            navigationLayout.Controls.Add(navigationToolStrip, 0, 0);
+            navigationLayout.Controls.Add(_navigationTree, 0, 1);
+            _workspaceSplit.Panel1.Controls.Add(navigationLayout);
             _workspaceSplit.Panel2.Controls.Add(_logPanel);
         }
 
         private void BuildNavigationTree()
         {
+            string filter = _navigationFilterText.Text?.Trim() ?? string.Empty;
+
             _navigationTree.BeginUpdate();
             try
             {
@@ -464,6 +493,8 @@ namespace Server.WinForms
                 AddDatabaseNavigation(management, "邮件", "MailInfo");
                 AddDatabaseNavigation(management, "攻城统计", "UserConquestStats");
 
+                RemoveEmptyNavigationGroups(filter);
+
                 _navigationTree.ExpandAll();
             }
             finally
@@ -479,14 +510,44 @@ namespace Server.WinForms
             return node;
         }
 
-        private static void AddNavigationAction(TreeNode parent, string text, Action action)
+        private void AddNavigationAction(TreeNode parent, string text, Action action, params string[] keywords)
         {
+            if (!ShouldShowNavigation(parent.Text, text, keywords)) return;
+
             parent.Nodes.Add(new TreeNode(text) { Tag = action });
         }
 
         private void AddDatabaseNavigation(TreeNode parent, string text, string typeName)
         {
-            AddNavigationAction(parent, text, () => OpenDatabaseEditor(typeName));
+            AddNavigationAction(parent, text, () => OpenDatabaseEditor(typeName), typeName);
+        }
+
+        private bool ShouldShowNavigation(string groupText, string text, IEnumerable<string> keywords)
+        {
+            string filter = _navigationFilterText.Text?.Trim();
+            if (string.IsNullOrWhiteSpace(filter)) return true;
+
+            return NavigationTextMatches(groupText, filter) ||
+                   NavigationTextMatches(text, filter) ||
+                   keywords.Any(x => NavigationTextMatches(x, filter));
+        }
+
+        private static bool NavigationTextMatches(string text, string filter)
+        {
+            return !string.IsNullOrWhiteSpace(text) &&
+                   text.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void RemoveEmptyNavigationGroups(string filter)
+        {
+            if (string.IsNullOrWhiteSpace(filter)) return;
+
+            for (int i = _navigationTree.Nodes.Count - 1; i >= 0; i--)
+            {
+                TreeNode node = _navigationTree.Nodes[i];
+                if (node.Nodes.Count == 0 && !NavigationTextMatches(node.Text, filter))
+                    _navigationTree.Nodes.RemoveAt(i);
+            }
         }
 
         private void NavigationTree_AfterSelect(object sender, TreeViewEventArgs e)
@@ -1132,6 +1193,7 @@ namespace Server.WinForms
                 WindowState = FormWindowState.Normal;
                 Size = new Size(1100, 720);
                 _workspaceSplit.SplitterDistance = 230;
+                _navigationFilterText.Text = string.Empty;
                 _navigationTree.ExpandAll();
                 MessageBox.Show(this, "界面布局已重置。", "界面布局", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
