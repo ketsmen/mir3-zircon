@@ -663,7 +663,7 @@ namespace Server.WinForms
 
         private void PasteClipboardTable()
         {
-            if (_grid.CurrentCell == null || !Clipboard.ContainsText()) return;
+            if (!Clipboard.ContainsText()) return;
 
             string text = Clipboard.GetText();
             if (string.IsNullOrWhiteSpace(text)) return;
@@ -675,8 +675,28 @@ namespace Server.WinForms
             int firstDataLine = HasVisibleColumnHeader(lines[0]) ? 1 : 0;
             if (firstDataLine >= lines.Length) return;
 
-            int startRow = _grid.CurrentCell.RowIndex;
-            int startColumn = _grid.CurrentCell.ColumnIndex;
+            int startColumn = _grid.CurrentCell?.ColumnIndex ?? GetFirstVisibleColumnIndex();
+            if (startColumn < 0) return;
+
+            object startObject = _grid.CurrentRow?.DataBoundItem;
+            int startRow = _grid.CurrentCell?.RowIndex ?? 0;
+            int dataRows = lines.Length - firstDataLine;
+            int missingRows = startRow + dataRows - _grid.Rows.Count;
+            bool addedRows = false;
+
+            if (missingRows > 0)
+            {
+                if (!AppendRowsForPaste(missingRows))
+                    return;
+
+                addedRows = true;
+                if (startObject != null)
+                    startRow = FindRowIndex(startObject);
+
+                if (startRow < 0)
+                    startRow = Math.Max(0, _grid.Rows.Count - dataRows);
+            }
+
             int changed = 0;
 
             for (int lineIndex = firstDataLine; lineIndex < lines.Length && startRow + lineIndex - firstDataLine < _grid.Rows.Count; lineIndex++)
@@ -694,6 +714,9 @@ namespace Server.WinForms
 
                     if (!TryConvertCellText(values[columnOffset], property.PropertyType, out object value))
                     {
+                        if (addedRows)
+                            OnContentChanged();
+
                         MessageBox.Show(this, $"无法把 `{values[columnOffset]}` 写入 {property.Name}。", "粘贴", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         return;
                     }
@@ -703,12 +726,55 @@ namespace Server.WinForms
                 }
             }
 
-            if (changed > 0)
+            if (changed > 0 || addedRows)
             {
                 _grid.EndEdit();
                 _grid.Refresh();
                 OnContentChanged();
             }
+        }
+
+        private int GetFirstVisibleColumnIndex()
+        {
+            return _grid.Columns.Cast<DataGridViewColumn>()
+                .Where(x => x.Visible)
+                .OrderBy(x => x.DisplayIndex)
+                .Select(x => x.Index)
+                .FirstOrDefault(-1);
+        }
+
+        private bool AppendRowsForPaste(int count)
+        {
+            if (count <= 0) return true;
+            if (!ConfirmUserDataMutation($"粘贴并新增 {count} 行")) return false;
+
+            if (!string.IsNullOrWhiteSpace(_filterText))
+            {
+                _filterText = string.Empty;
+                RefreshBinding();
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                if (CreateNewItem() == null)
+                    return false;
+            }
+
+            RefreshBinding();
+            return true;
+        }
+
+        private int FindRowIndex(object item)
+        {
+            if (item == null) return -1;
+
+            foreach (DataGridViewRow row in _grid.Rows)
+            {
+                if (ReferenceEquals(row.DataBoundItem, item))
+                    return row.Index;
+            }
+
+            return -1;
         }
 
         private bool HasVisibleColumnHeader(string line)
