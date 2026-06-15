@@ -32,6 +32,7 @@ namespace Server.WinForms
 
         private MapData _map = MapData.Empty;
         private HashSet<Point> _selection = new HashSet<Point>();
+        private HashSet<Point> _originalSelection = new HashSet<Point>();
         private Point _mouseLocation = Point.Empty;
         private string _mapPath;
         private float _zoom = 1F;
@@ -63,11 +64,13 @@ namespace Server.WinForms
 
                 _mapRegion = value;
                 _selection.Clear();
+                _originalSelection.Clear();
 
                 if (_mapRegion?.Map != null)
                 {
                     LoadMap(_mapRegion.Map.FileName);
                     _selection = _mapRegion.GetPoints(_map.Width);
+                    _originalSelection = new HashSet<Point>(_selection);
                 }
                 else
                 {
@@ -103,7 +106,10 @@ namespace Server.WinForms
             _mapPath = resolved;
 
             if (MapRegion == null)
+            {
                 _selection.Clear();
+                _originalSelection.Clear();
+            }
 
             UpdateCommands();
             UpdateScrollBars();
@@ -257,7 +263,9 @@ namespace Server.WinForms
             MapRegion.BitRegion = bitRegion;
             MapRegion.PointRegion = pointRegion;
             MapRegion.Size = _selection.Count;
+            _originalSelection = new HashSet<Point>(_selection);
 
+            UpdateCommands();
             UpdateStatus();
             MessageBox.Show(this, "地图区域选择已写入当前 MapRegion，请在数据库编辑器中保存数据库。", "地图查看器", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
@@ -266,7 +274,8 @@ namespace Server.WinForms
         {
             if (MapRegion == null || _map.IsEmpty) return;
 
-            _selection = MapRegion.GetPoints(_map.Width);
+            _selection = new HashSet<Point>(_originalSelection);
+            UpdateCommands();
             UpdateStatus();
             _canvas.Invalidate();
         }
@@ -285,9 +294,10 @@ namespace Server.WinForms
         {
             bool hasMap = !_map.IsEmpty;
             bool canSaveRegion = hasMap && MapRegion != null;
+            bool dirty = canSaveRegion && IsSelectionDirty();
 
-            _saveButton.Enabled = canSaveRegion;
-            _cancelButton.Enabled = canSaveRegion;
+            _saveButton.Enabled = dirty;
+            _cancelButton.Enabled = dirty;
             _attributesButton.Enabled = hasMap;
             _selectionButton.Enabled = hasMap;
             _blockedOnlyButton.Enabled = hasMap;
@@ -331,7 +341,12 @@ namespace Server.WinForms
         {
             _mapSizeLabel.Text = $"地图大小: {_map.Width},{_map.Height}";
             _positionLabel.Text = $"坐标: {_mouseLocation.X},{_mouseLocation.Y} 半径: {_radius} 缩放: {_zoom:0.###}x";
-            _selectedCellsLabel.Text = $"已选格子: {_selection.Count}";
+            _selectedCellsLabel.Text = IsSelectionDirty() ? $"已选格子: {_selection.Count}（未保存）" : $"已选格子: {_selection.Count}";
+        }
+
+        private bool IsSelectionDirty()
+        {
+            return MapRegion != null && !_selection.SetEquals(_originalSelection);
         }
 
         private void Canvas_Paint(object sender, PaintEventArgs e)
@@ -417,7 +432,10 @@ namespace Server.WinForms
 
             UpdateStatus();
             if (changed)
+            {
+                UpdateCommands();
                 _canvas.Invalidate();
+            }
         }
 
         private void Canvas_MouseMove(object sender, MouseEventArgs e)
@@ -431,6 +449,7 @@ namespace Server.WinForms
 
             if (!changed) return;
 
+            UpdateCommands();
             UpdateStatus();
             _canvas.Invalidate();
         }
