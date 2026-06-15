@@ -170,6 +170,7 @@ namespace Server.WinForms
         public void AddNew()
         {
             if (_readOnly) return;
+            if (!ConfirmUserDataMutation("新增一行")) return;
 
             object item = CreateNewItem();
             if (item == null) return;
@@ -182,6 +183,7 @@ namespace Server.WinForms
         public void InsertAfterCurrent()
         {
             if (_readOnly) return;
+            if (!ConfirmUserDataMutation("在当前行后插入新行")) return;
 
             object current = CurrentObject;
             if (current is not DBObject dbObject)
@@ -209,6 +211,7 @@ namespace Server.WinForms
         public void DuplicateCurrent()
         {
             if (_readOnly) return;
+            if (!ConfirmUserDataMutation("复制当前对象为新行")) return;
 
             object current = CurrentObject;
             if (current == null) return;
@@ -236,6 +239,9 @@ namespace Server.WinForms
             List<DBObject> objects = SelectedObjects.OfType<DBObject>().ToList();
             if (objects.Count == 0) return;
 
+            if (!ConfirmUserDataMutation($"删除选中的 {objects.Count} 行"))
+                return;
+
             if (MessageBox.Show(this, $"确定删除选中的 {objects.Count} 行吗？", "删除", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
 
@@ -243,6 +249,18 @@ namespace Server.WinForms
                 item.Delete();
 
             RefreshBinding();
+        }
+
+        private bool ConfirmUserDataMutation(string action)
+        {
+            if (!_metadata.IsUserObject(_itemType)) return true;
+
+            return MessageBox.Show(
+                this,
+                $"{_itemType.Name} 是用户数据库对象。\r\n\r\n{action}可能影响玩家账号、角色、物品、邮件或日志数据。确定继续吗？",
+                "用户数据保护",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning) == DialogResult.Yes;
         }
 
         private object CreateNewItem()
