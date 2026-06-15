@@ -200,7 +200,7 @@ namespace Server.WinForms
             toolStrip.Items.Add(new ToolStripLabel("表"));
             _tableSearchText.AutoSize = false;
             _tableSearchText.Width = 170;
-            _tableSearchText.ToolTipText = "按表名过滤左侧导航，例如 Item、Monster、NPC。";
+            _tableSearchText.ToolTipText = "按表名或中文分组过滤左侧导航，例如 Item、地图、任务、NPC。";
             _tableSearchText.TextChanged += (_, _) => BuildTree();
             _tableSearchText.KeyDown += TableSearchText_KeyDown;
             toolStrip.Items.Add(_tableSearchText);
@@ -412,8 +412,16 @@ namespace Server.WinForms
 
         private static bool MatchesTypeFilter(Type type, string filter)
         {
-            return string.IsNullOrWhiteSpace(filter) ||
-                   type.Name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+            if (string.IsNullOrWhiteSpace(filter)) return true;
+
+            return TextMatchesFilter(type.Name, filter) ||
+                   TextMatchesFilter(GetTypeGroup(type), filter);
+        }
+
+        private static bool TextMatchesFilter(string text, string filter)
+        {
+            return !string.IsNullOrWhiteSpace(text) &&
+                   text.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static string GetTypeGroup(Type type)
