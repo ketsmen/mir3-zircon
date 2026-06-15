@@ -465,6 +465,11 @@ namespace Server.Envir
                 case "WEAPONELEMENT":
                     ParseWeaponElementCheck(line, parts, checks, report);
                     break;
+                case "CHECKWEAPONSTAT":
+                case "CHECKWEAPONADDEDSTATS":
+                case "WEAPONADDEDSTATS":
+                    ParseWeaponStatCheck(line, parts, checks, report);
+                    break;
                 case "CHECKMARRIAGE":
                 case "CHECKRELATIONSHIP":
                     checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Marriage, Operator = Operator.Equal }, line));
@@ -622,6 +627,9 @@ namespace Server.Envir
                 case "CHANGEELEMENT":
                 case "CHANGEWEAPONELEMENT":
                     ParseElementAction(line, parts, actions, report);
+                    break;
+                case "SPECIALREFINE":
+                    ParseSpecialRefineAction(line, parts, actions, report);
                     break;
                 default:
                     report.Failures.Add($"{line.Source}: 未知 NPC 动作 `{parts[0]}`。");
@@ -894,6 +902,18 @@ namespace Server.Envir
             checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.WeaponElement, Operator = op, IntParameter1 = (int)element, IntParameter2 = value }, line));
         }
 
+        private void ParseWeaponStatCheck(TextNpcScriptLine line, List<string> parts, List<CompiledNpcCheck> checks, TextNpcLoadReport report)
+        {
+            if (parts.Count < 3 || !TryParseStat(parts[1], out Stat stat) ||
+                !TryParseComparison(parts.Skip(2).ToList(), Operator.GreaterThanOrEqual, out Operator op, out int value))
+            {
+                report.Failures.Add($"{line.Source}: {parts[0]} 格式应为 {parts[0]} Stat [运算符] 数值。");
+                return;
+            }
+
+            checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.WeaponAddedStats, Operator = op, StatParameter1 = stat, IntParameter1 = value }, line));
+        }
+
         private void ParseElementAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, TextNpcLoadReport report)
         {
             if (parts.Count < 2 || !TryParseElement(parts[1], out Element element))
@@ -903,6 +923,17 @@ namespace Server.Envir
             }
 
             actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.ChangeElement, IntParameter1 = (int)element }, line));
+        }
+
+        private void ParseSpecialRefineAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, TextNpcLoadReport report)
+        {
+            if (parts.Count < 3 || !TryParseStat(parts[1], out Stat stat) || !int.TryParse(parts[2], out int amount))
+            {
+                report.Failures.Add($"{line.Source}: SPECIALREFINE 格式应为 SPECIALREFINE Stat 数值。");
+                return;
+            }
+
+            actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.SpecialRefine, StatParameter1 = stat, IntParameter1 = amount }, line));
         }
 
         private void ParseGood(TextNpcScriptLine line, CompiledNpcPage page, TextNpcLoadReport report)
@@ -1132,6 +1163,21 @@ namespace Server.Envir
             }
 
             element = Element.None;
+            return false;
+        }
+
+        private static bool TryParseStat(string value, out Stat stat)
+        {
+            if (Enum.TryParse(value, true, out stat) && Enum.IsDefined(typeof(Stat), stat))
+                return true;
+
+            if (int.TryParse(value, out int raw) && Enum.IsDefined(typeof(Stat), raw))
+            {
+                stat = (Stat)raw;
+                return true;
+            }
+
+            stat = Stat.None;
             return false;
         }
 
@@ -1620,6 +1666,7 @@ namespace Server.Envir
         public int IntParameter2;
         public string StringParameter1;
         public ItemInfo ItemParameter1;
+        public Stat StatParameter1;
         public RequiredClass Class;
         public RequiredGender Gender = RequiredGender.None;
         public DaysOfWeek Days = DaysOfWeek.None;
@@ -1635,6 +1682,7 @@ namespace Server.Envir
         public string StringParameter1;
         public ItemInfo ItemParameter1;
         public MapInfo MapParameter1;
+        public Stat StatParameter1;
         public NPCDataType DataType = NPCDataType.User;
     }
 
@@ -1649,6 +1697,7 @@ namespace Server.Envir
         WeaponCanReset,
         WeaponLevel,
         WeaponElement,
+        WeaponAddedStats,
         Marriage,
         WeddingRing,
         Horse,
@@ -1689,7 +1738,8 @@ namespace Server.Envir
         Rebirth,
         ChangeHorse,
         GiveItemExperience,
-        ChangeElement
+        ChangeElement,
+        SpecialRefine
     }
 
     internal enum TextNpcParseMode

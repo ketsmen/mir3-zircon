@@ -542,6 +542,9 @@ namespace Server.Models
                             ob.Enqueue(changedResult);
                         }
                         break;
+                    case CompiledNpcActionType.SpecialRefine:
+                        ob.NPCSpecialRefine(action.StatParameter1, action.IntParameter1);
+                        break;
                 }
             }
 
@@ -595,6 +598,10 @@ namespace Server.Models
                     case CompiledNpcCheckType.WeaponElement:
                         UserItem elementWeapon = ob.Equipment[(int)EquipmentSlot.Weapon];
                         if (elementWeapon == null || !Compare(check.Operator, GetWeaponElementValue(elementWeapon, (Element)check.IntParameter1), check.IntParameter2)) return false;
+                        break;
+                    case CompiledNpcCheckType.WeaponAddedStats:
+                        UserItem statWeapon = ob.Equipment[(int)EquipmentSlot.Weapon];
+                        if (statWeapon == null || !Compare(check.Operator, statWeapon.Stats[check.StatParameter1], check.IntParameter1)) return false;
                         break;
                     case CompiledNpcCheckType.Marriage:
                         if (ob.Character.Partner != null != (check.Operator == Operator.Equal)) return false;

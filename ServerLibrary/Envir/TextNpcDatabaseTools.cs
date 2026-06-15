@@ -406,6 +406,7 @@ namespace Server.Envir
             check.IntParameter2 = source.IntParameter2;
             check.StringParameter1 = source.StringParameter1;
             check.ItemParameter1 = source.ItemParameter1;
+            check.StatParameter1 = source.StatParameter1;
 
             switch (source.CheckType)
             {
@@ -441,6 +442,9 @@ namespace Server.Envir
                     break;
                 case CompiledNpcCheckType.WeaponElement:
                     check.CheckType = NPCCheckType.WeaponElement;
+                    break;
+                case CompiledNpcCheckType.WeaponAddedStats:
+                    check.CheckType = NPCCheckType.WeaponAddedStats;
                     break;
                 case CompiledNpcCheckType.Marriage:
                     check.CheckType = NPCCheckType.Marriage;
@@ -492,6 +496,7 @@ namespace Server.Envir
             action.StringParameter1 = source.StringParameter1;
             action.ItemParameter1 = source.ItemParameter1;
             action.MapParameter1 = source.MapParameter1;
+            action.StatParameter1 = source.StatParameter1;
 
             switch (source.ActionType)
             {
@@ -533,6 +538,9 @@ namespace Server.Envir
                     break;
                 case CompiledNpcActionType.ChangeElement:
                     action.ActionType = NPCActionType.ChangeElement;
+                    break;
+                case CompiledNpcActionType.SpecialRefine:
+                    action.ActionType = NPCActionType.SpecialRefine;
                     break;
                 case CompiledNpcActionType.GiveItem:
                     action.ActionType = NPCActionType.GiveItem;
@@ -955,6 +963,10 @@ namespace Server.Envir
                     script.AppendLine($"CHECKWEAPONELEMENT {FormatElement(check.IntParameter1)} {OperatorText(check.Operator)} {check.IntParameter2}");
                     report.ChecksExported++;
                     break;
+                case NPCCheckType.WeaponAddedStats:
+                    script.AppendLine($"CHECKWEAPONSTAT {check.StatParameter1} {OperatorText(check.Operator)} {check.IntParameter1}");
+                    report.ChecksExported++;
+                    break;
                 case NPCCheckType.Marriage:
                     script.AppendLine(check.Operator == Operator.Equal ? "CHECKMARRIAGE" : "NOMARRIAGE");
                     report.ChecksExported++;
@@ -1082,6 +1094,10 @@ namespace Server.Envir
                     break;
                 case NPCActionType.ChangeElement:
                     script.AppendLine($"CHANGEELEMENT {FormatElement(action.IntParameter1)}");
+                    report.ActionsExported++;
+                    break;
+                case NPCActionType.SpecialRefine:
+                    script.AppendLine($"SPECIALREFINE {action.StatParameter1} {action.IntParameter1}");
                     report.ActionsExported++;
                     break;
                 case NPCActionType.GiveItem:
