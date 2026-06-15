@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.IO;
+using System.Text.Json;
 using System.Windows.Forms;
 
 namespace Server.WinForms
@@ -39,6 +40,7 @@ namespace Server.WinForms
         private Type _currentType;
         private readonly string _initialTypeName;
         private bool _dirty;
+        private static readonly string UiCachePath = Path.Combine(Application.StartupPath, "DatabaseEditor.WinForms.cache.json");
 
         public DatabaseEditorForm()
             : this(null, false, null)
@@ -90,6 +92,13 @@ namespace Server.WinForms
                 MessageBox.Show(this, lockReason, "只读模式", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+
+            LoadUiCache();
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)
@@ -126,6 +135,7 @@ namespace Server.WinForms
                 }
             }
 
+            SaveUiCache();
             base.OnFormClosing(e);
         }
 
@@ -1153,6 +1163,78 @@ namespace Server.WinForms
         {
             if (_readOnly) return "只读";
             return _onlineMode ? "在线可编辑" : "离线可编辑";
+        }
+
+        private void LoadUiCache()
+        {
+            try
+            {
+                if (!File.Exists(UiCachePath)) return;
+
+                DatabaseEditorUiCache cache = JsonSerializer.Deserialize<DatabaseEditorUiCache>(File.ReadAllText(UiCachePath));
+                if (cache == null) return;
+
+                if (cache.Width >= 1000 && cache.Height >= 640)
+                    Size = new System.Drawing.Size(cache.Width, cache.Height);
+
+                if (cache.Maximized)
+                    WindowState = FormWindowState.Maximized;
+
+                if (cache.LeftSplitterDistance > 160)
+                    _split.SplitterDistance = Math.Min(cache.LeftSplitterDistance, Math.Max(160, _split.Width - 260));
+
+                if (cache.RightSplitterDistance > 240)
+                    _rightSplit.SplitterDistance = Math.Min(cache.RightSplitterDistance, Math.Max(240, _rightSplit.Height - 180));
+
+                if (string.IsNullOrWhiteSpace(_initialTypeName) && _currentType == null && !string.IsNullOrWhiteSpace(cache.LastTypeName))
+                {
+                    Type type = _metadata.ObjectTypes.FirstOrDefault(x => x.Name.Equals(cache.LastTypeName, StringComparison.OrdinalIgnoreCase));
+                    if (type != null)
+                    {
+                        SelectTypeNode(type);
+                        ShowCollection(type);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                SEnvir.Log($"加载数据库编辑器布局失败: {ex}");
+            }
+        }
+
+        private void SaveUiCache()
+        {
+            try
+            {
+                DatabaseEditorUiCache cache = new DatabaseEditorUiCache
+                {
+                    Width = RestoreBounds.Width > 0 ? RestoreBounds.Width : Width,
+                    Height = RestoreBounds.Height > 0 ? RestoreBounds.Height : Height,
+                    Maximized = WindowState == FormWindowState.Maximized,
+                    LeftSplitterDistance = _split.SplitterDistance,
+                    RightSplitterDistance = _rightSplit.SplitterDistance,
+                    LastTypeName = _currentType?.Name
+                };
+
+                File.WriteAllText(UiCachePath, JsonSerializer.Serialize(cache, new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                }));
+            }
+            catch (Exception ex)
+            {
+                SEnvir.Log($"保存数据库编辑器布局失败: {ex}");
+            }
+        }
+
+        private sealed class DatabaseEditorUiCache
+        {
+            public int Width { get; set; }
+            public int Height { get; set; }
+            public bool Maximized { get; set; }
+            public int LeftSplitterDistance { get; set; }
+            public int RightSplitterDistance { get; set; }
+            public string LastTypeName { get; set; }
         }
     }
 }
