@@ -529,6 +529,9 @@ namespace Server.Envir
                 case "DELNAMELIST":
                     ParseDataAction(line, parts, actions, CompiledNpcActionType.DeleteNameList, report);
                     break;
+                case "CLEARNAMELIST":
+                    ParseDataAction(line, parts, actions, CompiledNpcActionType.ClearNameList, report);
+                    break;
                 case "SETVALUE":
                     ParseValueAction(line, parts, actions, CompiledNpcActionType.SetValue, report);
                     break;
@@ -1483,6 +1486,7 @@ namespace Server.Envir
         Move,
         AddNameList,
         DeleteNameList,
+        ClearNameList,
         SetValue,
         ChangeValue,
         LocalMessage,

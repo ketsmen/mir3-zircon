@@ -503,6 +503,9 @@ namespace Server.Envir
                     action.ActionType = NPCActionType.RemoveDataList;
                     action.IntParameter1 = (int)source.DataType;
                     break;
+                case CompiledNpcActionType.ClearNameList:
+                    action.ActionType = NPCActionType.ClearDataList;
+                    break;
                 case CompiledNpcActionType.SetValue:
                     action.ActionType = NPCActionType.SetDataValue;
                     action.IntParameter1 = (int)source.DataType;
@@ -1001,6 +1004,10 @@ namespace Server.Envir
                     break;
                 case NPCActionType.RemoveDataList:
                     script.AppendLine($"DELNAMELIST {Quote(action.StringParameter1)} {(NPCDataType)action.IntParameter1}");
+                    report.ActionsExported++;
+                    break;
+                case NPCActionType.ClearDataList:
+                    script.AppendLine($"CLEARNAMELIST {Quote(action.StringParameter1)}");
                     report.ActionsExported++;
                     break;
                 case NPCActionType.SetDataValue:

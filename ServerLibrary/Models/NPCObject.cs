@@ -466,6 +466,9 @@ namespace Server.Models
                     case CompiledNpcActionType.DeleteNameList:
                         SetDataList(ob, CompiledNpcScript.ReplaceArguments(action.StringParameter1, arguments), action.DataType, false);
                         break;
+                    case CompiledNpcActionType.ClearNameList:
+                        ClearDataList(CompiledNpcScript.ReplaceArguments(action.StringParameter1, arguments));
+                        break;
                     case CompiledNpcActionType.SetValue:
                         SetDataValue(ob, CompiledNpcScript.ReplaceArguments(action.StringParameter1, arguments), action.DataType, action.IntParameter1, false);
                         break;
@@ -648,6 +651,21 @@ namespace Server.Models
             }
 
             item?.Delete();
+        }
+
+        private static void ClearDataList(string categoryName)
+        {
+            if (string.IsNullOrWhiteSpace(categoryName)) return;
+
+            string category = $"{categoryName}_NameList";
+
+            for (int i = SEnvir.GameNPCList.Binding.Count - 1; i >= 0; i--)
+            {
+                GameNPCList item = SEnvir.GameNPCList.Binding[i];
+                if (item.Category != category) continue;
+
+                item.Delete();
+            }
         }
 
         private static void SetDataValue(PlayerObject ob, string categoryName, NPCDataType dataType, int amount, bool add)
