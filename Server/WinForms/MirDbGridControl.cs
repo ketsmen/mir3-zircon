@@ -1,6 +1,7 @@
 using Library;
 using Library.SystemModels;
 using MirDB;
+using Server.Envir;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -877,7 +878,7 @@ namespace Server.WinForms
             if (propertyType.IsEnum)
             {
                 DataGridViewComboBoxColumn column = new DataGridViewComboBoxColumn();
-                column.DataSource = Enum.GetValues(propertyType);
+                column.DataSource = GetEnumChoices(property, propertyType);
                 column.ValueType = propertyType;
                 column.AutoComplete = true;
                 return column;
@@ -902,6 +903,35 @@ namespace Server.WinForms
                 textColumn.ReadOnly = true;
 
             return textColumn;
+        }
+
+        private object GetEnumChoices(PropertyInfo property, Type propertyType)
+        {
+            if (propertyType == typeof(EventActionType) &&
+                property.Name == nameof(BaseEventAction.Type))
+            {
+                List<EventActionType> values = _itemType switch
+                {
+                    Type type when type == typeof(WorldEventAction) => SEnvir.EventHandler.GetWorldEventActions(),
+                    Type type when type == typeof(PlayerEventAction) => SEnvir.EventHandler.GetPlayerEventActions(),
+                    Type type when type == typeof(MonsterEventAction) => SEnvir.EventHandler.GetMonsterEventActions(),
+                    _ => null
+                };
+
+                if (values != null)
+                {
+                    HashSet<EventActionType> added = new HashSet<EventActionType>(values);
+                    foreach (EventActionType current in _source.Cast<object>().Select(x => property.GetValue(x)).OfType<EventActionType>())
+                    {
+                        if (added.Add(current))
+                            values.Add(current);
+                    }
+
+                    return values.OrderBy(x => (int)x).ToList();
+                }
+            }
+
+            return Enum.GetValues(propertyType);
         }
 
         private IReadOnlyList<ObjectChoice> GetObjectChoices(PropertyInfo property, Type propertyType)
