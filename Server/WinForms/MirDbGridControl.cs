@@ -341,9 +341,14 @@ namespace Server.WinForms
         {
             _contextMenu.Items.Add("复制当前单元格", null, (_, _) => CopyCurrentCell());
             _contextMenu.Items.Add("复制选中行", null, (_, _) => CopySelectedRows());
+            ToolStripItem pasteItem = _contextMenu.Items.Add("粘贴表格", null, (_, _) => PasteClipboardTable());
+            pasteItem.Enabled = !_readOnly;
             _contextMenu.Items.Add("导出当前视图", null, (_, _) => ExportVisibleRows(this));
             _contextMenu.Items.Add(new ToolStripSeparator());
-            _contextMenu.Items.Add("复制当前对象为新行", null, (_, _) => DuplicateCurrent());
+            ToolStripItem duplicateItem = _contextMenu.Items.Add("复制当前对象为新行", null, (_, _) => DuplicateCurrent());
+            duplicateItem.Enabled = !_readOnly;
+            ToolStripItem deleteItem = _contextMenu.Items.Add("删除选中行", null, (_, _) => DeleteSelected());
+            deleteItem.Enabled = !_readOnly;
             _contextMenu.Items.Add(new ToolStripSeparator());
             _contextMenu.Items.Add("选择当前行", null, (_, _) => SelectCurrentRow());
             _contextMenu.Items.Add("打开引用对象", null, (_, _) => OpenCurrentReference());
