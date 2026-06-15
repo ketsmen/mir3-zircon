@@ -1,6 +1,8 @@
 # Mir3 文本 NPC 脚本
 
-服务端启动时会在 `Config.NpcTextOverrideEnabled = true` 时读取 `Config.NpcTextPath`，默认目录是 `.\Envir\NPCs\`。文本 NPC 只在服务端内存中生效，不会写回数据库。
+服务端启动时会在 `Config.NpcTextOverrideEnabled = true` 时读取 `Config.NpcTextPath`，默认目录是 `.\Envir\NPCs\`。文本 NPC 只在服务端内存中生效，不会自动写回数据库，适合快速调试、临时覆盖和新 NPC 开发。
+
+需要持久化时，使用数据库编辑器里的 NPC 文本工具把脚本导入数据库。导入后 NPC 会转换成旧数据库对象，关闭 `NpcTextOverrideEnabled` 或删除脚本目录后仍按原来的数据库 NPC 模式运行。
 
 ## NPCInfo.txt
 
@@ -58,6 +60,8 @@ CHECKVALUE DailyCount >= 1 User
 
 `#SUCCESS @PAGE` 可以指定特殊窗口完成后的返回页，当前主要用于 `[@ROLLDIE]` 和 `[@ROLLYUT]`。
 
+`#DIALOGTYPE Repair` 可以显式设置页面窗口类型，主要用于数据库 NPC 导出后保持原页面的 `NPCDialogType`。
+
 ## 动作
 
 `#ACT` 和 `#ELSEACT` 支持：
@@ -84,12 +88,44 @@ LOCALMESSAGE 已完成操作。
 
 ```text
 [@BUY] [@SELL] [@BUYSELL] [@REPAIR] [@REFINE] [@REFINERETRIEVE]
-[@MASTERREFINE] [@ITEMFRAGMENT] [@ROLLDIE] [@ROLLYUT]
+[@COMPANIONMANAGE] [@WEDDINGRING] [@REFINEMENTSTONE] [@MASTERREFINE]
+[@WEAPONRESET] [@ITEMFRAGMENT] [@ACCESSORYREFINEUPGRADE]
+[@ACCESSORYREFINELEVEL] [@ACCESSORYRESET] [@WEAPONCRAFT]
+[@ACCESSORYREFINE] [@ROLLDIE] [@ROLLYUT]
 ```
 
 商品列表写在 `[TRADE]` 后，出售/修理类型写在 `[TYPES]` 后。货币默认使用金币，可用 `[CURRENCY]` 指定数据库中的货币名或 `CurrencyType`。
 
-## 导出现有 NPC
+## 数据库双向工具
+
+数据库编辑器工具栏提供：
+
+- `导出 NPC 文本`：把选中 NPC 或全部 NPC 导出为 `NPCInfo.txt` 和脚本文件。
+- `验证文本 NPC`：只解析和检查脚本，不写数据库。
+- `导入文本 NPC`：把文本脚本转换成 `NPCInfo/NPCPage/NPCButton/NPCCheck/NPCAction/NPCGood/NPCType`。
+
+推荐工作流：
+
+```text
+导出 NPC 文本 -> 修改脚本 -> 验证文本 NPC -> 导入文本 NPC -> 保存数据库 -> 关闭文本读取或删除脚本目录验证旧模式
+```
+
+导入模式：
+
+- 覆盖：清理匹配 NPC 的旧页面树，再导入新页面，推荐用于避免重复页面。
+- 合并：保留旧页面树，导入新页面并把入口页切到新脚本。
+- 只验证：不写数据库。
+
+匹配目标 NPC 时优先使用 `OverrideIndex`，其次使用 `Map + X + Y + NPCName`，找不到则新建 `NPCInfo` 和单点 `MapRegion`。
+
+导入数据库只接受能无损映射到旧模式的脚本。当前限制：
+
+- `CHECKCLASS` 导入数据库只支持 `All/None` 或单职业；多职业组合仍可用于文本运行时，但不能无损导入旧 DB 条件。
+- 带对话文本的 `GOTO` 不能导入数据库；无对话文本的 `GOTO` 会转换成旧 `SuccessPage`。
+- `LOCALMESSAGE` 当前只支持文本运行时，导入数据库时会报映射错误。
+- 无法导出的旧 DB 功能会写成 `; TODO` 注释，并出现在导出报告中。
+
+## 管理员导出命令
 
 游戏内管理员命令：
 
@@ -97,4 +133,4 @@ LOCALMESSAGE 已完成操作。
 @EXPORTNPCS
 ```
 
-该命令会导出到 `NpcTextPath` 目录，生成 `NPCInfo.export.txt` 和对应脚本。复杂条件和动作会用 `TODO` 注释保留，需要人工校对。
+该命令会导出到 `NpcTextPath` 目录，生成 `NPCInfo.txt` 和对应脚本。复杂条件和动作会用 `TODO` 注释保留，需要人工校对。

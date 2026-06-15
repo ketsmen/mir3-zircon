@@ -88,6 +88,9 @@ namespace Server.WinForms
             AddButton(toolStrip, "导出", (_, _) => ExportCurrent());
             AddButton(toolStrip, "导入 Mir2 掉落", (_, _) => ImportMir2Drops());
             AddButton(toolStrip, "导出 Mir2 掉落", (_, _) => ExportMir2Drops());
+            AddButton(toolStrip, "验证文本 NPC", (_, _) => ValidateTextNpcs());
+            AddButton(toolStrip, "导入文本 NPC", (_, _) => ImportTextNpcs());
+            AddButton(toolStrip, "导出 NPC 文本", (_, _) => ExportTextNpcs());
             _mapRegionButton = AddButton(toolStrip, "编辑地图区域", (_, _) => OpenSelectedMapRegion());
             toolStrip.Items.Add(new ToolStripSeparator());
             toolStrip.Items.Add(new ToolStripLabel("搜索"));
@@ -442,6 +445,157 @@ namespace Server.WinForms
             {
                 MessageBox.Show(this, ex.ToString(), "导出 Mir2 掉落失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void ValidateTextNpcs()
+        {
+            using FolderBrowserDialog dialog = new FolderBrowserDialog
+            {
+                Description = "选择包含 NPCInfo.txt 的文本 NPC 目录",
+                UseDescriptionForTitle = true,
+                SelectedPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Envir", "NPCs")
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.SelectedPath))
+                return;
+
+            try
+            {
+                TextNpcDatabaseImporter importer = new TextNpcDatabaseImporter(_session);
+                TextNpcDatabaseImportReport report = importer.Import(dialog.SelectedPath, TextNpcDatabaseImportMode.ValidateOnly);
+
+                MessageBox.Show(this, BuildTextNpcImportDetails(report), "验证文本 NPC 完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "验证文本 NPC 失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ImportTextNpcs()
+        {
+            if (_readOnly)
+            {
+                MessageBox.Show(this, "数据库当前以只读模式打开，不能导入文本 NPC。", "导入文本 NPC", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            using FolderBrowserDialog dialog = new FolderBrowserDialog
+            {
+                Description = "选择包含 NPCInfo.txt 的文本 NPC 目录",
+                UseDescriptionForTitle = true,
+                SelectedPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Envir", "NPCs")
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.SelectedPath))
+                return;
+
+            DialogResult choice = MessageBox.Show(
+                this,
+                "请选择导入方式：\r\n\r\n是：覆盖匹配 NPC 的旧页面树并导入新脚本。\r\n否：合并导入，保留旧页面树但把入口页切到新脚本。\r\n取消：只验证文本，不写入数据库。",
+                "导入文本 NPC",
+                MessageBoxButtons.YesNoCancel,
+                MessageBoxIcon.Question);
+
+            TextNpcDatabaseImportMode mode = choice switch
+            {
+                DialogResult.Yes => TextNpcDatabaseImportMode.ReplaceExisting,
+                DialogResult.No => TextNpcDatabaseImportMode.Merge,
+                _ => TextNpcDatabaseImportMode.ValidateOnly
+            };
+
+            try
+            {
+                TextNpcDatabaseImporter importer = new TextNpcDatabaseImporter(_session);
+                TextNpcDatabaseImportReport report = importer.Import(dialog.SelectedPath, mode);
+
+                _rootGrid?.RefreshBinding();
+                ShowChildLists(_rootGrid?.CurrentObject);
+
+                string details = BuildTextNpcImportDetails(report);
+                if (_onlineMode && mode != TextNpcDatabaseImportMode.ValidateOnly)
+                    details += "\r\n\r\n在线模式已写入数据库对象；已刷出的 NPC 需要重启或重新创建地图 NPC 后才会完全使用新入口页。";
+
+                MessageBox.Show(this, details, "导入文本 NPC 完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "导入文本 NPC 失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ExportTextNpcs()
+        {
+            List<NPCInfo> selected = _activeGrid?.SelectedObjects.OfType<NPCInfo>().Where(x => x != null).Distinct().ToList() ?? new List<NPCInfo>();
+            List<NPCInfo> source;
+
+            if (selected.Count > 0)
+            {
+                DialogResult exportSelected = MessageBox.Show(
+                    this,
+                    $"当前选中了 {selected.Count} 个 NPC。\r\n\r\n选择“是”只导出选中 NPC；选择“否”导出全部 NPC；选择“取消”停止导出。",
+                    "导出 NPC 文本",
+                    MessageBoxButtons.YesNoCancel,
+                    MessageBoxIcon.Question);
+
+                if (exportSelected == DialogResult.Cancel) return;
+                source = exportSelected == DialogResult.Yes ? selected : _session.GetCollection<NPCInfo>().Binding.ToList();
+            }
+            else
+            {
+                source = _session.GetCollection<NPCInfo>().Binding.ToList();
+            }
+
+            using FolderBrowserDialog dialog = new FolderBrowserDialog
+            {
+                Description = "请选择导出 NPC 文本脚本的输出目录",
+                UseDescriptionForTitle = true,
+                SelectedPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "NPCTextExport")
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.SelectedPath))
+                return;
+
+            bool overwrite = MessageBox.Show(
+                this,
+                "是否覆盖输出目录中已有的 NPCInfo.txt 和同名脚本文件？",
+                "导出 NPC 文本",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question) == DialogResult.Yes;
+
+            try
+            {
+                TextNpcDatabaseExporter exporter = new TextNpcDatabaseExporter();
+                TextNpcExportReport report = exporter.Export(dialog.SelectedPath, source, overwrite);
+
+                string details = report.ToDisplayText();
+                if (report.Todos.Count > 0)
+                    details += "\r\n\r\nTODO 示例:\r\n" + string.Join("\r\n", report.Todos.Take(20));
+
+                MessageBox.Show(this, details, "导出 NPC 文本完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "导出 NPC 文本失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private static string BuildTextNpcImportDetails(TextNpcDatabaseImportReport report)
+        {
+            string details = report.ToDisplayText();
+
+            if (report.LoadReport?.MissingMaps.Count > 0)
+                details += "\r\n\r\n缺失地图示例:\r\n" + string.Join("\r\n", report.LoadReport.MissingMaps.Distinct(StringComparer.OrdinalIgnoreCase).Take(20));
+            if (report.LoadReport?.MissingItems.Count > 0)
+                details += "\r\n\r\n缺失物品示例:\r\n" + string.Join("\r\n", report.LoadReport.MissingItems.Distinct(StringComparer.OrdinalIgnoreCase).Take(20));
+            if (report.LoadReport?.UnknownCommands.Count > 0)
+                details += "\r\n\r\n未知命令示例:\r\n" + string.Join("\r\n", report.LoadReport.UnknownCommands.Take(20));
+            if (report.LoadReport?.Failures.Count > 0)
+                details += "\r\n\r\n解析错误示例:\r\n" + string.Join("\r\n", report.LoadReport.Failures.Take(20));
+            if (report.Failures.Count > 0)
+                details += "\r\n\r\n数据库映射错误示例:\r\n" + string.Join("\r\n", report.Failures.Take(20));
+
+            return details;
         }
 
         private string GetModeText()

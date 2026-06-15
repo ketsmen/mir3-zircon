@@ -373,6 +373,23 @@ namespace Server.Envir
                 return true;
             }
 
+            if (directive.StartsWith("#DIALOGTYPE", StringComparison.OrdinalIgnoreCase))
+            {
+                List<string> parts = TokenizeLine(directive);
+                if (parts.Count < 2)
+                {
+                    report.Failures.Add($"{line.Source}: #DIALOGTYPE 需要 NPCDialogType 名称。");
+                    return true;
+                }
+
+                if (!Enum.TryParse(parts[1], true, out NPCDialogType dialogType))
+                    report.Failures.Add($"{line.Source}: #DIALOGTYPE 无效 `{parts[1]}`。");
+                else
+                    page.DialogType = dialogType;
+
+                return true;
+            }
+
             return false;
         }
 
@@ -818,8 +835,17 @@ namespace Server.Envir
                 "@REPAIR" => NPCDialogType.Repair,
                 "@REFINE" => NPCDialogType.Refine,
                 "@REFINERETRIEVE" => NPCDialogType.RefineRetrieve,
+                "@COMPANIONMANAGE" => NPCDialogType.CompanionManage,
+                "@WEDDINGRING" => NPCDialogType.WeddingRing,
+                "@REFINEMENTSTONE" => NPCDialogType.RefinementStone,
                 "@MASTERREFINE" => NPCDialogType.MasterRefine,
+                "@WEAPONRESET" => NPCDialogType.WeaponReset,
                 "@ITEMFRAGMENT" => NPCDialogType.ItemFragment,
+                "@ACCESSORYREFINEUPGRADE" => NPCDialogType.AccessoryRefineUpgrade,
+                "@ACCESSORYREFINELEVEL" => NPCDialogType.AccessoryRefineLevel,
+                "@ACCESSORYRESET" => NPCDialogType.AccessoryReset,
+                "@WEAPONCRAFT" => NPCDialogType.WeaponCraft,
+                "@ACCESSORYREFINE" => NPCDialogType.AccessoryRefine,
                 "@ROLLDIE" => NPCDialogType.RollDie,
                 "@ROLLYUT" => NPCDialogType.RollYut,
                 _ => NPCDialogType.None
@@ -947,125 +973,9 @@ namespace Server.Envir
 
     public sealed class TextNpcExporter
     {
-        public void Export(string npcDirectory, IEnumerable<NPCInfo> npcs, bool overwrite)
+        public TextNpcExportReport Export(string npcDirectory, IEnumerable<NPCInfo> npcs, bool overwrite)
         {
-            Directory.CreateDirectory(npcDirectory);
-
-            string infoPath = Path.Combine(npcDirectory, "NPCInfo.export.txt");
-            if (File.Exists(infoPath) && !overwrite)
-                throw new IOException($"导出文件已存在: {infoPath}");
-
-            StringBuilder info = new();
-            foreach (NPCInfo npc in npcs.Where(x => x.Region?.Map != null && x.EntryPage != null).OrderBy(x => x.Index))
-            {
-                Point point = npc.Region.PointList?.FirstOrDefault() ?? npc.Region.PointRegion?.FirstOrDefault() ?? Point.Empty;
-                string scriptFile = $"{SanitizeFileName(npc.NPCName)}_{npc.Index}.txt";
-
-                info.AppendLine($"{npc.Region.Map.FileName} {point.X} {point.Y} \"{npc.NPCName}\" {npc.Image} {npc.FaceImage} \"{scriptFile}\" MapIcon={npc.MapIcon} OverrideIndex={npc.Index}");
-                ExportScript(Path.Combine(npcDirectory, scriptFile), npc.EntryPage, overwrite);
-            }
-
-            File.WriteAllText(infoPath, info.ToString(), Encoding.UTF8);
-        }
-
-        private static void ExportScript(string path, NPCPage entryPage, bool overwrite)
-        {
-            if (File.Exists(path) && !overwrite)
-                throw new IOException($"导出文件已存在: {path}");
-
-            Dictionary<NPCPage, string> keys = [];
-            Queue<NPCPage> queue = new();
-
-            keys[entryPage] = "@MAIN";
-            queue.Enqueue(entryPage);
-
-            while (queue.Count > 0)
-            {
-                NPCPage page = queue.Dequeue();
-
-                foreach (NPCButton button in page.Buttons)
-                {
-                    if (button.DestinationPage == null || keys.ContainsKey(button.DestinationPage)) continue;
-
-                    keys[button.DestinationPage] = $"@PAGE{keys.Count + 1}";
-                    queue.Enqueue(button.DestinationPage);
-                }
-
-                if (page.SuccessPage != null && !keys.ContainsKey(page.SuccessPage))
-                {
-                    keys[page.SuccessPage] = $"@PAGE{keys.Count + 1}";
-                    queue.Enqueue(page.SuccessPage);
-                }
-            }
-
-            StringBuilder script = new();
-            foreach (KeyValuePair<NPCPage, string> pair in keys)
-            {
-                NPCPage page = pair.Key;
-                script.AppendLine($"[{pair.Value}]");
-
-                if (page.Checks.Count > 0)
-                {
-                    script.AppendLine("#IF");
-                    foreach (NPCCheck check in page.Checks)
-                        script.AppendLine($"; TODO 手动迁移条件: {check.CheckType}");
-                }
-
-                script.AppendLine("#SAY");
-                script.AppendLine(ConvertButtonsForExport(page.Say, page, keys));
-
-                if (page.Actions.Count > 0)
-                {
-                    script.AppendLine("#ACT");
-                    foreach (NPCAction action in page.Actions)
-                        script.AppendLine($"; TODO 手动迁移动作: {action.ActionType}");
-                }
-
-                if (page.SuccessPage != null && keys.TryGetValue(page.SuccessPage, out string successKey))
-                    script.AppendLine($"#SUCCESS {successKey}");
-
-                if (page.Goods.Count > 0)
-                {
-                    script.AppendLine("[TRADE]");
-                    foreach (NPCGood good in page.Goods)
-                        if (good.Item != null)
-                            script.AppendLine($"\"{good.Item.ItemName}\" {good.Rate}");
-                }
-
-                if (page.Types.Count > 0)
-                {
-                    script.AppendLine("[TYPES]");
-                    script.AppendLine(string.Join(" ", page.Types.Select(x => x.ItemType)));
-                }
-
-                script.AppendLine();
-            }
-
-            File.WriteAllText(path, script.ToString(), Encoding.UTF8);
-        }
-
-        private static string ConvertButtonsForExport(string say, NPCPage page, Dictionary<NPCPage, string> keys)
-        {
-            if (string.IsNullOrWhiteSpace(say)) return string.Empty;
-
-            Dictionary<int, NPCButton> buttons = page.Buttons.ToDictionary(x => x.ButtonID);
-
-            return Regex.Replace(say, @"\[(?<Text>.*?):(?<ID>\d+)\]", match =>
-            {
-                if (!int.TryParse(match.Groups["ID"].Value, out int id)) return match.Value;
-                if (!buttons.TryGetValue(id, out NPCButton button)) return match.Value;
-                if (button.DestinationPage == null || !keys.TryGetValue(button.DestinationPage, out string destination)) return match.Value;
-
-                return $"<{match.Groups["Text"].Value}/{destination}>";
-            });
-        }
-
-        private static string SanitizeFileName(string name)
-        {
-            foreach (char c in Path.GetInvalidFileNameChars())
-                name = name.Replace(c, '_');
-
-            return string.IsNullOrWhiteSpace(name) ? "NPC" : name;
+            return new TextNpcDatabaseExporter().Export(npcDirectory, npcs, overwrite);
         }
     }
 

@@ -37,4 +37,3 @@ CHECKGOLD 100
 TAKEGOLD 100
 ; Adjust map and coordinates before using.
 MOVE 0 330 330
-LOCALMESSAGE 已传送。

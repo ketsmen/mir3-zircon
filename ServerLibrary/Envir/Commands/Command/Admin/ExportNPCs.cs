@@ -15,10 +15,10 @@ namespace Server.Envir.Commands.Admin
         {
             string path = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Config.NpcTextPath));
 
-            TextNpcExporter exporter = new();
-            exporter.Export(path, SEnvir.NPCInfoList.Binding, true);
+            TextNpcDatabaseExporter exporter = new();
+            TextNpcExportReport report = exporter.Export(path, SEnvir.NPCInfoList.Binding, true);
 
-            player.Connection.ReceiveChat($"NPC 已导出到 {path}", MessageType.System);
+            player.Connection.ReceiveChat($"NPC 已导出到 {path}，NPC={report.NpcsExported}，页面={report.PagesExported}，TODO={report.TodoLines}", MessageType.System);
         }
     }
 }
