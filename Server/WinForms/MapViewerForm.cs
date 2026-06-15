@@ -135,6 +135,30 @@ namespace Server.WinForms
             }
         }
 
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (IsSelectionDirty())
+            {
+                DialogResult result = MessageBox.Show(
+                    this,
+                    "地图区域有未保存的选择变更。\r\n\r\n是：写入当前 MapRegion 后关闭。\r\n否：放弃变更并关闭。\r\n取消：继续编辑。",
+                    "未保存的地图区域",
+                    MessageBoxButtons.YesNoCancel,
+                    MessageBoxIcon.Warning);
+
+                if (result == DialogResult.Cancel)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+
+                if (result == DialogResult.Yes)
+                    Save(showMessage: false);
+            }
+
+            base.OnFormClosing(e);
+        }
+
         private void BuildLayout()
         {
             ToolStrip toolStrip = new ToolStrip();
@@ -243,7 +267,7 @@ namespace Server.WinForms
             }
         }
 
-        private void Save()
+        private void Save(bool showMessage = true)
         {
             if (MapRegion == null || _map.IsEmpty) return;
 
@@ -270,7 +294,9 @@ namespace Server.WinForms
             UpdateCommands();
             UpdateStatus();
             RegionSaved?.Invoke(this, EventArgs.Empty);
-            MessageBox.Show(this, "地图区域选择已写入当前 MapRegion，请在数据库编辑器中保存数据库。", "地图查看器", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            if (showMessage)
+                MessageBox.Show(this, "地图区域选择已写入当前 MapRegion，请在数据库编辑器中保存数据库。", "地图查看器", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void CancelSelection()
