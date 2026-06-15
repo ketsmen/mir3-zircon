@@ -701,6 +701,8 @@ namespace Server.WinForms
 
             int startColumn = _grid.CurrentCell?.ColumnIndex ?? GetFirstVisibleColumnIndex();
             if (startColumn < 0) return;
+            List<DataGridViewColumn> pasteColumns = GetPasteColumns(startColumn);
+            if (pasteColumns.Count == 0) return;
 
             object startObject = _grid.CurrentRow?.DataBoundItem;
             int startRow = _grid.CurrentCell?.RowIndex ?? 0;
@@ -728,10 +730,10 @@ namespace Server.WinForms
                 string[] values = lines[lineIndex].Split('\t');
                 int targetRow = startRow + lineIndex - firstDataLine;
 
-                for (int columnOffset = 0; columnOffset < values.Length && startColumn + columnOffset < _grid.Columns.Count; columnOffset++)
+                for (int columnOffset = 0; columnOffset < values.Length && columnOffset < pasteColumns.Count; columnOffset++)
                 {
-                    DataGridViewColumn column = _grid.Columns[startColumn + columnOffset];
-                    if (!column.Visible || column.ReadOnly) continue;
+                    DataGridViewColumn column = pasteColumns[columnOffset];
+                    if (column.ReadOnly) continue;
 
                     PropertyInfo property = _itemType.GetProperty(column.DataPropertyName);
                     if (property == null || !CanWrite(property)) continue;
@@ -756,6 +758,19 @@ namespace Server.WinForms
                 _grid.Refresh();
                 OnContentChanged();
             }
+        }
+
+        private List<DataGridViewColumn> GetPasteColumns(int startColumn)
+        {
+            if (startColumn < 0 || startColumn >= _grid.Columns.Count) return new List<DataGridViewColumn>();
+
+            DataGridViewColumn current = _grid.Columns[startColumn];
+            int startDisplayIndex = current.Visible ? current.DisplayIndex : 0;
+
+            return _grid.Columns.Cast<DataGridViewColumn>()
+                .Where(x => x.Visible && x.DisplayIndex >= startDisplayIndex)
+                .OrderBy(x => x.DisplayIndex)
+                .ToList();
         }
 
         private int GetFirstVisibleColumnIndex()
