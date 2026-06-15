@@ -35,6 +35,10 @@ namespace Server.WinForms
         private readonly Label _statusLabel = new Label();
         private readonly System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer();
         private ToolStripMenuItem _pluginsMenu;
+        private ToolStripMenuItem _startMenuItem;
+        private ToolStripMenuItem _stopMenuItem;
+        private ToolStripButton _startToolButton;
+        private ToolStripButton _stopToolButton;
         private Session _pluginSession;
         private const int MaxLogLines = 2000;
 
@@ -97,8 +101,8 @@ namespace Server.WinForms
             menu.Margin = Padding.Empty;
 
             ToolStripMenuItem serverMenu = new ToolStripMenuItem("服务端");
-            serverMenu.DropDownItems.Add("启动", null, (_, _) => StartServer());
-            serverMenu.DropDownItems.Add("停止", null, (_, _) => StopServer());
+            _startMenuItem = (ToolStripMenuItem)serverMenu.DropDownItems.Add("启动", null, (_, _) => StartServer());
+            _stopMenuItem = (ToolStripMenuItem)serverMenu.DropDownItems.Add("停止", null, (_, _) => StopServer());
             serverMenu.DropDownItems.Add(new ToolStripSeparator());
             serverMenu.DropDownItems.Add("退出", null, (_, _) => Close());
 
@@ -179,8 +183,8 @@ namespace Server.WinForms
 
             ToolStrip toolStrip = new ToolStrip();
             toolStrip.Margin = Padding.Empty;
-            AddToolButton(toolStrip, "启动", (_, _) => StartServer());
-            AddToolButton(toolStrip, "停止", (_, _) => StopServer());
+            _startToolButton = AddToolButton(toolStrip, "启动", (_, _) => StartServer());
+            _stopToolButton = AddToolButton(toolStrip, "停止", (_, _) => StopServer());
             AddToolButton(toolStrip, "数据库", (_, _) => OpenDatabaseEditor());
             AddToolButton(toolStrip, "物品", (_, _) => OpenDatabaseEditor("ItemInfo"));
             AddToolButton(toolStrip, "怪物", (_, _) => OpenDatabaseEditor("MonsterInfo"));
@@ -219,6 +223,7 @@ namespace Server.WinForms
             Controls.Add(layout);
 
             MainMenuStrip = menu;
+            UpdateServerCommandState();
         }
 
         private void BuildLogMenu()
@@ -417,6 +422,7 @@ namespace Server.WinForms
             AddMetric("对象");
             AddMetric("处理");
             AddMetric("循环");
+            AddMetric("运行");
             AddMetric("延迟");
             AddMetric("下载");
             AddMetric("上传");
@@ -459,11 +465,12 @@ namespace Server.WinForms
             _metricsPanel.Controls.Add(panel);
         }
 
-        private static void AddToolButton(ToolStrip toolStrip, string text, EventHandler click)
+        private static ToolStripButton AddToolButton(ToolStrip toolStrip, string text, EventHandler click)
         {
             ToolStripButton button = new ToolStripButton(text);
             button.Click += click;
             toolStrip.Items.Add(button);
+            return button;
         }
 
         private void AddDatabaseShortcut(ToolStripMenuItem menu, string text, string typeName)
@@ -623,6 +630,7 @@ namespace Server.WinForms
         {
             DrainLogQueue(SEnvir.DisplayLogs, _systemLogs, _systemLogList);
             DrainLogQueue(SEnvir.DisplayChatLogs, _chatLogs, _chatLogList);
+            UpdateServerCommandState();
 
             SetStatusText(
                 _statusLabel,
@@ -633,10 +641,22 @@ namespace Server.WinForms
             SetMetric("对象", $"{SEnvir.ActiveObjects.Count:#,##0}/{SEnvir.Objects.Count:#,##0}");
             SetMetric("处理", SEnvir.ProcessObjectCount.ToString("#,##0"));
             SetMetric("循环", SEnvir.LoopCount.ToString("#,##0"));
+            SetMetric("运行", GetUptimeText());
             SetMetric("延迟", $"连接 {SEnvir.ConDelay:#,##0}ms / 保存 {SEnvir.SaveDelay:#,##0}ms");
             SetMetric("下载", $"{FormatBytes(SEnvir.TotalBytesReceived)} / {FormatBytes(SEnvir.DownloadSpeed)}/s");
             SetMetric("上传", $"{FormatBytes(SEnvir.TotalBytesSent)} / {FormatBytes(SEnvir.UploadSpeed)}/s");
             SetMetric("邮件", EmailService.EMailsSent.ToString("#,##0"));
+        }
+
+        private void UpdateServerCommandState()
+        {
+            bool canStart = SEnvir.EnvirThread == null;
+            bool canStop = SEnvir.Started;
+
+            SetEnabled(_startMenuItem, canStart);
+            SetEnabled(_startToolButton, canStart);
+            SetEnabled(_stopMenuItem, canStop);
+            SetEnabled(_stopToolButton, canStop);
         }
 
         private void DrainLogQueue(ConcurrentQueue<string> queue, List<string> source, ListBox list)
@@ -754,6 +774,13 @@ namespace Server.WinForms
             label.Text = value;
         }
 
+        private static void SetEnabled(ToolStripItem item, bool enabled)
+        {
+            if (item == null || item.Enabled == enabled) return;
+
+            item.Enabled = enabled;
+        }
+
         private static void SetDoubleBuffered(Control control)
         {
             typeof(Control).GetProperty("DoubleBuffered", BindingFlags.Instance | BindingFlags.NonPublic)
@@ -770,6 +797,18 @@ namespace Server.WinForms
             if (value > mb) return $"{value / mb:#,##0.0}MB";
             if (value > kb) return $"{value / kb:#,##0}KB";
             return $"{value:#,##0}B";
+        }
+
+        private static string GetUptimeText()
+        {
+            if (SEnvir.EnvirThread == null || SEnvir.StartTime == DateTime.MinValue)
+                return "-";
+
+            TimeSpan uptime = Time.Now - SEnvir.StartTime;
+            if (uptime.TotalDays >= 1)
+                return $"{(int)uptime.TotalDays}天 {uptime:hh\\:mm\\:ss}";
+
+            return uptime.ToString("hh\\:mm\\:ss");
         }
     }
 }
