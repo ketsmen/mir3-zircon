@@ -181,10 +181,12 @@ namespace Server.WinForms
             AddDatabaseShortcut(playerDataMenu, "宠物", "CompanionInfo");
             AddDatabaseShortcut(playerDataMenu, "宠物等级", "CompanionLevelInfo");
             AddDatabaseShortcut(playerDataMenu, "宠物技能", "CompanionSkillInfo");
+            AddDatabaseShortcut(playerDataMenu, "宠物发言", "CompanionSpeech");
             AddDatabaseShortcut(playerDataMenu, "帮助", "HelpInfo");
 
             ToolStripMenuItem mapDataMenu = AddDatabaseGroup(databaseMenu, "地图");
             AddDatabaseShortcut(mapDataMenu, "地图", "MapInfo");
+            AddDatabaseShortcut(mapDataMenu, "地图属性", "MapInfoStat");
             AddDatabaseShortcut(mapDataMenu, "副本", "InstanceInfo");
             AddDatabaseShortcut(mapDataMenu, "地图区域", "MapRegion");
             AddDatabaseShortcut(mapDataMenu, "移动点", "MovementInfo");
@@ -193,6 +195,9 @@ namespace Server.WinForms
             AddDatabaseShortcut(mapDataMenu, "矿点", "MineInfo");
             AddDatabaseShortcut(mapDataMenu, "钓鱼", "FishingInfo");
             AddDatabaseShortcut(mapDataMenu, "城堡", "CastleInfo");
+            AddDatabaseShortcut(mapDataMenu, "城堡旗帜", "CastleFlagInfo");
+            AddDatabaseShortcut(mapDataMenu, "城堡门", "CastleGateInfo");
+            AddDatabaseShortcut(mapDataMenu, "城堡守卫", "CastleGuardInfo");
             mapDataMenu.DropDownItems.Add("事件总览", null, (_, _) => OpenEventEditor());
             AddDatabaseShortcut(mapDataMenu, "世界事件", "WorldEventInfo");
             AddDatabaseShortcut(mapDataMenu, "玩家事件", "PlayerEventInfo");
@@ -210,6 +215,7 @@ namespace Server.WinForms
             AddDatabaseShortcut(itemDataMenu, "物品", "ItemInfo");
             AddDatabaseShortcut(itemDataMenu, "物品属性", "ItemInfoStat");
             AddDatabaseShortcut(itemDataMenu, "套装", "SetInfo");
+            AddDatabaseShortcut(itemDataMenu, "套装属性", "SetInfoStat");
             AddDatabaseShortcut(itemDataMenu, "武器制作属性", "WeaponCraftStatInfo");
             AddDatabaseShortcut(itemDataMenu, "礼包", "BundleInfo");
             AddDatabaseShortcut(itemDataMenu, "宝箱", "LootBoxInfo");
@@ -455,11 +461,13 @@ namespace Server.WinForms
                 AddDatabaseNavigation(player, "宠物", "CompanionInfo");
                 AddDatabaseNavigation(player, "宠物等级", "CompanionLevelInfo");
                 AddDatabaseNavigation(player, "宠物技能", "CompanionSkillInfo");
+                AddDatabaseNavigation(player, "宠物发言", "CompanionSpeech");
                 AddDatabaseNavigation(player, "货币", "CurrencyInfo");
                 AddDatabaseNavigation(player, "帮助", "HelpInfo");
 
                 TreeNode map = AddNavigationGroup("地图");
                 AddDatabaseNavigation(map, "地图", "MapInfo");
+                AddDatabaseNavigation(map, "地图属性", "MapInfoStat");
                 AddDatabaseNavigation(map, "副本", "InstanceInfo");
                 AddDatabaseNavigation(map, "地图区域", "MapRegion");
                 AddDatabaseNavigation(map, "移动点", "MovementInfo");
@@ -468,6 +476,9 @@ namespace Server.WinForms
                 AddDatabaseNavigation(map, "矿点", "MineInfo");
                 AddDatabaseNavigation(map, "钓鱼", "FishingInfo");
                 AddDatabaseNavigation(map, "城堡", "CastleInfo");
+                AddDatabaseNavigation(map, "城堡旗帜", "CastleFlagInfo");
+                AddDatabaseNavigation(map, "城堡门", "CastleGateInfo");
+                AddDatabaseNavigation(map, "城堡守卫", "CastleGuardInfo");
                 AddNavigationAction(map, "事件总览", OpenEventEditor);
                 AddDatabaseNavigation(map, "世界事件", "WorldEventInfo");
                 AddDatabaseNavigation(map, "玩家事件", "PlayerEventInfo");
@@ -485,6 +496,7 @@ namespace Server.WinForms
                 AddDatabaseNavigation(item, "物品", "ItemInfo");
                 AddDatabaseNavigation(item, "物品属性", "ItemInfoStat");
                 AddDatabaseNavigation(item, "套装", "SetInfo");
+                AddDatabaseNavigation(item, "套装属性", "SetInfoStat");
                 AddDatabaseNavigation(item, "武器制作属性", "WeaponCraftStatInfo");
                 AddDatabaseNavigation(item, "礼包", "BundleInfo");
                 AddDatabaseNavigation(item, "宝箱", "LootBoxInfo");
