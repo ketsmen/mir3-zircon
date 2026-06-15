@@ -89,6 +89,12 @@ namespace Server.WinForms
                 }
             }
 
+            if (!ConfirmDatabaseEditorsBeforeExit())
+            {
+                e.Cancel = true;
+                return;
+            }
+
             SaveUiCache();
             base.OnFormClosing(e);
 
@@ -103,6 +109,35 @@ namespace Server.WinForms
             }
 
             ConfigReader.Save(typeof(Config).Assembly);
+        }
+
+        private bool ConfirmDatabaseEditorsBeforeExit()
+        {
+            if (_databaseEditorForm != null && !_databaseEditorForm.IsDisposed && _databaseEditorForm.HasUnsavedChanges)
+            {
+                MessageBox.Show(
+                    this,
+                    "离线数据库编辑器仍有未保存修改。请先保存或关闭数据库编辑器，再退出服务端管理器。",
+                    "未保存数据库",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                ActivateForm(_databaseEditorForm);
+                return false;
+            }
+
+            if (_onlineDatabaseEditorForm != null && !_onlineDatabaseEditorForm.IsDisposed && _onlineDatabaseEditorForm.HasUnsavedChanges)
+            {
+                MessageBox.Show(
+                    this,
+                    "在线数据库编辑器仍有未保存状态。请先保存或关闭数据库编辑器，再退出服务端管理器。",
+                    "未保存数据库",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                ActivateForm(_onlineDatabaseEditorForm);
+                return false;
+            }
+
+            return true;
         }
 
         private void BuildLayout()
