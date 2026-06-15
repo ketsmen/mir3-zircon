@@ -433,6 +433,20 @@ namespace Server.Envir
                 case "CANGAINITEM":
                     ParseItemCheck(line, checks, report, CompiledNpcCheckType.CanGainItem);
                     break;
+                case "HASWEAPON":
+                case "CHECKWEAPON":
+                    checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Weapon, Operator = Operator.Equal }, line));
+                    break;
+                case "NOWEAPON":
+                    checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Weapon, Operator = Operator.NotEqual }, line));
+                    break;
+                case "WEAPONCANREFINE":
+                case "CHECKWEAPONCANREFINE":
+                    checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.WeaponCanRefine, Operator = Operator.Equal }, line));
+                    break;
+                case "WEAPONCANNOTREFINE":
+                    checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.WeaponCanRefine, Operator = Operator.NotEqual }, line));
+                    break;
                 case "CHECKCLASS":
                     if (parts.Count >= 2 && TryParseRequiredClass(parts[1], out RequiredClass requiredClass))
                         checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Class, Class = requiredClass }, line));
@@ -1463,6 +1477,8 @@ namespace Server.Envir
         Gold,
         Item,
         CanGainItem,
+        Weapon,
+        WeaponCanRefine,
         Class,
         Gender,
         Fame,

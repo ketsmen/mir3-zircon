@@ -427,6 +427,12 @@ namespace Server.Envir
                 case CompiledNpcCheckType.CanGainItem:
                     check.CheckType = NPCCheckType.CanGainItem;
                     break;
+                case CompiledNpcCheckType.Weapon:
+                    check.CheckType = NPCCheckType.HasWeapon;
+                    break;
+                case CompiledNpcCheckType.WeaponCanRefine:
+                    check.CheckType = NPCCheckType.WeaponCanRefine;
+                    break;
                 case CompiledNpcCheckType.Class:
                     check.CheckType = NPCCheckType.Class;
                     check.Operator = Operator.Equal;
@@ -886,6 +892,14 @@ namespace Server.Envir
                     {
                         AddTodo(script, report, npc, page, "手动迁移背包空间条件: 缺少 ItemParameter1");
                     }
+                    break;
+                case NPCCheckType.HasWeapon:
+                    script.AppendLine(check.Operator == Operator.Equal ? "HASWEAPON" : "NOWEAPON");
+                    report.ChecksExported++;
+                    break;
+                case NPCCheckType.WeaponCanRefine:
+                    script.AppendLine(check.Operator == Operator.Equal ? "WEAPONCANREFINE" : "WEAPONCANNOTREFINE");
+                    report.ChecksExported++;
                     break;
                 case NPCCheckType.Class:
                     if (check.Operator == Operator.Equal && Enum.IsDefined(typeof(MirClass), check.IntParameter1))

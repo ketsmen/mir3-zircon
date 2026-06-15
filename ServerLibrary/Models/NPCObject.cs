@@ -515,6 +515,14 @@ namespace Server.Models
                         ItemCheck itemCheck = new(check.ItemParameter1, check.IntParameter1, UserItemFlags.None, TimeSpan.Zero);
                         if (!ob.CanGainItems(false, itemCheck)) return false;
                         break;
+                    case CompiledNpcCheckType.Weapon:
+                        if (ob.Equipment[(int)EquipmentSlot.Weapon] != null != (check.Operator == Operator.Equal)) return false;
+                        break;
+                    case CompiledNpcCheckType.WeaponCanRefine:
+                        UserItem weapon = ob.Equipment[(int)EquipmentSlot.Weapon];
+                        bool canRefine = weapon != null && (weapon.Flags & UserItemFlags.Refinable) == UserItemFlags.Refinable;
+                        if (canRefine != (check.Operator == Operator.Equal)) return false;
+                        break;
                     case CompiledNpcCheckType.Class:
                         if (!HasRequiredClass(check.Class, ob.Class)) return false;
                         break;
@@ -798,17 +806,21 @@ namespace Server.Models
                         break;
 
                     case NPCCheckType.WeaponLevel:
-                        if (!Compare(check.Operator, ob.Equipment[(int)EquipmentSlot.Weapon].Level, check.IntParameter1)) return false;
+                        weap = ob.Equipment[(int)EquipmentSlot.Weapon];
+                        if (weap == null || !Compare(check.Operator, weap.Level, check.IntParameter1)) return false;
                         break;
 
                     case NPCCheckType.WeaponCanRefine:
-                        if ((ob.Equipment[(int)EquipmentSlot.Weapon].Flags & UserItemFlags.Refinable) == UserItemFlags.Refinable != (check.Operator == Operator.Equal)) return false;
+                        weap = ob.Equipment[(int)EquipmentSlot.Weapon];
+                        if ((weap != null && (weap.Flags & UserItemFlags.Refinable) == UserItemFlags.Refinable) != (check.Operator == Operator.Equal)) return false;
                         break;
                     case NPCCheckType.WeaponAddedStats:
-                        if (!Compare(check.Operator, ob.Equipment[(int)EquipmentSlot.Weapon].Stats[check.StatParameter1], check.IntParameter1)) return false;
+                        weap = ob.Equipment[(int)EquipmentSlot.Weapon];
+                        if (weap == null || !Compare(check.Operator, weap.Stats[check.StatParameter1], check.IntParameter1)) return false;
                         break;
                     case NPCCheckType.WeaponElement:
                         weap = ob.Equipment[(int)EquipmentSlot.Weapon];
+                        if (weap == null) return false;
 
                         Stat element;
                         int value = 0;
@@ -952,13 +964,16 @@ namespace Server.Models
                         if (!ob.CanGainItems(false, itemCheck)) return false;
                         break;
                     case NPCCheckType.CanResetWeapon:
+                        weap = ob.Equipment[(int)EquipmentSlot.Weapon];
+                        if (weap == null) return false;
+
                         if (check.Operator == Operator.Equal)
                         {
-                            if (SEnvir.Now < ob.Equipment[(int)EquipmentSlot.Weapon].ResetCoolDown) return false;
+                            if (SEnvir.Now < weap.ResetCoolDown) return false;
                         }
                         else
                         {
-                            if (SEnvir.Now >= ob.Equipment[(int)EquipmentSlot.Weapon].ResetCoolDown) return false;
+                            if (SEnvir.Now >= weap.ResetCoolDown) return false;
                         }
                         break;
                     case NPCCheckType.Random:
