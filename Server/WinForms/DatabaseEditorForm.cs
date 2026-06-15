@@ -28,6 +28,7 @@ namespace Server.WinForms
         private readonly PropertyGrid _propertyGrid = new PropertyGrid();
         private readonly ToolStripTextBox _tableSearchText = new ToolStripTextBox();
         private readonly ToolStripTextBox _searchText = new ToolStripTextBox();
+        private readonly ToolStripTextBox _indexText = new ToolStripTextBox();
         private readonly ToolStripLabel _statusLabel = new ToolStripLabel();
         private ToolStripButton _mapRegionButton;
 
@@ -124,6 +125,21 @@ namespace Server.WinForms
                 UpdateGridStatus();
             };
             toolStrip.Items.Add(_searchText);
+            toolStrip.Items.Add(new ToolStripSeparator());
+            toolStrip.Items.Add(new ToolStripLabel("Index"));
+            _indexText.AutoSize = false;
+            _indexText.Width = 80;
+            _indexText.ToolTipText = "输入对象 Index 后跳转到当前表或当前子表的对应行。";
+            _indexText.KeyDown += (_, e) =>
+            {
+                if (e.KeyCode != Keys.Enter) return;
+
+                JumpToIndex();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            };
+            toolStrip.Items.Add(_indexText);
+            AddButton(toolStrip, "跳转", (_, _) => JumpToIndex());
             toolStrip.Items.Add(new ToolStripSeparator());
             _statusLabel.Text = GetModeText();
             toolStrip.Items.Add(_statusLabel);
@@ -431,6 +447,45 @@ namespace Server.WinForms
             if (_mapRegionButton == null) return;
 
             _mapRegionButton.Enabled = !_readOnly && _activeGrid?.CurrentObject is MapRegion;
+        }
+
+        private void JumpToIndex()
+        {
+            if (_activeGrid == null) return;
+
+            if (!int.TryParse(_indexText.Text?.Trim(), out int index))
+            {
+                MessageBox.Show(this, "请输入有效的数字 Index。", "跳转", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_activeGrid.SelectByIndex(index))
+            {
+                UpdateGridStatus();
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_searchText.Text))
+            {
+                DialogResult result = MessageBox.Show(
+                    this,
+                    $"当前过滤结果中没有 Index={index} 的对象。\r\n\r\n是否清空搜索后重试？",
+                    "跳转",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (result == DialogResult.Yes)
+                {
+                    _searchText.Text = string.Empty;
+                    if (_activeGrid.SelectByIndex(index))
+                    {
+                        UpdateGridStatus();
+                        return;
+                    }
+                }
+            }
+
+            MessageBox.Show(this, $"当前表中没有找到 Index={index} 的对象。", "跳转", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void OpenSelectedMapRegion()

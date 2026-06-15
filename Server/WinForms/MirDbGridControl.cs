@@ -101,6 +101,26 @@ namespace Server.WinForms
             RefreshBinding();
         }
 
+        public bool SelectByIndex(int index)
+        {
+            foreach (DataGridViewRow row in _grid.Rows)
+            {
+                if (row.DataBoundItem is not DBObject dbObject || dbObject.Index != index) continue;
+
+                _grid.ClearSelection();
+                _grid.CurrentCell = row.Cells.Cast<DataGridViewCell>().FirstOrDefault(x => x.Visible);
+                row.Selected = true;
+                if (row.Index >= 0 && row.Index < _grid.Rows.Count)
+                    _grid.FirstDisplayedScrollingRowIndex = row.Index;
+
+                CurrentObjectChanged?.Invoke(this, EventArgs.Empty);
+                BecameActive?.Invoke(this, EventArgs.Empty);
+                return true;
+            }
+
+            return false;
+        }
+
         public void AddNew()
         {
             if (_readOnly) return;
