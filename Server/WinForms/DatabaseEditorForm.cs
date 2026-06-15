@@ -34,6 +34,7 @@ namespace Server.WinForms
         private readonly ToolStripLabel _statusLabel = new ToolStripLabel();
         private ToolStripButton _openMapButton;
         private ToolStripButton _mapRegionButton;
+        private DiagnosticsForm _diagnosticsForm;
 
         private MirDbGridControl _rootGrid;
         private MirDbGridControl _activeGrid;
@@ -104,7 +105,12 @@ namespace Server.WinForms
         protected override void Dispose(bool disposing)
         {
             if (disposing)
+            {
+                if (_diagnosticsForm != null && !_diagnosticsForm.IsDisposed)
+                    _diagnosticsForm.Close();
+
                 _lockService.Dispose();
+            }
 
             base.Dispose(disposing);
         }
@@ -983,9 +989,28 @@ namespace Server.WinForms
 
         private void OpenDiagnostics()
         {
-            DiagnosticsForm form = new DiagnosticsForm(_session);
-            form.DatabaseChanged += (_, _) => MarkExternalDatabaseChanged();
-            form.Show(this);
+            if (_diagnosticsForm == null || _diagnosticsForm.IsDisposed)
+            {
+                _diagnosticsForm = new DiagnosticsForm(_session);
+                _diagnosticsForm.DatabaseChanged += (_, _) => MarkExternalDatabaseChanged();
+                _diagnosticsForm.FormClosed += (_, _) => _diagnosticsForm = null;
+                _diagnosticsForm.Show(this);
+            }
+            else
+            {
+                ActivateForm(_diagnosticsForm);
+            }
+
+            _diagnosticsForm?.ShowReportPage();
+        }
+
+        private static void ActivateForm(Form form)
+        {
+            if (form.WindowState == FormWindowState.Minimized)
+                form.WindowState = FormWindowState.Normal;
+
+            form.BringToFront();
+            form.Activate();
         }
 
         private List<string> ValidateDatabaseCore()
