@@ -447,6 +447,7 @@ namespace Server.WinForms
 
             RefreshBinding();
             UpdateSortGlyphs();
+            BecameActive?.Invoke(this, EventArgs.Empty);
         }
 
         private void UpdateSortGlyphs()
@@ -474,6 +475,7 @@ namespace Server.WinForms
             _sortDirection = ListSortDirection.Ascending;
             RefreshBinding();
             UpdateSortGlyphs();
+            BecameActive?.Invoke(this, EventArgs.Empty);
         }
 
         private void CopyCurrentCell()
