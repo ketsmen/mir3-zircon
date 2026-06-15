@@ -492,6 +492,9 @@ namespace Server.WinForms
                 _pluginSession = MirDbSessionFactory.Open(SessionMode.System);
                 if (CurrencyBootstrapService.EnsureDefaultCurrencies(_pluginSession, true))
                     SEnvir.Log("已补齐默认货币数据。");
+                int migratedMapStats = MapInfoBootstrapService.MigrateLegacyBuffStats(_pluginSession, true);
+                if (migratedMapStats > 0)
+                    SEnvir.Log($"已迁移 {migratedMapStats:#,##0} 条旧地图倍率字段到 BuffStats。");
 
                 PluginLoader.Instance.Log += (_, e) => SEnvir.Log(e.Message);
                 PluginLoader.Instance.View += (_, e) => MessageBox.Show(this, $"插件请求打开视图: {e.View?.FullName}", "插件", MessageBoxButtons.OK, MessageBoxIcon.Information);
