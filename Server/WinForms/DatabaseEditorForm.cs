@@ -143,6 +143,7 @@ namespace Server.WinForms
         {
             ToolStrip toolStrip = new ToolStrip();
             AddButton(toolStrip, "保存", (_, _) => SaveDatabase());
+            AddButton(toolStrip, "验证", (_, _) => ValidateDatabase());
             AddButton(toolStrip, "新增", (_, _) => _activeGrid?.AddNew());
             AddButton(toolStrip, "插入到当前行后", (_, _) => _activeGrid?.InsertAfterCurrent());
             AddButton(toolStrip, "复制当前", (_, _) => _activeGrid?.DuplicateCurrent());
@@ -742,12 +743,10 @@ namespace Server.WinForms
                 return;
             }
 
-            List<string> validationMessages = new ValidationService(_metadata).Validate();
+            List<string> validationMessages = ValidateDatabaseCore();
             if (validationMessages.Count > 0)
             {
-                string text = string.Join("\r\n", validationMessages.Take(20));
-                if (validationMessages.Count > 20)
-                    text += $"\r\n... 还有 {validationMessages.Count - 20} 条。";
+                string text = FormatValidationMessages(validationMessages, 20);
 
                 if (MessageBox.Show(this, $"保存前发现以下问题：\r\n\r\n{text}\r\n\r\n仍然继续保存吗？", "验证", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                     return;
@@ -798,6 +797,46 @@ namespace Server.WinForms
 
                 MessageBox.Show(this, ex.ToString(), "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void ValidateDatabase()
+        {
+            try
+            {
+                UseWaitCursor = true;
+                List<string> validationMessages = ValidateDatabaseCore();
+
+                if (validationMessages.Count == 0)
+                {
+                    MessageBox.Show(this, "数据库验证完成，未发现重复身份字段或断开的对象引用。", "验证", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                string text = FormatValidationMessages(validationMessages, 50);
+                MessageBox.Show(this, $"数据库验证完成，发现 {validationMessages.Count:#,##0} 条问题：\r\n\r\n{text}", "验证", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "验证失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                UseWaitCursor = false;
+            }
+        }
+
+        private List<string> ValidateDatabaseCore()
+        {
+            return new ValidationService(_metadata).Validate();
+        }
+
+        private static string FormatValidationMessages(List<string> messages, int maxMessages)
+        {
+            string text = string.Join("\r\n", messages.Take(maxMessages));
+            if (messages.Count > maxMessages)
+                text += $"\r\n... 还有 {messages.Count - maxMessages} 条。";
+
+            return text;
         }
 
         private string RefreshOnlineRuntimeCaches()
