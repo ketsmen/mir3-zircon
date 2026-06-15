@@ -33,12 +33,6 @@ namespace Client.Rendering
         private static TextureFilterMode _fallbackTextureFilter = TextureFilterMode.Point;
         private static readonly object GraphicsLock = new();
         private static string _pendingPipelineId;
-        private static int _drawRequests;
-        private static int _d2DDraws;
-        private static int _d2DFlushes;
-        private static int _d3DDrawCalls;
-        private static int _d3DBatchFlushes;
-        private static int _d3DSprites;
 
         static RenderingPipelineManager()
         {
@@ -562,45 +556,6 @@ namespace Client.Rendering
 
         internal static SpriteShaderEffectRequest? GetSpriteShaderEffect() => _spriteShaderEffect;
 
-        internal static void RecordD2DDraw()
-        {
-            _d2DDraws++;
-        }
-
-        internal static void RecordD2DFlush()
-        {
-            _d2DFlushes++;
-        }
-
-        internal static void RecordD3DDrawCall()
-        {
-            _d3DDrawCalls++;
-        }
-
-        internal static void RecordD3DBatchFlush()
-        {
-            _d3DBatchFlushes++;
-        }
-
-        internal static void RecordD3DSprite()
-        {
-            _d3DSprites++;
-        }
-
-        public static RenderingStatistics GetAndResetStatistics()
-        {
-            RenderingStatistics result = new RenderingStatistics(_drawRequests, _d2DDraws, _d2DFlushes, _d3DDrawCalls, _d3DBatchFlushes, _d3DSprites);
-
-            _drawRequests = 0;
-            _d2DDraws = 0;
-            _d2DFlushes = 0;
-            _d3DDrawCalls = 0;
-            _d3DBatchFlushes = 0;
-            _d3DSprites = 0;
-
-            return result;
-        }
-
         public static void DrawLine(IReadOnlyList<LinePoint> points, Color colour)
         {
             if (points == null || points.Count == 0)
@@ -619,8 +574,6 @@ namespace Client.Rendering
 
             if (_activePipeline == null)
                 throw new InvalidOperationException("No rendering pipeline has been initialized.");
-
-            _drawRequests++;
 
             if (_activePipeline is SilkVulkan.SilkVulkanRenderingPipeline vulkanPipeline)
             {
@@ -657,7 +610,6 @@ namespace Client.Rendering
             if (_activePipeline == null)
                 throw new InvalidOperationException("No rendering pipeline has been initialized.");
 
-            _drawRequests++;
             _activePipeline.DrawTexture(texture, sourceRectangle, destinationRectangle, colour);
         }
 
@@ -669,7 +621,6 @@ namespace Client.Rendering
             if (_activePipeline == null)
                 throw new InvalidOperationException("No rendering pipeline has been initialized.");
 
-            _drawRequests++;
             _activePipeline.DrawTexture(texture, sourceRectangle, transform, center, translation, colour);
         }
 
