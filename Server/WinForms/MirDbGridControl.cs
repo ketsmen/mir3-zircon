@@ -53,6 +53,7 @@ namespace Server.WinForms
             _grid.SelectionChanged += (_, _) => CurrentObjectChanged?.Invoke(this, EventArgs.Empty);
             _grid.Enter += (_, _) => BecameActive?.Invoke(this, EventArgs.Empty);
             _grid.CellMouseDown += Grid_CellMouseDown;
+            _grid.KeyDown += Grid_KeyDown;
 
             BuildContextMenu();
 
@@ -281,6 +282,186 @@ namespace Server.WinForms
             _grid.ClearSelection();
             foreach (DataGridViewCell cell in _grid.CurrentRow.Cells)
                 cell.Selected = true;
+        }
+
+        private void Grid_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (_readOnly || !e.Control || e.KeyCode != Keys.V) return;
+
+            PasteClipboardTable();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+
+        private void PasteClipboardTable()
+        {
+            if (_grid.CurrentCell == null || !Clipboard.ContainsText()) return;
+
+            string text = Clipboard.GetText();
+            if (string.IsNullOrWhiteSpace(text)) return;
+
+            string[] lines = text.Replace("\r\n", "\n").Replace('\r', '\n')
+                .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            if (lines.Length == 0) return;
+
+            int startRow = _grid.CurrentCell.RowIndex;
+            int startColumn = _grid.CurrentCell.ColumnIndex;
+            int changed = 0;
+
+            for (int rowOffset = 0; rowOffset < lines.Length && startRow + rowOffset < _grid.Rows.Count; rowOffset++)
+            {
+                string[] values = lines[rowOffset].Split('\t');
+
+                for (int columnOffset = 0; columnOffset < values.Length && startColumn + columnOffset < _grid.Columns.Count; columnOffset++)
+                {
+                    DataGridViewColumn column = _grid.Columns[startColumn + columnOffset];
+                    if (!column.Visible || column.ReadOnly) continue;
+
+                    PropertyInfo property = _itemType.GetProperty(column.DataPropertyName);
+                    if (property == null || !CanWrite(property)) continue;
+
+                    if (!TryConvertCellText(values[columnOffset], property.PropertyType, out object value))
+                    {
+                        MessageBox.Show(this, $"无法把 `{values[columnOffset]}` 写入 {property.Name}。", "粘贴", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+
+                    _grid.Rows[startRow + rowOffset].Cells[column.Index].Value = value;
+                    changed++;
+                }
+            }
+
+            if (changed > 0)
+            {
+                _grid.EndEdit();
+                _grid.Refresh();
+            }
+        }
+
+        private bool TryConvertCellText(string text, Type targetType, out object value)
+        {
+            Type type = Nullable.GetUnderlyingType(targetType) ?? targetType;
+            text = text?.Trim() ?? string.Empty;
+
+            try
+            {
+                if (targetType != type && string.IsNullOrWhiteSpace(text))
+                {
+                    value = null;
+                    return true;
+                }
+
+                if (type == typeof(string))
+                {
+                    value = text;
+                    return true;
+                }
+
+                if (type == typeof(char))
+                {
+                    value = string.IsNullOrEmpty(text) ? '\0' : text[0];
+                    return true;
+                }
+
+                if (type == typeof(bool))
+                {
+                    value = text.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+                            text.Equals("checked", StringComparison.OrdinalIgnoreCase) ||
+                            text.Equals("是", StringComparison.OrdinalIgnoreCase) ||
+                            text == "1";
+                    return true;
+                }
+
+                if (type.IsEnum)
+                {
+                    value = Enum.Parse(type, text, true);
+                    return true;
+                }
+
+                if (type.IsSubclassOf(typeof(DBObject)))
+                    return TryConvertObjectReference(text, type, out value);
+
+                if (type == typeof(Point))
+                {
+                    string[] parts = text.Split(',');
+                    value = new Point(int.Parse(parts[0].Trim(), CultureInfo.InvariantCulture), int.Parse(parts[1].Trim(), CultureInfo.InvariantCulture));
+                    return true;
+                }
+
+                if (type == typeof(Size))
+                {
+                    string[] parts = text.Split(',');
+                    value = new Size(int.Parse(parts[0].Trim(), CultureInfo.InvariantCulture), int.Parse(parts[1].Trim(), CultureInfo.InvariantCulture));
+                    return true;
+                }
+
+                if (type == typeof(Color))
+                {
+                    value = ColorTranslator.FromHtml(text);
+                    return true;
+                }
+
+                if (type == typeof(TimeSpan))
+                {
+                    value = TimeSpan.Parse(text, CultureInfo.InvariantCulture);
+                    return true;
+                }
+
+                if (type == typeof(DateTime))
+                {
+                    value = DateTime.Parse(text, CultureInfo.InvariantCulture);
+                    return true;
+                }
+
+                value = Convert.ChangeType(text, type, CultureInfo.InvariantCulture);
+                return true;
+            }
+            catch
+            {
+                value = null;
+                return false;
+            }
+        }
+
+        private bool TryConvertObjectReference(string text, Type objectType, out object value)
+        {
+            value = null;
+
+            if (string.IsNullOrWhiteSpace(text) || text.Equals("[空]", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (TryExtractObjectIndex(text, out int index))
+            {
+                value = _metadata.GetBinding(objectType).Cast<object>().OfType<DBObject>().FirstOrDefault(x => x.Index == index);
+                return value != null;
+            }
+
+            foreach (object item in _metadata.GetBinding(objectType))
+            {
+                string display = _metadata.GetDisplayText(item);
+                if (display.Equals(text, StringComparison.OrdinalIgnoreCase) ||
+                    Convert.ToString(item, CultureInfo.CurrentCulture)?.Equals(text, StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    value = item;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryExtractObjectIndex(string text, out int index)
+        {
+            index = 0;
+            int hash = text.LastIndexOf('#');
+            if (hash >= 0)
+            {
+                int end = text.IndexOf(')', hash);
+                string part = end > hash ? text.Substring(hash + 1, end - hash - 1) : text.Substring(hash + 1);
+                return int.TryParse(part.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out index);
+            }
+
+            return int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out index);
         }
 
         private void BuildColumns()
