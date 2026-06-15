@@ -6,6 +6,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
@@ -19,6 +21,7 @@ namespace Server.WinForms
 
         private readonly ToolStripButton _saveButton = new ToolStripButton("保存");
         private readonly ToolStripButton _cancelButton = new ToolStripButton("取消");
+        private readonly ToolStripButton _realMapButton = new ToolStripButton("真实地图");
         private readonly ToolStripButton _attributesButton = new ToolStripButton("属性");
         private readonly ToolStripButton _selectionButton = new ToolStripButton("选择");
         private readonly ToolStripButton _blockedOnlyButton = new ToolStripButton("属性选择");
@@ -34,14 +37,29 @@ namespace Server.WinForms
         private readonly ToolStripStatusLabel _mapSizeLabel = new ToolStripStatusLabel("地图大小: 0,0");
         private readonly ToolStripStatusLabel _positionLabel = new ToolStripStatusLabel("坐标: 0,0");
         private readonly ToolStripStatusLabel _selectedCellsLabel = new ToolStripStatusLabel("已选格子: 0");
+        private readonly ToolStripStatusLabel _renderModeLabel = new ToolStripStatusLabel("显示: 真实地图");
+        private readonly Timer _animationTimer = new Timer { Interval = 120 };
 
         private MapData _map = MapData.Empty;
+        private readonly MapTileLibraryCache _tileLibraries = new MapTileLibraryCache();
         private HashSet<Point> _selection = new HashSet<Point>();
         private HashSet<Point> _originalSelection = new HashSet<Point>();
         private Point _mouseLocation = Point.Empty;
         private string _mapPath;
         private float _zoom = 1F;
         private int _radius;
+        private int _animation;
+        private bool _drawRealMap = true;
+        private bool _lastRealMapRendered;
+        private bool _realMapBufferValid;
+        private bool _realMapBufferRendered;
+        private bool _realMapBufferContainsAnimation;
+        private int _realMapBufferStartX = -1;
+        private int _realMapBufferStartY = -1;
+        private int _realMapBufferAnimation = -1;
+        private float _realMapBufferZoom;
+        private Bitmap _realMapBuffer;
+        private string _lastRenderFailure;
         private bool _drawAttributes;
         private bool _drawSelection = true;
         private bool _attributeSelection;
@@ -58,6 +76,17 @@ namespace Server.WinForms
             BuildLayout();
             UpdateCommands();
             UpdateStatus();
+
+            _animationTimer.Tick += (_, _) =>
+            {
+                if (!_drawRealMap || _map.IsEmpty) return;
+                if (_realMapBufferValid && !_realMapBufferContainsAnimation) return;
+
+                _animation++;
+                InvalidateRealMapBuffer(disposeBuffer: false);
+                _canvas.Invalidate();
+            };
+            _animationTimer.Start();
         }
 
         [Browsable(false)]
@@ -83,6 +112,8 @@ namespace Server.WinForms
                 {
                     _map = MapData.Empty;
                     _mapPath = null;
+                    _lastRealMapRendered = false;
+                    ClearRealMapBuffer();
                 }
 
                 UpdateCommands();
@@ -101,6 +132,8 @@ namespace Server.WinForms
             {
                 _map = MapData.Empty;
                 _mapPath = resolved;
+                _lastRealMapRendered = false;
+                ClearRealMapBuffer();
                 _selection.Clear();
                 UpdateCommands();
                 UpdateScrollBars();
@@ -111,6 +144,8 @@ namespace Server.WinForms
 
             _map = MapData.Load(resolved);
             _mapPath = resolved;
+            _lastRealMapRendered = false;
+            ClearRealMapBuffer();
 
             if (MapRegion == null)
             {
@@ -174,6 +209,18 @@ namespace Server.WinForms
             base.OnFormClosing(e);
         }
 
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _animationTimer.Dispose();
+                _tileLibraries.Dispose();
+                ClearRealMapBuffer();
+            }
+
+            base.Dispose(disposing);
+        }
+
         private void BuildLayout()
         {
             ToolStrip toolStrip = new ToolStrip();
@@ -183,6 +230,19 @@ namespace Server.WinForms
             AddButton(toolStrip, "放大", (_, _) => SetZoom(_zoom * 2F));
             AddButton(toolStrip, "缩小", (_, _) => SetZoom(_zoom / 2F));
             toolStrip.Items.Add(new ToolStripSeparator());
+
+            _realMapButton.CheckOnClick = true;
+            _realMapButton.Checked = _drawRealMap;
+            _realMapButton.Click += (_, _) =>
+            {
+                _drawRealMap = _realMapButton.Checked;
+                InvalidateRealMapBuffer();
+                UpdateStatus();
+                _canvas.Invalidate();
+            };
+            toolStrip.Items.Add(_realMapButton);
+            toolStrip.Items.Add(new ToolStripSeparator());
+
             toolStrip.Items.Add(new ToolStripLabel("X"));
             ConfigureCoordinateTextBox(_jumpXText);
             toolStrip.Items.Add(_jumpXText);
@@ -235,6 +295,7 @@ namespace Server.WinForms
             _canvas.MouseWheel += Canvas_MouseWheel;
             _canvas.Resize += (_, _) =>
             {
+                ClearRealMapBuffer();
                 UpdateScrollBars();
                 _canvas.Invalidate();
             };
@@ -242,6 +303,7 @@ namespace Server.WinForms
             _hScroll.Dock = DockStyle.Bottom;
             _hScroll.ValueChanged += (_, _) =>
             {
+                InvalidateRealMapBuffer(disposeBuffer: false);
                 _canvas.Invalidate();
                 UpdateStatus();
             };
@@ -249,6 +311,7 @@ namespace Server.WinForms
             _vScroll.Dock = DockStyle.Right;
             _vScroll.ValueChanged += (_, _) =>
             {
+                InvalidateRealMapBuffer(disposeBuffer: false);
                 _canvas.Invalidate();
                 UpdateStatus();
             };
@@ -262,6 +325,7 @@ namespace Server.WinForms
             _status.Items.Add(_mapSizeLabel);
             _status.Items.Add(_positionLabel);
             _status.Items.Add(_selectedCellsLabel);
+            _status.Items.Add(_renderModeLabel);
 
             Controls.Add(host);
             Controls.Add(_status);
@@ -358,6 +422,7 @@ namespace Server.WinForms
             if (Math.Abs(_zoom - zoom) < 0.001F) return;
 
             _zoom = zoom;
+            ClearRealMapBuffer();
             UpdateScrollBars();
             _canvas.Invalidate();
         }
@@ -370,6 +435,7 @@ namespace Server.WinForms
 
             _saveButton.Enabled = dirty;
             _cancelButton.Enabled = dirty;
+            _realMapButton.Enabled = hasMap;
             _attributesButton.Enabled = hasMap;
             _selectionButton.Enabled = hasMap;
             _blockedOnlyButton.Enabled = hasMap;
@@ -422,6 +488,30 @@ namespace Server.WinForms
             _mapSizeLabel.Text = $"地图大小: {_map.Width},{_map.Height}";
             _positionLabel.Text = $"坐标: {_mouseLocation.X},{_mouseLocation.Y} 半径: {_radius} 缩放: {_zoom:0.###}x";
             _selectedCellsLabel.Text = IsSelectionDirty() ? $"已选格子: {_selection.Count}（未保存）" : $"已选格子: {_selection.Count}";
+            UpdateRenderStatus(_lastRealMapRendered);
+        }
+
+        private void UpdateRenderStatus(bool realMapRendered)
+        {
+            string text;
+
+            if (_map.IsEmpty)
+                text = "显示: 未加载";
+            else if (!_drawRealMap)
+                text = "显示: 属性图";
+            else if (realMapRendered)
+                text = _tileLibraries.GetStatusText();
+            else if (!string.IsNullOrWhiteSpace(_lastRenderFailure))
+                text = $"显示: 属性图（真实地图失败: {_lastRenderFailure}）";
+            else if (!string.IsNullOrWhiteSpace(_tileLibraries.LastFailure))
+                text = $"显示: 属性图（{_tileLibraries.LastFailure}）";
+            else if (_tileLibraries.LoadedLibraryCount > 0)
+                text = "显示: 属性图（当前视口无真实贴图）";
+            else
+                text = _tileLibraries.GetStatusText();
+
+            if (_renderModeLabel.Text != text)
+                _renderModeLabel.Text = text;
         }
 
         private string GetMapDisplayName()
@@ -459,10 +549,300 @@ namespace Server.WinForms
             int maxX = Math.Min(_map.Width - 1, startX + (int)Math.Ceiling(_canvas.Width / CellWidth));
             int maxY = Math.Min(_map.Height - 1, startY + (int)Math.Ceiling(_canvas.Height / CellHeight));
 
+            bool realMapRendered = false;
+
+            if (_drawRealMap)
+            {
+                try
+                {
+                    realMapRendered = DrawRealMapBuffer(e.Graphics, startX, startY);
+                    _lastRenderFailure = null;
+                }
+                catch (Exception ex)
+                {
+                    realMapRendered = false;
+                    _lastRenderFailure = ex.Message;
+                }
+            }
+
+            if (!realMapRendered)
+                DrawAttributeMap(e.Graphics, startX, startY, maxX, maxY);
+            else
+                DrawOverlays(e.Graphics, startX, startY, maxX, maxY);
+
+            _lastRealMapRendered = realMapRendered;
+            DrawHover(e.Graphics, startX, startY, maxX, maxY);
+            UpdateRenderStatus(realMapRendered);
+        }
+
+        private bool DrawRealMapBuffer(Graphics graphics, int startX, int startY)
+        {
+            if (!IsRealMapBufferValid(startX, startY))
+                RebuildRealMapBuffer(startX, startY);
+
+            if (!_realMapBufferRendered || _realMapBuffer == null) return false;
+
+            graphics.DrawImageUnscaled(_realMapBuffer, 0, 0);
+            return true;
+        }
+
+        private bool IsRealMapBufferValid(int startX, int startY)
+        {
+            return _realMapBufferValid &&
+                   _realMapBuffer != null &&
+                   _realMapBuffer.Width == _canvas.Width &&
+                   _realMapBuffer.Height == _canvas.Height &&
+                   _realMapBufferStartX == startX &&
+                   _realMapBufferStartY == startY &&
+                   _realMapBufferAnimation == _animation &&
+                   Math.Abs(_realMapBufferZoom - _zoom) < 0.001F;
+        }
+
+        private void RebuildRealMapBuffer(int startX, int startY)
+        {
+            if (_canvas.Width <= 0 || _canvas.Height <= 0)
+            {
+                _realMapBufferRendered = false;
+                _realMapBufferValid = true;
+                return;
+            }
+
+            if (_realMapBuffer == null || _realMapBuffer.Width != _canvas.Width || _realMapBuffer.Height != _canvas.Height)
+            {
+                _realMapBuffer?.Dispose();
+                _realMapBuffer = new Bitmap(_canvas.Width, _canvas.Height, PixelFormat.Format32bppPArgb);
+            }
+
+            using (Graphics graphics = Graphics.FromImage(_realMapBuffer))
+            {
+                graphics.Clear(Color.FromArgb(24, 28, 32));
+                _realMapBufferContainsAnimation = VisibleAreaContainsAnimation(startX, startY);
+                _realMapBufferRendered = DrawRealMap(graphics, startX, startY);
+            }
+
+            _realMapBufferStartX = startX;
+            _realMapBufferStartY = startY;
+            _realMapBufferAnimation = _animation;
+            _realMapBufferZoom = _zoom;
+            _realMapBufferValid = true;
+        }
+
+        private void InvalidateRealMapBuffer(bool disposeBuffer = false)
+        {
+            _realMapBufferValid = false;
+            _realMapBufferRendered = false;
+
+            if (!disposeBuffer) return;
+
+            _realMapBuffer?.Dispose();
+            _realMapBuffer = null;
+        }
+
+        private void ClearRealMapBuffer()
+        {
+            _realMapBufferContainsAnimation = false;
+            _realMapBufferStartX = -1;
+            _realMapBufferStartY = -1;
+            _realMapBufferAnimation = -1;
+            _realMapBufferZoom = 0F;
+            InvalidateRealMapBuffer(disposeBuffer: true);
+        }
+
+        private bool VisibleAreaContainsAnimation(int startX, int startY)
+        {
+            int visibleColumns = Math.Max(1, (int)Math.Ceiling(_canvas.Width / CellWidth));
+            int visibleRows = Math.Max(1, (int)Math.Ceiling(_canvas.Height / CellHeight));
+            int minX = Math.Max(0, startX - 1);
+            int maxX = Math.Min(_map.Width - 1, startX + visibleColumns + 1);
+            int minY = Math.Max(0, startY - 1);
+            int maxY = Math.Min(_map.Height - 1, startY + visibleRows + 20);
+
+            for (int y = minY; y <= maxY; y++)
+            {
+                for (int x = minX; x <= maxX; x++)
+                {
+                    MapCell cell = _map.Cells[x, y];
+                    if (IsAnimated(cell.MiddleAnimationFrame) || IsAnimated(cell.FrontAnimationFrame))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool DrawRealMap(Graphics graphics, int startX, int startY)
+        {
+            int visibleColumns = Math.Max(1, (int)Math.Ceiling(_canvas.Width / CellWidth));
+            int visibleRows = Math.Max(1, (int)Math.Ceiling(_canvas.Height / CellHeight));
+            int minX = Math.Max(0, startX - 1);
+            int maxX = Math.Min(_map.Width - 1, startX + visibleColumns + 1);
+            int minY = Math.Max(0, startY - 1);
+            int maxY = Math.Min(_map.Height - 1, startY + visibleRows + 1);
+            bool drewAnyImage = false;
+
+            GraphicsState state = graphics.Save();
+
+            try
+            {
+                graphics.CompositingMode = CompositingMode.SourceOver;
+                graphics.CompositingQuality = CompositingQuality.HighSpeed;
+                graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
+                graphics.PixelOffsetMode = PixelOffsetMode.Half;
+                graphics.ScaleTransform(_zoom, _zoom);
+
+                for (int y = minY; y <= maxY; y++)
+                {
+                    if (y % 2 != 0) continue;
+
+                    float drawY = (y - startY) * BaseCellHeight;
+
+                    for (int x = minX; x <= maxX; x++)
+                    {
+                        if (x % 2 != 0) continue;
+
+                        MapCell cell = _map.Cells[x, y];
+                        if (!TryGetLibrary(cell.BackFile, allowTiles: true, out MapTileLibrary library)) continue;
+
+                        drewAnyImage |= DrawImage(graphics, library, cell.BackImage, (x - startX) * BaseCellWidth, drawY, 1F);
+                    }
+                }
+
+                for (int y = minY; y <= maxY; y++)
+                {
+                    float drawY = (y - startY + 1) * BaseCellHeight;
+
+                    for (int x = minX; x <= maxX; x++)
+                    {
+                        float drawX = (x - startX) * BaseCellWidth;
+                        MapCell cell = _map.Cells[x, y];
+
+                        drewAnyImage |= DrawCellSizedLayer(graphics, cell.MiddleFile, cell.MiddleImage - 1, cell.MiddleAnimationFrame, drawX, drawY - BaseCellHeight);
+                        drewAnyImage |= DrawCellSizedLayer(graphics, cell.FrontFile, cell.FrontImage - 1, cell.FrontAnimationFrame, drawX, drawY - BaseCellHeight);
+                    }
+                }
+
+                int objectMaxY = Math.Min(_map.Height - 1, startY + visibleRows + 20);
+                for (int y = minY; y <= objectMaxY; y++)
+                {
+                    float drawY = (y - startY + 1) * BaseCellHeight;
+
+                    for (int x = minX; x <= maxX; x++)
+                    {
+                        float drawX = (x - startX) * BaseCellWidth;
+                        MapCell cell = _map.Cells[x, y];
+
+                        drewAnyImage |= DrawObjectLayer(graphics, cell.MiddleFile, cell.MiddleImage - 1, cell.MiddleAnimationFrame, drawX, drawY);
+                        drewAnyImage |= DrawObjectLayer(graphics, cell.FrontFile, cell.FrontImage - 1, cell.FrontAnimationFrame, drawX, drawY);
+                    }
+                }
+            }
+            finally
+            {
+                graphics.Restore(state);
+            }
+
+            return drewAnyImage;
+        }
+
+        private bool DrawCellSizedLayer(Graphics graphics, int fileIndex, int imageIndex, int animationFrame, float x, float y)
+        {
+            if (IsAnimated(animationFrame)) return false;
+            if (!TryGetLibrary(fileIndex, allowTiles: false, out MapTileLibrary library)) return false;
+
+            Size size = library.GetSize(imageIndex);
+            if (!IsCellSized(size)) return false;
+
+            return DrawImage(graphics, library, imageIndex, x, y, 1F);
+        }
+
+        private bool DrawObjectLayer(Graphics graphics, int fileIndex, int imageIndex, int animationFrame, float x, float y)
+        {
+            if (!TryGetLibrary(fileIndex, allowTiles: false, out MapTileLibrary library)) return false;
+
+            bool blend = false;
+            if (IsAnimated(animationFrame))
+            {
+                int count = animationFrame & 0x4F;
+                if (count <= 0) return false;
+
+                imageIndex += _animation % count;
+                blend = (animationFrame & 0x50) > 0;
+            }
+
+            Size size = library.GetSize(imageIndex);
+            if (size.IsEmpty || IsCellSized(size)) return false;
+
+            return DrawImage(graphics, library, imageIndex, x, y - size.Height, blend ? 0.5F : 1F);
+        }
+
+        private static bool IsAnimated(int animationFrame)
+        {
+            return animationFrame > 1 && animationFrame < 255;
+        }
+
+        private bool TryGetLibrary(int fileIndex, bool allowTiles, out MapTileLibrary library)
+        {
+            library = null;
+
+            if (!Libraries.KROrder.TryGetValue(fileIndex, out LibraryFile file)) return false;
+            if (!allowTiles && file == LibraryFile.Tilesc) return false;
+
+            return _tileLibraries.TryGetLibrary(file, out library);
+        }
+
+        private static bool IsCellSized(Size size)
+        {
+            return (size.Width == BaseCellWidth && size.Height == BaseCellHeight) ||
+                   (size.Width == BaseCellWidth * 2 && size.Height == BaseCellHeight * 2);
+        }
+
+        private static bool DrawImage(Graphics graphics, MapTileLibrary library, int index, float x, float y, float opacity)
+        {
+            Bitmap bitmap = library.GetBitmap(index);
+            if (bitmap == null) return false;
+
+            Rectangle destination = new Rectangle((int)Math.Round(x), (int)Math.Round(y), bitmap.Width, bitmap.Height);
+
+            if (opacity >= 0.999F)
+            {
+                graphics.DrawImage(bitmap, destination);
+                return true;
+            }
+
+            using ImageAttributes attributes = new ImageAttributes();
+            ColorMatrix matrix = new ColorMatrix { Matrix33 = opacity };
+            attributes.SetColorMatrix(matrix, ColorMatrixFlag.Default, ColorAdjustType.Bitmap);
+            graphics.DrawImage(bitmap, destination, 0, 0, bitmap.Width, bitmap.Height, GraphicsUnit.Pixel, attributes);
+
+            return true;
+        }
+
+        private void DrawAttributeMap(Graphics graphics, int startX, int startY, int maxX, int maxY)
+        {
             using Pen gridPen = new Pen(Color.FromArgb(42, 48, 54));
-            using Pen hoverPen = new Pen(Color.Lime);
             using Brush passableBrush = new SolidBrush(Color.FromArgb(38, 52, 58));
             using Brush blockedBrush = new SolidBrush(Color.FromArgb(72, 38, 38));
+
+            for (int y = startY; y <= maxY; y++)
+            {
+                for (int x = startX; x <= maxX; x++)
+                {
+                    RectangleF rect = GetCellRectangle(x, y, startX, startY);
+                    MapCell cell = _map.Cells[x, y];
+
+                    graphics.FillRectangle(cell.Flag ? passableBrush : blockedBrush, rect);
+
+                    if (_zoom >= 0.25F)
+                        graphics.DrawRectangle(gridPen, rect.X, rect.Y, rect.Width, rect.Height);
+                }
+            }
+
+            DrawOverlays(graphics, startX, startY, maxX, maxY);
+        }
+
+        private void DrawOverlays(Graphics graphics, int startX, int startY, int maxX, int maxY)
+        {
+            using Pen gridPen = new Pen(Color.FromArgb(90, 20, 24, 28));
             using Brush attributeBrush = new SolidBrush(Color.FromArgb(90, Color.Red));
             using Brush selectionBrush = new SolidBrush(Color.FromArgb(130, Color.Gold));
 
@@ -473,30 +853,33 @@ namespace Server.WinForms
                     RectangleF rect = GetCellRectangle(x, y, startX, startY);
                     MapCell cell = _map.Cells[x, y];
 
-                    e.Graphics.FillRectangle(cell.Flag ? passableBrush : blockedBrush, rect);
-
                     if (_drawAttributes && cell.Flag != _attributeSelection)
-                        e.Graphics.FillRectangle(attributeBrush, rect);
+                        graphics.FillRectangle(attributeBrush, rect);
 
                     if (_drawSelection && _selection.Contains(new Point(x, y)))
-                        e.Graphics.FillRectangle(selectionBrush, rect);
+                        graphics.FillRectangle(selectionBrush, rect);
 
                     if (_zoom >= 0.25F)
-                        e.Graphics.DrawRectangle(gridPen, rect.X, rect.Y, rect.Width, rect.Height);
+                        graphics.DrawRectangle(gridPen, rect.X, rect.Y, rect.Width, rect.Height);
                 }
             }
+        }
+
+        private void DrawHover(Graphics graphics, int startX, int startY, int maxX, int maxY)
+        {
+            using Pen hoverPen = new Pen(Color.Lime);
 
             if (_mouseLocation.X >= startX && _mouseLocation.X <= maxX && _mouseLocation.Y >= startY && _mouseLocation.Y <= maxY)
             {
                 RectangleF rect = GetCellRectangle(_mouseLocation.X, _mouseLocation.Y, startX, startY);
-                e.Graphics.DrawRectangle(hoverPen, rect.X, rect.Y, rect.Width, rect.Height);
+                graphics.DrawRectangle(hoverPen, rect.X, rect.Y, rect.Width, rect.Height);
 
                 if (_radius > 0)
                 {
                     RectangleF radiusRect = GetCellRectangle(_mouseLocation.X - _radius, _mouseLocation.Y - _radius, startX, startY);
                     radiusRect.Width = CellWidth * (_radius * 2 + 1);
                     radiusRect.Height = CellHeight * (_radius * 2 + 1);
-                    e.Graphics.DrawRectangle(hoverPen, radiusRect.X, radiusRect.Y, radiusRect.Width, radiusRect.Height);
+                    graphics.DrawRectangle(hoverPen, radiusRect.X, radiusRect.Y, radiusRect.Width, radiusRect.Height);
                 }
             }
         }
