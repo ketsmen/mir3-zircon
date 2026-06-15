@@ -482,6 +482,22 @@ namespace Server.Models
                     case CompiledNpcActionType.PromoteFame:
                         ob.PromoteFame();
                         break;
+                    case CompiledNpcActionType.Marriage:
+                        ob.MarriageRequest();
+                        break;
+                    case CompiledNpcActionType.Divorce:
+                        ob.MarriageLeave();
+                        break;
+                    case CompiledNpcActionType.RemoveWeddingRing:
+                        ob.MarriageRemoveRing();
+                        break;
+                    case CompiledNpcActionType.ResetWeapon:
+                        ob.NPCResetWeapon();
+                        break;
+                    case CompiledNpcActionType.Rebirth:
+                        if (ob.Level >= 86 + ob.Character.Rebirth)
+                            ob.NPCRebirth();
+                        break;
                 }
             }
 
@@ -522,6 +538,19 @@ namespace Server.Models
                         UserItem weapon = ob.Equipment[(int)EquipmentSlot.Weapon];
                         bool canRefine = weapon != null && (weapon.Flags & UserItemFlags.Refinable) == UserItemFlags.Refinable;
                         if (canRefine != (check.Operator == Operator.Equal)) return false;
+                        break;
+                    case CompiledNpcCheckType.WeaponCanReset:
+                        UserItem resetWeapon = ob.Equipment[(int)EquipmentSlot.Weapon];
+                        bool canReset = resetWeapon != null && SEnvir.Now >= resetWeapon.ResetCoolDown;
+                        if (canReset != (check.Operator == Operator.Equal)) return false;
+                        break;
+                    case CompiledNpcCheckType.Marriage:
+                        if (ob.Character.Partner != null != (check.Operator == Operator.Equal)) return false;
+                        break;
+                    case CompiledNpcCheckType.WeddingRing:
+                        UserItem ring = ob.Equipment[(int)EquipmentSlot.RingL];
+                        bool hasWeddingRing = ring != null && (ring.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage;
+                        if (hasWeddingRing != (check.Operator == Operator.Equal)) return false;
                         break;
                     case CompiledNpcCheckType.Class:
                         if (!HasRequiredClass(check.Class, ob.Class)) return false;

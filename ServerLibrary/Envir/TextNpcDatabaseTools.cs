@@ -433,6 +433,15 @@ namespace Server.Envir
                 case CompiledNpcCheckType.WeaponCanRefine:
                     check.CheckType = NPCCheckType.WeaponCanRefine;
                     break;
+                case CompiledNpcCheckType.WeaponCanReset:
+                    check.CheckType = NPCCheckType.CanResetWeapon;
+                    break;
+                case CompiledNpcCheckType.Marriage:
+                    check.CheckType = NPCCheckType.Marriage;
+                    break;
+                case CompiledNpcCheckType.WeddingRing:
+                    check.CheckType = NPCCheckType.WeddingRing;
+                    break;
                 case CompiledNpcCheckType.Class:
                     check.CheckType = NPCCheckType.Class;
                     check.Operator = Operator.Equal;
@@ -491,6 +500,21 @@ namespace Server.Envir
                     break;
                 case CompiledNpcActionType.PromoteFame:
                     action.ActionType = NPCActionType.PromoteFame;
+                    break;
+                case CompiledNpcActionType.Marriage:
+                    action.ActionType = NPCActionType.Marriage;
+                    break;
+                case CompiledNpcActionType.Divorce:
+                    action.ActionType = NPCActionType.Divorce;
+                    break;
+                case CompiledNpcActionType.RemoveWeddingRing:
+                    action.ActionType = NPCActionType.RemoveWeddingRing;
+                    break;
+                case CompiledNpcActionType.ResetWeapon:
+                    action.ActionType = NPCActionType.ResetWeapon;
+                    break;
+                case CompiledNpcActionType.Rebirth:
+                    action.ActionType = NPCActionType.Rebirth;
                     break;
                 case CompiledNpcActionType.GiveItem:
                     action.ActionType = NPCActionType.GiveItem;
@@ -901,6 +925,18 @@ namespace Server.Envir
                     script.AppendLine(check.Operator == Operator.Equal ? "WEAPONCANREFINE" : "WEAPONCANNOTREFINE");
                     report.ChecksExported++;
                     break;
+                case NPCCheckType.CanResetWeapon:
+                    script.AppendLine(check.Operator == Operator.Equal ? "CANRESETWEAPON" : "WEAPONCANNOTRESET");
+                    report.ChecksExported++;
+                    break;
+                case NPCCheckType.Marriage:
+                    script.AppendLine(check.Operator == Operator.Equal ? "CHECKMARRIAGE" : "NOMARRIAGE");
+                    report.ChecksExported++;
+                    break;
+                case NPCCheckType.WeddingRing:
+                    script.AppendLine(check.Operator == Operator.Equal ? "CHECKWEDDINGRING" : "NOWEDDINGRING");
+                    report.ChecksExported++;
+                    break;
                 case NPCCheckType.Class:
                     if (check.Operator == Operator.Equal && Enum.IsDefined(typeof(MirClass), check.IntParameter1))
                     {
@@ -988,6 +1024,26 @@ namespace Server.Envir
                     break;
                 case NPCActionType.PromoteFame:
                     script.AppendLine("PROMOTEFAME");
+                    report.ActionsExported++;
+                    break;
+                case NPCActionType.Marriage:
+                    script.AppendLine("MARRIAGE");
+                    report.ActionsExported++;
+                    break;
+                case NPCActionType.Divorce:
+                    script.AppendLine("DIVORCE");
+                    report.ActionsExported++;
+                    break;
+                case NPCActionType.RemoveWeddingRing:
+                    script.AppendLine("REMOVEWEDDINGRING");
+                    report.ActionsExported++;
+                    break;
+                case NPCActionType.ResetWeapon:
+                    script.AppendLine("RESETWEAPON");
+                    report.ActionsExported++;
+                    break;
+                case NPCActionType.Rebirth:
+                    script.AppendLine("REBIRTH");
                     report.ActionsExported++;
                     break;
                 case NPCActionType.GiveItem:

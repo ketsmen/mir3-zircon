@@ -447,6 +447,27 @@ namespace Server.Envir
                 case "WEAPONCANNOTREFINE":
                     checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.WeaponCanRefine, Operator = Operator.NotEqual }, line));
                     break;
+                case "CANRESETWEAPON":
+                case "WEAPONCANRESET":
+                    checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.WeaponCanReset, Operator = Operator.Equal }, line));
+                    break;
+                case "WEAPONCANNOTRESET":
+                    checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.WeaponCanReset, Operator = Operator.NotEqual }, line));
+                    break;
+                case "CHECKMARRIAGE":
+                case "CHECKRELATIONSHIP":
+                    checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Marriage, Operator = Operator.Equal }, line));
+                    break;
+                case "NOMARRIAGE":
+                case "NORELATIONSHIP":
+                    checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Marriage, Operator = Operator.NotEqual }, line));
+                    break;
+                case "CHECKWEDDINGRING":
+                    checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.WeddingRing, Operator = Operator.Equal }, line));
+                    break;
+                case "NOWEDDINGRING":
+                    checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.WeddingRing, Operator = Operator.NotEqual }, line));
+                    break;
                 case "CHECKCLASS":
                     if (parts.Count >= 2 && TryParseRequiredClass(parts[1], out RequiredClass requiredClass))
                         checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Class, Class = requiredClass }, line));
@@ -560,6 +581,22 @@ namespace Server.Envir
                     break;
                 case "PROMOTEFAME":
                     actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.PromoteFame }, line));
+                    break;
+                case "MARRIAGE":
+                    actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.Marriage }, line));
+                    break;
+                case "DIVORCE":
+                case "FORCEDIVORCE":
+                    actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.Divorce }, line));
+                    break;
+                case "REMOVEWEDDINGRING":
+                    actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.RemoveWeddingRing }, line));
+                    break;
+                case "RESETWEAPON":
+                    actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.ResetWeapon }, line));
+                    break;
+                case "REBIRTH":
+                    actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.Rebirth }, line));
                     break;
                 default:
                     report.Failures.Add($"{line.Source}: 未知 NPC 动作 `{parts[0]}`。");
@@ -1479,6 +1516,9 @@ namespace Server.Envir
         CanGainItem,
         Weapon,
         WeaponCanRefine,
+        WeaponCanReset,
+        Marriage,
+        WeddingRing,
         Class,
         Gender,
         Fame,
@@ -1508,7 +1548,12 @@ namespace Server.Envir
         LocalMessage,
         GiveCurrency,
         TakeCurrency,
-        PromoteFame
+        PromoteFame,
+        Marriage,
+        Divorce,
+        RemoveWeddingRing,
+        ResetWeapon,
+        Rebirth
     }
 
     internal enum TextNpcParseMode
