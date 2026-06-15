@@ -3,6 +3,7 @@ using MirDB;
 using PluginCore;
 using Server.Envir;
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Reflection;
 using System.Threading;
@@ -13,6 +14,8 @@ namespace Server.WinForms
     public sealed class MainForm : Form
     {
         private readonly ListBox _logList = new ListBox();
+        private readonly FlowLayoutPanel _metricsPanel = new FlowLayoutPanel();
+        private readonly Dictionary<string, Label> _metricLabels = new Dictionary<string, Label>();
         private readonly Panel _statusPanel = new Panel();
         private readonly Label _statusLabel = new Label();
         private readonly System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer();
@@ -63,13 +66,14 @@ namespace Server.WinForms
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 4,
+                RowCount = 5,
                 Margin = Padding.Empty,
                 Padding = Padding.Empty,
             };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 78F));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
 
@@ -123,6 +127,8 @@ namespace Server.WinForms
             AddToolButton(toolStrip, "配置", (_, _) => OpenConfigEditor());
             AddToolButton(toolStrip, "地图", (_, _) => new MapViewerForm().Show(this));
 
+            BuildMetricsPanel();
+
             _logList.Dock = DockStyle.Fill;
             _logList.Font = new Font(FontFamily.GenericMonospace, 9F);
             _logList.Margin = Padding.Empty;
@@ -145,12 +151,68 @@ namespace Server.WinForms
 
             layout.Controls.Add(menu, 0, 0);
             layout.Controls.Add(toolStrip, 0, 1);
-            layout.Controls.Add(_logList, 0, 2);
-            layout.Controls.Add(_statusPanel, 0, 3);
+            layout.Controls.Add(_metricsPanel, 0, 2);
+            layout.Controls.Add(_logList, 0, 3);
+            layout.Controls.Add(_statusPanel, 0, 4);
 
             Controls.Add(layout);
 
             MainMenuStrip = menu;
+        }
+
+        private void BuildMetricsPanel()
+        {
+            _metricsPanel.Dock = DockStyle.Fill;
+            _metricsPanel.BackColor = SystemColors.ControlLight;
+            _metricsPanel.Padding = new Padding(8, 6, 8, 6);
+            _metricsPanel.WrapContents = false;
+            _metricsPanel.AutoScroll = true;
+
+            AddMetric("状态");
+            AddMetric("连接");
+            AddMetric("对象");
+            AddMetric("处理");
+            AddMetric("循环");
+            AddMetric("延迟");
+            AddMetric("下载");
+            AddMetric("上传");
+            AddMetric("邮件");
+        }
+
+        private void AddMetric(string title)
+        {
+            Panel panel = new Panel
+            {
+                Width = 128,
+                Height = 58,
+                Margin = new Padding(0, 0, 8, 0),
+                BackColor = SystemColors.Window
+            };
+
+            Label titleLabel = new Label
+            {
+                Text = title,
+                Dock = DockStyle.Top,
+                Height = 22,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(8, 0, 8, 0),
+                ForeColor = SystemColors.GrayText
+            };
+
+            Label valueLabel = new Label
+            {
+                Text = "-",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(8, 0, 8, 4),
+                Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
+                AutoEllipsis = true
+            };
+
+            panel.Controls.Add(valueLabel);
+            panel.Controls.Add(titleLabel);
+            _metricLabels[title] = valueLabel;
+            _metricsPanel.Controls.Add(panel);
         }
 
         private static void AddToolButton(ToolStrip toolStrip, string text, EventHandler click)
@@ -258,6 +320,16 @@ namespace Server.WinForms
             SetStatusText(
                 _statusLabel,
                 $"连接数: {SEnvir.Connections.Count}    对象: {SEnvir.ActiveObjects.Count} / {SEnvir.Objects.Count}    循环数: {SEnvir.LoopCount}    下载/上传: {FormatBytes(SEnvir.DownloadSpeed)}/s / {FormatBytes(SEnvir.UploadSpeed)}/s");
+
+            SetMetric("状态", SEnvir.EnvirThread == null ? "已停止" : SEnvir.Started ? "运行中" : "停止中");
+            SetMetric("连接", SEnvir.Connections.Count.ToString("#,##0"));
+            SetMetric("对象", $"{SEnvir.ActiveObjects.Count:#,##0}/{SEnvir.Objects.Count:#,##0}");
+            SetMetric("处理", SEnvir.ProcessObjectCount.ToString("#,##0"));
+            SetMetric("循环", SEnvir.LoopCount.ToString("#,##0"));
+            SetMetric("延迟", $"连接 {SEnvir.ConDelay:#,##0}ms / 保存 {SEnvir.SaveDelay:#,##0}ms");
+            SetMetric("下载", $"{FormatBytes(SEnvir.TotalBytesReceived)} / {FormatBytes(SEnvir.DownloadSpeed)}/s");
+            SetMetric("上传", $"{FormatBytes(SEnvir.TotalBytesSent)} / {FormatBytes(SEnvir.UploadSpeed)}/s");
+            SetMetric("邮件", EmailService.EMailsSent.ToString("#,##0"));
         }
 
         private static void SetStatusText(Label label, string text)
@@ -265,6 +337,14 @@ namespace Server.WinForms
             if (label.Text == text) return;
 
             label.Text = text;
+        }
+
+        private void SetMetric(string name, string value)
+        {
+            if (!_metricLabels.TryGetValue(name, out Label label)) return;
+            if (label.Text == value) return;
+
+            label.Text = value;
         }
 
         private static void SetDoubleBuffered(Control control)
