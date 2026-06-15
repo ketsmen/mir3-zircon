@@ -107,6 +107,7 @@ namespace Server.WinForms
 
             ToolStripMenuItem toolsMenu = new ToolStripMenuItem("工具");
             toolsMenu.DropDownItems.Add("地图查看器", null, (_, _) => new MapViewerForm().Show(this));
+            toolsMenu.DropDownItems.Add("服务器诊断", null, (_, _) => OpenDiagnostics());
 
             _pluginsMenu = new ToolStripMenuItem("插件");
 
@@ -126,6 +127,7 @@ namespace Server.WinForms
             AddToolButton(toolStrip, "NPC", (_, _) => OpenDatabaseEditor("NPCInfo"));
             AddToolButton(toolStrip, "配置", (_, _) => OpenConfigEditor());
             AddToolButton(toolStrip, "地图", (_, _) => new MapViewerForm().Show(this));
+            AddToolButton(toolStrip, "诊断", (_, _) => OpenDiagnostics());
 
             BuildMetricsPanel();
 
@@ -292,6 +294,12 @@ namespace Server.WinForms
         private void OpenConfigEditor()
         {
             ConfigEditorForm form = new ConfigEditorForm();
+            form.Show(this);
+        }
+
+        private void OpenDiagnostics()
+        {
+            DiagnosticsForm form = new DiagnosticsForm(SEnvir.Session);
             form.Show(this);
         }
 
