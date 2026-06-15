@@ -1,3 +1,4 @@
+using Library.SystemModels;
 using MirDB;
 using System;
 using System.Collections;
@@ -20,6 +21,7 @@ namespace Server.WinForms
         private readonly IList _source;
         private readonly object _rootCollection;
         private readonly bool _readOnly;
+        private readonly object _ownerObject;
         private readonly DataGridView _grid = new DataGridView();
         private readonly ContextMenuStrip _contextMenu = new ContextMenuStrip();
         private string _filterText = string.Empty;
@@ -29,7 +31,7 @@ namespace Server.WinForms
         public event EventHandler BecameActive;
         public event EventHandler<DBObjectReferenceEventArgs> ReferenceOpenRequested;
 
-        public MirDbGridControl(Session session, MirDbMetadata metadata, Type itemType, IList source, object rootCollection, bool readOnly)
+        public MirDbGridControl(Session session, MirDbMetadata metadata, Type itemType, IList source, object rootCollection, bool readOnly, object ownerObject = null)
         {
             _session = session;
             _metadata = metadata;
@@ -37,6 +39,7 @@ namespace Server.WinForms
             _source = source;
             _rootCollection = rootCollection;
             _readOnly = readOnly;
+            _ownerObject = ownerObject;
 
             Dock = DockStyle.Fill;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
@@ -809,7 +812,7 @@ namespace Server.WinForms
             if (propertyType.IsSubclassOf(typeof(DBObject)))
             {
                 DataGridViewComboBoxColumn column = new DataGridViewComboBoxColumn();
-                column.DataSource = _metadata.GetObjectChoices(propertyType);
+                column.DataSource = GetObjectChoices(property, propertyType);
                 column.DisplayMember = nameof(ObjectChoice.Display);
                 column.ValueMember = nameof(ObjectChoice.Value);
                 column.ValueType = propertyType;
@@ -824,6 +827,39 @@ namespace Server.WinForms
                 textColumn.ReadOnly = true;
 
             return textColumn;
+        }
+
+        private IReadOnlyList<ObjectChoice> GetObjectChoices(PropertyInfo property, Type propertyType)
+        {
+            if (_ownerObject is MapInfo map &&
+                _itemType == typeof(MineInfo) &&
+                property.Name == nameof(MineInfo.Region) &&
+                propertyType == typeof(MapRegion))
+            {
+                return GetMiningRegionChoices(map);
+            }
+
+            return _metadata.GetObjectChoices(propertyType);
+        }
+
+        private IReadOnlyList<ObjectChoice> GetMiningRegionChoices(MapInfo map)
+        {
+            List<ObjectChoice> choices = new List<ObjectChoice>
+            {
+                new ObjectChoice(null, "[空]")
+            };
+
+            HashSet<MapRegion> added = new HashSet<MapRegion>();
+            foreach (MapRegion region in _metadata.GetBinding(typeof(MapRegion)).OfType<MapRegion>().Where(x => x.Map == map).OrderBy(x => x.Index))
+            {
+                choices.Add(new ObjectChoice(region, _metadata.GetDisplayText(region)));
+                added.Add(region);
+            }
+
+            foreach (MapRegion region in _source.Cast<object>().OfType<MineInfo>().Select(x => x.Region).Where(x => x != null && added.Add(x)).OrderBy(x => x.Index))
+                choices.Add(new ObjectChoice(region, _metadata.GetDisplayText(region) + " [跨地图]"));
+
+            return choices;
         }
 
         private bool CanWrite(PropertyInfo property)

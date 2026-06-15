@@ -505,7 +505,7 @@ namespace Server.WinForms
 
                     Type childType = property.PropertyType.GetGenericArguments()[0];
                     TabPage page = new TabPage($"{property.Name} ({list.Count})");
-                    MirDbGridControl grid = new MirDbGridControl(_session, _metadata, childType, list, null, _readOnly);
+                    MirDbGridControl grid = new MirDbGridControl(_session, _metadata, childType, list, null, _readOnly, owner);
                     grid.CurrentObjectChanged += (_, _) => UpdateMapRegionCommand();
                     grid.BecameActive += (_, _) => SetActiveGrid(grid);
                     grid.ReferenceOpenRequested += Grid_ReferenceOpenRequested;
