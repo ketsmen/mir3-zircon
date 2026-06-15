@@ -665,13 +665,17 @@ namespace Server.WinForms
                 .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
             if (lines.Length == 0) return;
 
+            int firstDataLine = HasVisibleColumnHeader(lines[0]) ? 1 : 0;
+            if (firstDataLine >= lines.Length) return;
+
             int startRow = _grid.CurrentCell.RowIndex;
             int startColumn = _grid.CurrentCell.ColumnIndex;
             int changed = 0;
 
-            for (int rowOffset = 0; rowOffset < lines.Length && startRow + rowOffset < _grid.Rows.Count; rowOffset++)
+            for (int lineIndex = firstDataLine; lineIndex < lines.Length && startRow + lineIndex - firstDataLine < _grid.Rows.Count; lineIndex++)
             {
-                string[] values = lines[rowOffset].Split('\t');
+                string[] values = lines[lineIndex].Split('\t');
+                int targetRow = startRow + lineIndex - firstDataLine;
 
                 for (int columnOffset = 0; columnOffset < values.Length && startColumn + columnOffset < _grid.Columns.Count; columnOffset++)
                 {
@@ -687,7 +691,7 @@ namespace Server.WinForms
                         return;
                     }
 
-                    _grid.Rows[startRow + rowOffset].Cells[column.Index].Value = value;
+                    _grid.Rows[targetRow].Cells[column.Index].Value = value;
                     changed++;
                 }
             }
@@ -698,6 +702,22 @@ namespace Server.WinForms
                 _grid.Refresh();
                 OnContentChanged();
             }
+        }
+
+        private bool HasVisibleColumnHeader(string line)
+        {
+            string[] values = line.Split('\t');
+            List<DataGridViewColumn> columns = GetVisibleColumns();
+            if (values.Length == 0 || values.Length > columns.Count) return false;
+
+            for (int i = 0; i < values.Length; i++)
+            {
+                string header = columns[i].HeaderText ?? string.Empty;
+                if (!string.Equals(values[i].Trim(), header, StringComparison.OrdinalIgnoreCase))
+                    return false;
+            }
+
+            return true;
         }
 
         private void OnContentChanged()
