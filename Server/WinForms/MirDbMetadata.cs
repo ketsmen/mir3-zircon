@@ -94,7 +94,7 @@ namespace Server.WinForms
                 new ObjectChoice(null, "[空]")
             };
 
-            foreach (object item in GetBinding(type))
+            foreach (object item in GetBinding(type).Cast<object>().OrderBy(GetDisplayText, StringComparer.CurrentCultureIgnoreCase))
                 choices.Add(new ObjectChoice(item, GetDisplayText(item)));
 
             return choices;

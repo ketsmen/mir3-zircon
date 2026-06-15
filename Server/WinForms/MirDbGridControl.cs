@@ -879,6 +879,7 @@ namespace Server.WinForms
                 DataGridViewComboBoxColumn column = new DataGridViewComboBoxColumn();
                 column.DataSource = Enum.GetValues(propertyType);
                 column.ValueType = propertyType;
+                column.AutoComplete = true;
                 return column;
             }
 
@@ -890,6 +891,7 @@ namespace Server.WinForms
                 column.ValueMember = nameof(ObjectChoice.Value);
                 column.ValueType = propertyType;
                 column.FlatStyle = FlatStyle.Flat;
+                column.AutoComplete = true;
                 return column;
             }
 
