@@ -23,6 +23,8 @@ namespace Server.WinForms
         private readonly TextBox _reportText = new TextBox();
         private readonly DataGridView _orphanGrid = new DataGridView();
         private readonly DataGridView _networkGrid = new DataGridView();
+        private readonly StatusStrip _statusStrip = new StatusStrip();
+        private readonly ToolStripStatusLabel _statusLabel = new ToolStripStatusLabel();
         private readonly System.Windows.Forms.Timer _refreshTimer = new System.Windows.Forms.Timer();
         private readonly ToolStripButton _networkMonitorButton = new ToolStripButton("网络诊断");
         private readonly BindingList<OrphanDiagnostic.OrphanTypeResult> _orphanResults = new BindingList<OrphanDiagnostic.OrphanTypeResult>();
@@ -43,6 +45,7 @@ namespace Server.WinForms
 
             BuildLayout();
             LoadNetworkDiagnostics();
+            UpdateStatus("诊断窗口已打开。");
 
             _refreshTimer.Interval = 1000;
             _refreshTimer.Tick += (_, _) => RefreshNetworkDiagnostics();
@@ -78,6 +81,7 @@ namespace Server.WinForms
             AddButton(toolStrip, "导出当前页", (_, _) => ExportCurrentPage());
 
             _tabs.Dock = DockStyle.Fill;
+            _tabs.SelectedIndexChanged += (_, _) => UpdateStatus();
 
             _reportText.Dock = DockStyle.Fill;
             _reportText.Multiline = true;
@@ -110,9 +114,15 @@ namespace Server.WinForms
             _networkPage.Controls.Add(_networkGrid);
             _tabs.TabPages.Add(_networkPage);
 
+            _statusLabel.Spring = true;
+            _statusLabel.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            _statusStrip.Items.Add(_statusLabel);
+
             Controls.Add(_tabs);
+            Controls.Add(_statusStrip);
             Controls.Add(toolStrip);
             toolStrip.Dock = DockStyle.Top;
+            _statusStrip.Dock = DockStyle.Bottom;
         }
 
         public void ShowReportPage()
@@ -196,6 +206,7 @@ namespace Server.WinForms
             }
 
             _networkGrid.Refresh();
+            UpdateStatus();
         }
 
         private async Task RunDatabaseValidation()
@@ -204,6 +215,7 @@ namespace Server.WinForms
             {
                 UseWaitCursor = true;
                 _reportText.Text = "正在验证数据库...";
+                UpdateStatus("正在验证数据库...");
 
                 List<string> messages = await Task.Run(() =>
                 {
@@ -215,16 +227,19 @@ namespace Server.WinForms
                 if (messages.Count == 0)
                 {
                     _reportText.Text = "数据库验证完成，未发现重复身份字段、断开的对象引用或业务规则问题。";
+                    UpdateStatus("数据库验证完成，未发现问题。");
                     return;
                 }
 
                 _reportText.Text =
                     $"数据库验证完成，发现 {messages.Count:#,##0} 条问题。\r\n\r\n" +
                     string.Join("\r\n", messages.Take(1000));
+                UpdateStatus($"数据库验证完成，发现 {messages.Count:#,##0} 条问题。");
             }
             catch (Exception ex)
             {
                 _reportText.Text = ex.ToString();
+                UpdateStatus("数据库验证失败。");
                 MessageBox.Show(this, ex.ToString(), "数据库验证失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
@@ -255,6 +270,7 @@ namespace Server.WinForms
             {
                 UseWaitCursor = true;
                 _reportText.Text = cleanRun ? "正在清理孤立数据..." : "正在扫描孤立数据...";
+                UpdateStatus(cleanRun ? "正在清理孤立数据..." : "正在扫描孤立数据...");
 
                 OrphanDiagnostic.ScanResult result = await Task.Run(() => cleanRun
                     ? OrphanDiagnostic.MarkTemporaryOnCleanableOrphans(session)
@@ -266,11 +282,15 @@ namespace Server.WinForms
                     DatabaseChanged?.Invoke(this, EventArgs.Empty);
 
                 _tabs.SelectedIndex = 1;
+                UpdateStatus(cleanRun
+                    ? $"孤立数据清理完成，标记 {result.TotalMarkedTemporary:#,##0} 条。"
+                    : $"孤立数据扫描完成，发现 {CountReportedOrphans(result):#,##0} 条。");
             }
             catch (Exception ex)
             {
                 _reportText.Text = ex.ToString();
                 SEnvir.Log(ex.ToString());
+                UpdateStatus(cleanRun ? "清理孤立数据失败。" : "扫描孤立数据失败。");
                 MessageBox.Show(this, ex.ToString(), cleanRun ? "清理孤立数据失败" : "扫描孤立数据失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
@@ -304,6 +324,7 @@ namespace Server.WinForms
             _networkGrid.Refresh();
             RefreshNetworkDiagnostics();
             _reportText.Text = "网络诊断统计已重置。";
+            UpdateStatus("网络诊断统计已重置。");
         }
 
         private void ExportReport()
@@ -326,6 +347,7 @@ namespace Server.WinForms
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
             File.WriteAllText(dialog.FileName, text);
+            UpdateStatus($"诊断报告已导出: {dialog.FileName}");
             MessageBox.Show(this, $"诊断报告已导出到：\r\n{dialog.FileName}", "导出报告", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
@@ -339,6 +361,7 @@ namespace Server.WinForms
             }
 
             Clipboard.SetText(text);
+            UpdateStatus("诊断报告已复制。");
         }
 
         private void CopyCurrentPage()
@@ -358,6 +381,7 @@ namespace Server.WinForms
             }
 
             Clipboard.SetText(text);
+            UpdateStatus($"已复制当前页 {_tabs.SelectedTab.Text}。");
         }
 
         private void ExportCurrentPage()
@@ -396,7 +420,36 @@ namespace Server.WinForms
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
             File.WriteAllText(dialog.FileName, BuildGridTsv(grid));
+            UpdateStatus($"当前页已导出: {dialog.FileName}");
             MessageBox.Show(this, $"当前页已导出到：\r\n{dialog.FileName}", "导出当前页", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void UpdateStatus(string message = null)
+        {
+            string pageStatus;
+
+            if (_tabs.SelectedTab == _reportPage)
+            {
+                int length = _reportText.TextLength;
+                int lines = string.IsNullOrEmpty(_reportText.Text) ? 0 : _reportText.Lines.Length;
+                pageStatus = $"报告: {lines:#,##0} 行，{length:#,##0} 字符";
+            }
+            else if (_tabs.SelectedTab == _orphanPage)
+            {
+                int totalOrphans = _orphanResults.Sum(x => x.CleanableOrphans + x.ExistingTemporaryOrphans);
+                pageStatus = $"孤立数据: {_orphanResults.Count:#,##0} 类，{totalOrphans:#,##0} 条";
+            }
+            else
+            {
+                pageStatus = $"网络统计: {_networkDiagnostics.Count:#,##0} 项，监控: {(BaseConnection.Monitor ? "开启" : "关闭")}";
+            }
+
+            _statusLabel.Text = string.IsNullOrWhiteSpace(message) ? pageStatus : $"{message}  {pageStatus}";
+        }
+
+        private static int CountReportedOrphans(OrphanDiagnostic.ScanResult result)
+        {
+            return result.Results.Sum(x => x.CleanableOrphans + x.ExistingTemporaryOrphans);
         }
 
         private string BuildGridTsv(DataGridView grid)
