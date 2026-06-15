@@ -186,6 +186,8 @@ namespace Server.WinForms
             AddDatabaseShortcut(mapDataMenu, "地图区域", "MapRegion");
             AddDatabaseShortcut(mapDataMenu, "移动点", "MovementInfo");
             AddDatabaseShortcut(mapDataMenu, "安全区", "SafeZoneInfo");
+            AddDatabaseShortcut(mapDataMenu, "守卫", "GuardInfo");
+            AddDatabaseShortcut(mapDataMenu, "矿点", "MineInfo");
             AddDatabaseShortcut(mapDataMenu, "钓鱼", "FishingInfo");
             AddDatabaseShortcut(mapDataMenu, "城堡", "CastleInfo");
             AddDatabaseShortcut(mapDataMenu, "世界事件", "WorldEventInfo");
@@ -418,6 +420,8 @@ namespace Server.WinForms
                 AddDatabaseNavigation(map, "地图区域", "MapRegion");
                 AddDatabaseNavigation(map, "移动点", "MovementInfo");
                 AddDatabaseNavigation(map, "安全区", "SafeZoneInfo");
+                AddDatabaseNavigation(map, "守卫", "GuardInfo");
+                AddDatabaseNavigation(map, "矿点", "MineInfo");
                 AddDatabaseNavigation(map, "钓鱼", "FishingInfo");
                 AddDatabaseNavigation(map, "城堡", "CastleInfo");
                 AddDatabaseNavigation(map, "世界事件", "WorldEventInfo");
