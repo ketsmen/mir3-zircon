@@ -636,11 +636,22 @@ namespace Server.WinForms
 
         private void Grid_KeyDown(object sender, KeyEventArgs e)
         {
-            if (_readOnly || !e.Control || e.KeyCode != Keys.V) return;
+            if (_readOnly) return;
 
-            PasteClipboardTable();
-            e.Handled = true;
-            e.SuppressKeyPress = true;
+            if (e.Control && e.KeyCode == Keys.V)
+            {
+                PasteClipboardTable();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                return;
+            }
+
+            if (!e.Control && !e.Alt && !e.Shift && e.KeyCode == Keys.Delete && !_grid.IsCurrentCellInEditMode)
+            {
+                DeleteSelected();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
         }
 
         private void PasteClipboardTable()
