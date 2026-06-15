@@ -67,6 +67,8 @@ namespace Server.WinForms
             AddButton(toolStrip, "刷新网络统计", (_, _) => RefreshNetworkDiagnostics());
             AddButton(toolStrip, "重置网络统计", (_, _) => ResetNetworkDiagnostics());
             toolStrip.Items.Add(new ToolStripSeparator());
+            AddButton(toolStrip, "复制报告", (_, _) => CopyReport());
+            AddButton(toolStrip, "复制当前页", (_, _) => CopyCurrentPage());
             AddButton(toolStrip, "导出报告", (_, _) => ExportReport());
             AddButton(toolStrip, "导出当前页", (_, _) => ExportCurrentPage());
 
@@ -270,6 +272,37 @@ namespace Server.WinForms
             MessageBox.Show(this, $"诊断报告已导出到：\r\n{dialog.FileName}", "导出报告", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
+        private void CopyReport()
+        {
+            string text = _reportText.Text;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                MessageBox.Show(this, "当前没有可复制的诊断报告。", "复制报告", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            Clipboard.SetText(text);
+        }
+
+        private void CopyCurrentPage()
+        {
+            DataGridView grid = _tabs.SelectedTab?.Controls.OfType<DataGridView>().FirstOrDefault();
+            if (grid == null)
+            {
+                CopyReport();
+                return;
+            }
+
+            string text = BuildGridTsv(grid);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                MessageBox.Show(this, "当前页没有可复制的行。", "复制当前页", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            Clipboard.SetText(text);
+        }
+
         private void ExportCurrentPage()
         {
             DataGridView grid = _tabs.SelectedTab?.Controls.OfType<DataGridView>().FirstOrDefault();
@@ -305,6 +338,20 @@ namespace Server.WinForms
 
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
+            File.WriteAllText(dialog.FileName, BuildGridTsv(grid));
+            MessageBox.Show(this, $"当前页已导出到：\r\n{dialog.FileName}", "导出当前页", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private string BuildGridTsv(DataGridView grid)
+        {
+            List<DataGridViewColumn> columns = grid.Columns.Cast<DataGridViewColumn>()
+                .Where(x => x.Visible)
+                .OrderBy(x => x.DisplayIndex)
+                .ToList();
+
+            if (columns.Count == 0 || grid.Rows.Count == 0)
+                return string.Empty;
+
             List<string> lines = new List<string>
             {
                 string.Join("\t", columns.Select(x => EscapeTsv(x.HeaderText)))
@@ -318,8 +365,7 @@ namespace Server.WinForms
                     EscapeTsv(Convert.ToString(row.Cells[column.Index].FormattedValue, CultureInfo.CurrentCulture)))));
             }
 
-            File.WriteAllLines(dialog.FileName, lines);
-            MessageBox.Show(this, $"当前页已导出到：\r\n{dialog.FileName}", "导出当前页", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return string.Join(Environment.NewLine, lines);
         }
 
         private static string EscapeTsv(string value)
