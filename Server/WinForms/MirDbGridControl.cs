@@ -126,21 +126,8 @@ namespace Server.WinForms
         {
             if (_readOnly) return;
 
-            object item;
-
-            if (_rootCollection != null)
-            {
-                item = _metadata.CreateRootObject(_itemType);
-            }
-            else if (_source is IBindingList bindingList)
-            {
-                item = bindingList.AddNew();
-            }
-            else
-            {
-                MessageBox.Show(this, "当前集合不支持新增。", "新增", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
+            object item = CreateNewItem();
+            if (item == null) return;
 
             _filterText = string.Empty;
             RefreshBinding();
@@ -174,6 +161,29 @@ namespace Server.WinForms
             SelectObject(item);
         }
 
+        public void DuplicateCurrent()
+        {
+            if (_readOnly) return;
+
+            object current = CurrentObject;
+            if (current == null) return;
+
+            object item = CreateNewItem();
+            if (item == null) return;
+
+            foreach (PropertyInfo property in _metadata.GetValueProperties(_itemType))
+            {
+                if (property.Name == nameof(DBObject.Index) || !CanWrite(property)) continue;
+
+                object value = property.GetValue(current);
+                property.SetValue(item, value);
+            }
+
+            _filterText = string.Empty;
+            RefreshBinding();
+            SelectObject(item);
+        }
+
         public void DeleteSelected()
         {
             if (_readOnly) return;
@@ -188,6 +198,18 @@ namespace Server.WinForms
                 item.Delete();
 
             RefreshBinding();
+        }
+
+        private object CreateNewItem()
+        {
+            if (_rootCollection != null)
+                return _metadata.CreateRootObject(_itemType);
+
+            if (_source is IBindingList bindingList)
+                return bindingList.AddNew();
+
+            MessageBox.Show(this, "当前集合不支持新增。", "新增", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return null;
         }
 
         private void SelectObject(object item)
@@ -239,6 +261,8 @@ namespace Server.WinForms
         {
             _contextMenu.Items.Add("复制当前单元格", null, (_, _) => CopyCurrentCell());
             _contextMenu.Items.Add("复制选中行", null, (_, _) => CopySelectedRows());
+            _contextMenu.Items.Add(new ToolStripSeparator());
+            _contextMenu.Items.Add("复制当前对象为新行", null, (_, _) => DuplicateCurrent());
             _contextMenu.Items.Add(new ToolStripSeparator());
             _contextMenu.Items.Add("选择当前行", null, (_, _) => SelectCurrentRow());
             _contextMenu.Items.Add("打开引用对象", null, (_, _) => OpenCurrentReference());

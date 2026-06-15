@@ -99,6 +99,7 @@ namespace Server.WinForms
             AddButton(toolStrip, "保存", (_, _) => SaveDatabase());
             AddButton(toolStrip, "新增", (_, _) => _activeGrid?.AddNew());
             AddButton(toolStrip, "插入到当前行后", (_, _) => _activeGrid?.InsertAfterCurrent());
+            AddButton(toolStrip, "复制当前", (_, _) => _activeGrid?.DuplicateCurrent());
             AddButton(toolStrip, "删除", (_, _) => _activeGrid?.DeleteSelected());
             AddButton(toolStrip, "导入", (_, _) => ImportCurrent());
             AddButton(toolStrip, "导出", (_, _) => ExportCurrent());
