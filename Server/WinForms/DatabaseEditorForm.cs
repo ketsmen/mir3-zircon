@@ -369,6 +369,7 @@ namespace Server.WinForms
                     UpdateMapRegionCommand();
                 };
                 _rootGrid.BecameActive += (_, _) => SetActiveGrid(_rootGrid);
+                _rootGrid.ReferenceOpenRequested += Grid_ReferenceOpenRequested;
 
                 _gridHost.Controls.Add(_rootGrid);
                 SetActiveGrid(_rootGrid);
@@ -409,6 +410,7 @@ namespace Server.WinForms
                     MirDbGridControl grid = new MirDbGridControl(_session, _metadata, childType, list, null, _readOnly);
                     grid.CurrentObjectChanged += (_, _) => UpdateMapRegionCommand();
                     grid.BecameActive += (_, _) => SetActiveGrid(grid);
+                    grid.ReferenceOpenRequested += Grid_ReferenceOpenRequested;
                     page.Controls.Add(grid);
                     _childTabs.TabPages.Add(page);
                 }
@@ -417,6 +419,31 @@ namespace Server.WinForms
             {
                 _childTabs.ResumeLayout();
             }
+        }
+
+        private void Grid_ReferenceOpenRequested(object sender, DBObjectReferenceEventArgs e)
+        {
+            if (e.Reference == null) return;
+
+            Type type = e.Reference.GetType();
+            if (!SelectTypeNode(type) && !string.IsNullOrWhiteSpace(_tableSearchText.Text))
+            {
+                _tableSearchText.Text = string.Empty;
+                SelectTypeNode(type);
+            }
+
+            if (!_metadata.ObjectTypes.Contains(type))
+            {
+                MessageBox.Show(this, $"找不到引用对象类型 {type.Name} 的数据库集合。", "打开引用对象", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_currentType != type)
+                ShowCollection(type);
+
+            _searchText.Text = string.Empty;
+            if (!_rootGrid.SelectByIndex(e.Reference.Index))
+                MessageBox.Show(this, $"已打开 {type.Name}，但没有找到 Index={e.Reference.Index} 的对象。", "打开引用对象", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void SetActiveGrid(MirDbGridControl grid)

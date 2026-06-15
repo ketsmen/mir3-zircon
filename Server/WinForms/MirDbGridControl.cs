@@ -25,6 +25,7 @@ namespace Server.WinForms
 
         public event EventHandler CurrentObjectChanged;
         public event EventHandler BecameActive;
+        public event EventHandler<DBObjectReferenceEventArgs> ReferenceOpenRequested;
 
         public MirDbGridControl(Session session, MirDbMetadata metadata, Type itemType, IList source, object rootCollection, bool readOnly)
         {
@@ -240,6 +241,7 @@ namespace Server.WinForms
             _contextMenu.Items.Add("复制选中行", null, (_, _) => CopySelectedRows());
             _contextMenu.Items.Add(new ToolStripSeparator());
             _contextMenu.Items.Add("选择当前行", null, (_, _) => SelectCurrentRow());
+            _contextMenu.Items.Add("打开引用对象", null, (_, _) => OpenCurrentReference());
             _contextMenu.Items.Add("最佳列宽", null, (_, _) => _grid.AutoResizeColumns(DataGridViewAutoSizeColumnsMode.DisplayedCells));
             _contextMenu.Items.Add("隐藏当前列", null, (_, _) => HideCurrentColumn());
             _contextMenu.Items.Add("显示所有列", null, (_, _) => ShowAllColumns());
@@ -305,6 +307,24 @@ namespace Server.WinForms
             _grid.ClearSelection();
             foreach (DataGridViewCell cell in _grid.CurrentRow.Cells)
                 cell.Selected = true;
+        }
+
+        private void OpenCurrentReference()
+        {
+            if (_grid.CurrentCell == null || _grid.CurrentRow?.DataBoundItem == null) return;
+
+            DataGridViewColumn column = _grid.Columns[_grid.CurrentCell.ColumnIndex];
+            PropertyInfo property = _itemType.GetProperty(column.DataPropertyName);
+            if (property == null) return;
+
+            object value = property.GetValue(_grid.CurrentRow.DataBoundItem);
+            if (value is not DBObject dbObject)
+            {
+                MessageBox.Show(this, "当前单元格不是数据库对象引用。", "打开引用对象", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            ReferenceOpenRequested?.Invoke(this, new DBObjectReferenceEventArgs(dbObject));
         }
 
         private void HideCurrentColumn()
@@ -628,5 +648,15 @@ namespace Server.WinForms
             typeof(Control).GetProperty("DoubleBuffered", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?.SetValue(control, true, null);
         }
+    }
+
+    public sealed class DBObjectReferenceEventArgs : EventArgs
+    {
+        public DBObjectReferenceEventArgs(DBObject reference)
+        {
+            Reference = reference;
+        }
+
+        public DBObject Reference { get; }
     }
 }
