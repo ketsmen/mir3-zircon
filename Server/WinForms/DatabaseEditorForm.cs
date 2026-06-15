@@ -881,7 +881,7 @@ namespace Server.WinForms
 
                 if (validationMessages.Count == 0)
                 {
-                    MessageBox.Show(this, "数据库验证完成，未发现重复身份字段或断开的对象引用。", "验证", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show(this, "数据库验证完成，未发现重复身份字段、断开的对象引用或业务规则问题。", "验证", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
 

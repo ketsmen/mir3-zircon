@@ -105,9 +105,16 @@ namespace Server.WinForms
             foreach (MilestoneInfoTask task in GetObjects<MilestoneInfoTask>())
                 ValidateRegion(task, nameof(MilestoneInfoTask.Region), task.Region, IsAreaRegion, "None/Area", messages);
 
+            foreach (MineInfo mine in GetObjects<MineInfo>().Where(x => x.Region != null && x.Map != null && x.Region.Map != x.Map))
+                messages.Add($"{Describe(mine)} 的 Region 必须属于同一个 Map，当前 Map={Describe(mine.Map)}，Region={Describe(mine.Region)}。");
+
             ValidateEventActions<WorldEventAction>(SEnvir.EventHandler?.GetWorldEventActions(), messages);
             ValidateEventActions<PlayerEventAction>(SEnvir.EventHandler?.GetPlayerEventActions(), messages);
             ValidateEventActions<MonsterEventAction>(SEnvir.EventHandler?.GetMonsterEventActions(), messages);
+
+            ValidateEventActionRegions<WorldEventAction>(messages);
+            ValidateEventActionRegions<PlayerEventAction>(messages);
+            ValidateEventActionRegions<MonsterEventAction>(messages);
         }
 
         private IEnumerable<T> GetObjects<T>() where T : DBObject
@@ -137,6 +144,12 @@ namespace Server.WinForms
 
             foreach (T action in GetObjects<T>().Where(x => !allowed.Contains(x.Type)))
                 messages.Add($"{Describe(action)} 的 Type={action.Type} 不是 {typeof(T).Name} 支持的事件动作类型。");
+        }
+
+        private void ValidateEventActionRegions<T>(List<string> messages) where T : BaseEventAction
+        {
+            foreach (T action in GetObjects<T>())
+                ValidateRegion(action, nameof(BaseEventAction.RegionParameter1), action.RegionParameter1, IsAreaRegion, "None/Area", messages);
         }
 
         private string Describe(DBObject value)
