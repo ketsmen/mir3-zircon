@@ -220,6 +220,9 @@ namespace Server.WinForms
             _contextMenu.Items.Add("复制选中行", null, (_, _) => CopySelectedRows());
             _contextMenu.Items.Add(new ToolStripSeparator());
             _contextMenu.Items.Add("选择当前行", null, (_, _) => SelectCurrentRow());
+            _contextMenu.Items.Add("最佳列宽", null, (_, _) => _grid.AutoResizeColumns(DataGridViewAutoSizeColumnsMode.DisplayedCells));
+            _contextMenu.Items.Add("隐藏当前列", null, (_, _) => HideCurrentColumn());
+            _contextMenu.Items.Add("显示所有列", null, (_, _) => ShowAllColumns());
             _contextMenu.Items.Add(new ToolStripSeparator());
             _contextMenu.Items.Add("刷新", null, (_, _) => RefreshBinding());
             _grid.ContextMenuStrip = _contextMenu;
@@ -282,6 +285,22 @@ namespace Server.WinForms
             _grid.ClearSelection();
             foreach (DataGridViewCell cell in _grid.CurrentRow.Cells)
                 cell.Selected = true;
+        }
+
+        private void HideCurrentColumn()
+        {
+            if (_grid.CurrentCell == null) return;
+
+            int visibleColumns = _grid.Columns.Cast<DataGridViewColumn>().Count(x => x.Visible);
+            if (visibleColumns <= 1) return;
+
+            _grid.Columns[_grid.CurrentCell.ColumnIndex].Visible = false;
+        }
+
+        private void ShowAllColumns()
+        {
+            foreach (DataGridViewColumn column in _grid.Columns)
+                column.Visible = true;
         }
 
         private void Grid_KeyDown(object sender, KeyEventArgs e)
