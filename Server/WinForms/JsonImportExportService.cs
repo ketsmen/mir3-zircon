@@ -46,7 +46,7 @@ namespace Server.WinForms
             MessageBox.Show(owner, $"已导出 {selected.Length} 行。", "导出", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        public void Import(Type itemType, IWin32Window owner)
+        public int Import(Type itemType, IWin32Window owner)
         {
             using OpenFileDialog dialog = new OpenFileDialog
             {
@@ -54,7 +54,7 @@ namespace Server.WinForms
                 RestoreDirectory = true
             };
 
-            if (dialog.ShowDialog(owner) != DialogResult.OK) return;
+            if (dialog.ShowDialog(owner) != DialogResult.OK) return 0;
 
             ImportReferenceResolver.SetDeferredResolution(true);
 
@@ -65,6 +65,7 @@ namespace Server.WinForms
             (int resolved, int remaining) = ImportReferenceResolver.ResolvePendingReferences(_session);
 
             MessageBox.Show(owner, $"已导入 {imported} 行。\r\n已解析 {resolved} 个延迟引用，剩余 {remaining} 个。", "导入", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return imported;
         }
 
         private JsonSerializerOptions CreateOptions(Type itemType, bool writeIndented)

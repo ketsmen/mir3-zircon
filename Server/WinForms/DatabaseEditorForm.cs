@@ -836,13 +836,17 @@ namespace Server.WinForms
 
         private void ImportCurrent()
         {
-            if (_currentType == null || _readOnly) return;
+            if (_activeGrid == null || _readOnly) return;
 
             try
             {
-                _jsonService.Import(_currentType, this);
-                MarkDirty();
+                int imported = _jsonService.Import(_activeGrid.ItemType, this);
+                if (imported > 0)
+                    MarkDirty();
+
                 _rootGrid?.RefreshBinding();
+                _activeGrid?.RefreshBinding();
+                ShowChildLists(_rootGrid?.CurrentObject);
             }
             catch (Exception ex)
             {
@@ -856,7 +860,7 @@ namespace Server.WinForms
 
             try
             {
-                _jsonService.Export(_currentType, _activeGrid.SelectedObjects, this);
+                _jsonService.Export(_activeGrid.ItemType, _activeGrid.SelectedObjects, this);
             }
             catch (Exception ex)
             {
