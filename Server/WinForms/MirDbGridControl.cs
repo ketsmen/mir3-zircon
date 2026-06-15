@@ -405,6 +405,7 @@ namespace Server.WinForms
             _contextMenu.Items.Add("选择当前行", null, (_, _) => SelectCurrentRow());
             _contextMenu.Items.Add("打开引用对象", null, (_, _) => OpenCurrentReference());
             _contextMenu.Items.Add("最佳列宽", null, (_, _) => _grid.AutoResizeColumns(DataGridViewAutoSizeColumnsMode.DisplayedCells));
+            _contextMenu.Items.Add("清除排序", null, (_, _) => ClearSort());
             _contextMenu.Items.Add("隐藏当前列", null, (_, _) => HideCurrentColumn());
             _contextMenu.Items.Add("显示所有列", null, (_, _) => ShowAllColumns());
             _contextMenu.Items.Add("重置列布局", null, (_, _) => ResetColumnLayout());
@@ -461,6 +462,16 @@ namespace Server.WinForms
                     ? SortOrder.Ascending
                     : SortOrder.Descending;
             }
+        }
+
+        private void ClearSort()
+        {
+            if (_sortProperty == null) return;
+
+            _sortProperty = null;
+            _sortDirection = ListSortDirection.Ascending;
+            RefreshBinding();
+            UpdateSortGlyphs();
         }
 
         private void CopyCurrentCell()
