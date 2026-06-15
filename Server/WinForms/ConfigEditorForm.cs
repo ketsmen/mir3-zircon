@@ -110,7 +110,9 @@ namespace Server.WinForms
             _filterText.Width = 220;
             _filterText.ToolTipText = "按配置项、分组、类型或当前值过滤。";
             _filterText.TextChanged += (_, _) => ApplyFilter();
+            _filterText.KeyDown += FilterText_KeyDown;
             toolStrip.Items.Add(_filterText);
+            AddButton(toolStrip, "清空过滤", (_, _) => _filterText.Text = string.Empty);
             _modifiedOnlyButton.CheckOnClick = true;
             _modifiedOnlyButton.ToolTipText = "只显示当前窗口中已修改但尚未保存的配置项。";
             _modifiedOnlyButton.CheckedChanged += (_, _) => ApplyFilter();
@@ -208,6 +210,21 @@ namespace Server.WinForms
                 _modifiedOnlyButton.Checked = !_modifiedOnlyButton.Checked;
                 SuppressKey(e);
             }
+        }
+
+        private void FilterText_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Escape)
+            {
+                _filterText.Text = string.Empty;
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.KeyCode != Keys.Enter) return;
+
+            FocusFirstVisibleSetting();
+            SuppressKey(e);
         }
 
         private static void SuppressKey(KeyEventArgs e)
@@ -607,6 +624,21 @@ namespace Server.WinForms
                 _tabs.SelectedTab = page;
 
             row.DataGridView.CurrentCell = row.Cells[2];
+            row.DataGridView.Focus();
+        }
+
+        private void FocusFirstVisibleSetting()
+        {
+            foreach (DataGridView grid in _sectionGrids.Values)
+            {
+                foreach (DataGridViewRow row in grid.Rows)
+                {
+                    if (!row.Visible || row.Tag is not ConfigSetting) continue;
+
+                    FocusRow(row);
+                    return;
+                }
+            }
         }
 
         private void GenerateEncryptionKey()
