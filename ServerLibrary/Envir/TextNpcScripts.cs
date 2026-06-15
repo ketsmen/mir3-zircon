@@ -422,6 +422,9 @@ namespace Server.Envir
                 case "CHECKCURRENCY":
                     ParseCurrencyCheck(line, checks, report);
                     break;
+                case "CHECKFAME":
+                    checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Fame }, line));
+                    break;
                 case "CHECKITEM":
                     ParseItemCheck(line, checks, report);
                     break;
@@ -532,6 +535,9 @@ namespace Server.Envir
                         actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.LocalMessage, StringParameter1 = line.Text.Substring(line.Text.IndexOf(' ') + 1).Trim() }, line));
                     else
                         report.Failures.Add($"{line.Source}: LOCALMESSAGE 需要消息内容。");
+                    break;
+                case "PROMOTEFAME":
+                    actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.PromoteFame }, line));
                     break;
                 default:
                     report.Failures.Add($"{line.Source}: 未知 NPC 动作 `{parts[0]}`。");
@@ -1450,6 +1456,7 @@ namespace Server.Envir
         Item,
         Class,
         Gender,
+        Fame,
         DayOfWeek,
         Hour,
         Minute,
@@ -1474,7 +1481,8 @@ namespace Server.Envir
         ChangeValue,
         LocalMessage,
         GiveCurrency,
-        TakeCurrency
+        TakeCurrency,
+        PromoteFame
     }
 
     internal enum TextNpcParseMode

@@ -476,6 +476,9 @@ namespace Server.Models
                         if (!string.IsNullOrWhiteSpace(action.StringParameter1))
                             ob.Connection.ReceiveChat(CompiledNpcScript.ReplaceArguments(action.StringParameter1, arguments), MessageType.System);
                         break;
+                    case CompiledNpcActionType.PromoteFame:
+                        ob.PromoteFame();
+                        break;
                 }
             }
 
@@ -496,6 +499,9 @@ namespace Server.Models
                         break;
                     case CompiledNpcCheckType.Currency:
                         if (!Compare(check.Operator, GetCurrencyAmount(ob, CompiledNpcScript.ReplaceArguments(check.StringParameter1, arguments)), check.IntParameter1)) return false;
+                        break;
+                    case CompiledNpcCheckType.Fame:
+                        if (!CanPromoteFame(ob)) return false;
                         break;
                     case CompiledNpcCheckType.Item:
                         if (check.ItemParameter1 == null) continue;
@@ -557,6 +563,17 @@ namespace Server.Models
                 ob.LogMilestone(MilestoneType.CurrencyGain, amount, currency: currency.Info);
 
             ob.CurrencyChanged(currency);
+        }
+
+        private static bool CanPromoteFame(PlayerObject ob)
+        {
+            var nextFame = ob.GetNextFameTitle();
+            if (nextFame == null) return false;
+
+            var currency = SEnvir.CurrencyInfoList.Binding.FirstOrDefault(x => x.Type == CurrencyType.FP);
+            if (currency == null) return false;
+
+            return ob.GetCurrency(currency).Amount >= nextFame.Cost;
         }
 
         private static bool HasRequiredClass(RequiredClass requiredClass, MirClass mirClass)

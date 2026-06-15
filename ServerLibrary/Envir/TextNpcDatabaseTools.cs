@@ -418,6 +418,9 @@ namespace Server.Envir
                 case CompiledNpcCheckType.Currency:
                     check.CheckType = NPCCheckType.Currency;
                     break;
+                case CompiledNpcCheckType.Fame:
+                    check.CheckType = NPCCheckType.CheckFame;
+                    break;
                 case CompiledNpcCheckType.Item:
                     check.CheckType = NPCCheckType.HasItem;
                     break;
@@ -476,6 +479,9 @@ namespace Server.Envir
                     break;
                 case CompiledNpcActionType.TakeCurrency:
                     action.ActionType = NPCActionType.TakeCurrency;
+                    break;
+                case CompiledNpcActionType.PromoteFame:
+                    action.ActionType = NPCActionType.PromoteFame;
                     break;
                 case CompiledNpcActionType.GiveItem:
                     action.ActionType = NPCActionType.GiveItem;
@@ -849,6 +855,10 @@ namespace Server.Envir
                     script.AppendLine($"CHECKCURRENCY {Quote(check.StringParameter1)} {OperatorText(check.Operator)} {check.IntParameter1}");
                     report.ChecksExported++;
                     break;
+                case NPCCheckType.CheckFame:
+                    script.AppendLine("CHECKFAME");
+                    report.ChecksExported++;
+                    break;
                 case NPCCheckType.HasItem:
                     if (check.ItemParameter1 != null && check.Operator == Operator.GreaterThanOrEqual)
                     {
@@ -943,6 +953,10 @@ namespace Server.Envir
                     break;
                 case NPCActionType.TakeCurrency:
                     script.AppendLine($"TAKECURRENCY {Quote(action.StringParameter1)} {action.IntParameter1}");
+                    report.ActionsExported++;
+                    break;
+                case NPCActionType.PromoteFame:
+                    script.AppendLine("PROMOTEFAME");
                     report.ActionsExported++;
                     break;
                 case NPCActionType.GiveItem:
