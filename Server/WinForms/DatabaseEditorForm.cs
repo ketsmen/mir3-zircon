@@ -262,6 +262,7 @@ namespace Server.WinForms
                 MarkDirty();
                 _rootGrid?.RefreshBinding();
                 _activeGrid?.RefreshBinding();
+                UpdateVisibleTypeNodeCounts();
                 UpdateGridStatus();
             };
             _rightSplit.Panel1.Controls.Add(_gridHost);
@@ -357,6 +358,7 @@ namespace Server.WinForms
         private void RefreshActiveGrid()
         {
             _activeGrid?.RefreshBinding();
+            UpdateVisibleTypeNodeCounts();
             ShowChildLists(_rootGrid?.CurrentObject);
             UpdateGridStatus();
         }
@@ -367,6 +369,7 @@ namespace Server.WinForms
             _rootGrid?.RefreshBinding();
             _activeGrid?.RefreshBinding();
             _propertyGrid.Refresh();
+            UpdateVisibleTypeNodeCounts();
             ShowChildLists(_rootGrid?.CurrentObject);
             UpdateGridStatus();
         }
@@ -591,7 +594,7 @@ namespace Server.WinForms
                 _rootGrid.ContentChanged += (_, _) =>
                 {
                     MarkDirty();
-                    UpdateCurrentTypeNodeText();
+                    UpdateVisibleTypeNodeCounts();
                 };
 
                 _gridHost.Controls.Add(_rootGrid);
@@ -686,13 +689,13 @@ namespace Server.WinForms
             return $"{type.Name} ({_metadata.GetCount(type)})";
         }
 
-        private void UpdateCurrentTypeNodeText()
+        private void UpdateVisibleTypeNodeCounts()
         {
-            if (_currentType == null) return;
-
-            TreeNode node = FindNodeByType(_tree.Nodes, _currentType);
-            if (node != null)
-                node.Text = GetTypeNodeText(_currentType);
+            foreach (TreeNode node in GetAllTreeNodes(_tree.Nodes))
+            {
+                if (node.Tag is Type type)
+                    node.Text = GetTypeNodeText(type);
+            }
         }
 
         private void UpdateGridStatus()
@@ -997,6 +1000,7 @@ namespace Server.WinForms
 
                 _rootGrid?.RefreshBinding();
                 _activeGrid?.RefreshBinding();
+                UpdateVisibleTypeNodeCounts();
                 ShowChildLists(_rootGrid?.CurrentObject);
             }
             catch (Exception ex)
@@ -1066,6 +1070,7 @@ namespace Server.WinForms
 
                 MarkDirty();
                 _rootGrid?.RefreshBinding();
+                UpdateVisibleTypeNodeCounts();
                 ShowChildLists(_rootGrid?.CurrentObject);
 
                 string details = report.ToDisplayText();
@@ -1152,6 +1157,7 @@ namespace Server.WinForms
                 MarkDirty();
 
             _rootGrid?.RefreshBinding();
+            UpdateVisibleTypeNodeCounts();
             ShowChildLists(_rootGrid?.CurrentObject);
 
             string message = report.ToDisplayText();
@@ -1227,6 +1233,7 @@ namespace Server.WinForms
                     MarkDirty();
 
                 _rootGrid?.RefreshBinding();
+                UpdateVisibleTypeNodeCounts();
                 ShowChildLists(_rootGrid?.CurrentObject);
 
                 string details = BuildTextNpcImportDetails(report);
