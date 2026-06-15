@@ -102,7 +102,8 @@ namespace Server.WinForms
             AddButton(toolStrip, "复制当前", (_, _) => _activeGrid?.DuplicateCurrent());
             AddButton(toolStrip, "删除", (_, _) => _activeGrid?.DeleteSelected());
             AddButton(toolStrip, "导入", (_, _) => ImportCurrent());
-            AddButton(toolStrip, "导出", (_, _) => ExportCurrent());
+            AddButton(toolStrip, "导出选中", (_, _) => ExportCurrent());
+            AddButton(toolStrip, "导出全部", (_, _) => ExportAllCurrent());
             AddButton(toolStrip, "导入 Mir2 掉落", (_, _) => ImportMir2Drops());
             AddButton(toolStrip, "导出 Mir2 掉落", (_, _) => ExportMir2Drops());
             AddButton(toolStrip, "验证文本 NPC", (_, _) => ValidateTextNpcs());
@@ -633,6 +634,20 @@ namespace Server.WinForms
             try
             {
                 _jsonService.Export(_currentType, _activeGrid.SelectedObjects, this);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "导出失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ExportAllCurrent()
+        {
+            if (_currentType == null || _activeGrid == null) return;
+
+            try
+            {
+                _jsonService.Export(_activeGrid.ItemType, _activeGrid.AllObjects, this);
             }
             catch (Exception ex)
             {

@@ -67,9 +67,13 @@ namespace Server.WinForms
 
         public string ItemTypeName => _itemType.Name;
 
+        public Type ItemType => _itemType;
+
         public int VisibleCount => _grid.Rows.Count;
 
         public int TotalCount => _source.Count;
+
+        public IEnumerable<object> AllObjects => _source.Cast<object>();
 
         public IEnumerable<object> SelectedObjects
         {
