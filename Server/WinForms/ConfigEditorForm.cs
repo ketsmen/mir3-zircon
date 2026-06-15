@@ -514,6 +514,9 @@ namespace Server.WinForms
         {
             EndGridEdits();
 
+            DataGridView activeGrid = _tabs.SelectedTab?.Controls.OfType<DataGridView>().FirstOrDefault();
+            ConfigSetting activeSetting = activeGrid?.CurrentRow?.Tag as ConfigSetting;
+            int activeColumn = activeGrid?.CurrentCell?.ColumnIndex ?? 2;
             string filter = _filterText.Text?.Trim();
             bool modifiedOnly = _modifiedOnlyButton.Checked;
             int visible = 0;
@@ -551,6 +554,8 @@ namespace Server.WinForms
             string modifiedSuffix = modifiedOnly ? $"，只看修改: {modifiedCount}" :
                 modifiedCount > 0 ? $"，已修改: {modifiedCount}" : string.Empty;
             _statusLabel.Text = $"配置项: {visible}/{total}{filterSuffix}{modifiedSuffix}。{GetConfigPathText()}";
+
+            RestoreCurrentSetting(activeSetting, activeColumn);
         }
 
         private static bool MatchesFilter(ConfigSetting setting, DataGridViewRow row, string filter)
@@ -639,6 +644,19 @@ namespace Server.WinForms
                     return;
                 }
             }
+        }
+
+        private void RestoreCurrentSetting(ConfigSetting setting, int columnIndex)
+        {
+            if (setting == null) return;
+            if (!_propertyRows.TryGetValue(setting.Property.Name, out DataGridViewRow row)) return;
+            if (!row.Visible) return;
+
+            if (row.DataGridView?.Parent is TabPage page)
+                _tabs.SelectedTab = page;
+
+            int safeColumn = Math.Max(0, Math.Min(columnIndex, row.Cells.Count - 1));
+            row.DataGridView.CurrentCell = row.Cells[safeColumn];
         }
 
         private void GenerateEncryptionKey()
