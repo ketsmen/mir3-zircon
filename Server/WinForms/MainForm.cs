@@ -621,8 +621,30 @@ namespace Server.WinForms
                 return;
             }
 
+            if (!CloseOnlineEditorBeforeStop()) return;
+
             SEnvir.Started = false;
             UpdateInterface();
+        }
+
+        private bool CloseOnlineEditorBeforeStop()
+        {
+            if (_onlineDatabaseEditorForm == null || _onlineDatabaseEditorForm.IsDisposed) return true;
+
+            if (_onlineDatabaseEditorForm.HasUnsavedChanges)
+            {
+                MessageBox.Show(
+                    this,
+                    "在线数据库编辑器仍有未保存状态。请先在数据库编辑器中保存或关闭窗口，再停止服务端。",
+                    "停止服务端",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                ActivateForm(_onlineDatabaseEditorForm);
+                return false;
+            }
+
+            _onlineDatabaseEditorForm.Close();
+            return _onlineDatabaseEditorForm == null || _onlineDatabaseEditorForm.IsDisposed;
         }
 
         private void OpenDatabaseEditor(string initialTypeName = null)
