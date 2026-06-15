@@ -25,6 +25,7 @@ namespace Server.WinForms
         private readonly SplitContainer _rightSplit = new SplitContainer();
         private readonly Panel _gridHost = new Panel();
         private readonly TabControl _childTabs = new TabControl();
+        private readonly PropertyGrid _propertyGrid = new PropertyGrid();
         private readonly ToolStripTextBox _tableSearchText = new ToolStripTextBox();
         private readonly ToolStripTextBox _searchText = new ToolStripTextBox();
         private readonly ToolStripLabel _statusLabel = new ToolStripLabel();
@@ -141,6 +142,16 @@ namespace Server.WinForms
 
             _gridHost.Dock = DockStyle.Fill;
             _childTabs.Dock = DockStyle.Fill;
+            _propertyGrid.Dock = DockStyle.Fill;
+            _propertyGrid.Enabled = !_readOnly;
+            _propertyGrid.PropertySort = PropertySort.Categorized;
+            _propertyGrid.ToolbarVisible = true;
+            _propertyGrid.PropertyValueChanged += (_, _) =>
+            {
+                _rootGrid?.RefreshBinding();
+                _activeGrid?.RefreshBinding();
+                UpdateGridStatus();
+            };
             _rightSplit.Panel1.Controls.Add(_gridHost);
             _rightSplit.Panel2.Controls.Add(_childTabs);
             _split.Panel2.Controls.Add(_rightSplit);
@@ -364,6 +375,12 @@ namespace Server.WinForms
             try
             {
                 _childTabs.TabPages.Clear();
+                _propertyGrid.SelectedObject = owner;
+
+                TabPage propertyPage = new TabPage("属性");
+                propertyPage.Controls.Add(_propertyGrid);
+                _childTabs.TabPages.Add(propertyPage);
+
                 if (owner == null || _currentType == null) return;
 
                 foreach (PropertyInfo property in _metadata.GetChildListProperties(_currentType))
