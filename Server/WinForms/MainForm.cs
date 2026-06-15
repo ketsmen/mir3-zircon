@@ -136,6 +136,8 @@ namespace Server.WinForms
             AddDatabaseShortcut(playerDataMenu, "名望", "FameInfo");
             AddDatabaseShortcut(playerDataMenu, "修炼", "DisciplineInfo");
             AddDatabaseShortcut(playerDataMenu, "宠物", "CompanionInfo");
+            AddDatabaseShortcut(playerDataMenu, "宠物等级", "CompanionLevelInfo");
+            AddDatabaseShortcut(playerDataMenu, "宠物技能", "CompanionSkillInfo");
             AddDatabaseShortcut(playerDataMenu, "帮助", "HelpInfo");
 
             ToolStripMenuItem mapDataMenu = AddDatabaseGroup(databaseMenu, "地图");
@@ -146,7 +148,9 @@ namespace Server.WinForms
             AddDatabaseShortcut(mapDataMenu, "安全区", "SafeZoneInfo");
             AddDatabaseShortcut(mapDataMenu, "钓鱼", "FishingInfo");
             AddDatabaseShortcut(mapDataMenu, "城堡", "CastleInfo");
-            AddDatabaseShortcut(mapDataMenu, "事件", "WorldEventInfo");
+            AddDatabaseShortcut(mapDataMenu, "世界事件", "WorldEventInfo");
+            AddDatabaseShortcut(mapDataMenu, "玩家事件", "PlayerEventInfo");
+            AddDatabaseShortcut(mapDataMenu, "怪物事件", "MonsterEventInfo");
 
             ToolStripMenuItem npcDataMenu = AddDatabaseGroup(databaseMenu, "NPC与任务");
             AddDatabaseShortcut(npcDataMenu, "NPC", "NPCInfo");
@@ -356,6 +360,8 @@ namespace Server.WinForms
                 AddDatabaseNavigation(player, "名望", "FameInfo");
                 AddDatabaseNavigation(player, "修炼", "DisciplineInfo");
                 AddDatabaseNavigation(player, "宠物", "CompanionInfo");
+                AddDatabaseNavigation(player, "宠物等级", "CompanionLevelInfo");
+                AddDatabaseNavigation(player, "宠物技能", "CompanionSkillInfo");
                 AddDatabaseNavigation(player, "货币", "CurrencyInfo");
                 AddDatabaseNavigation(player, "帮助", "HelpInfo");
 
@@ -367,7 +373,9 @@ namespace Server.WinForms
                 AddDatabaseNavigation(map, "安全区", "SafeZoneInfo");
                 AddDatabaseNavigation(map, "钓鱼", "FishingInfo");
                 AddDatabaseNavigation(map, "城堡", "CastleInfo");
-                AddDatabaseNavigation(map, "事件", "WorldEventInfo");
+                AddDatabaseNavigation(map, "世界事件", "WorldEventInfo");
+                AddDatabaseNavigation(map, "玩家事件", "PlayerEventInfo");
+                AddDatabaseNavigation(map, "怪物事件", "MonsterEventInfo");
 
                 TreeNode npc = AddNavigationGroup("NPC与任务");
                 AddDatabaseNavigation(npc, "NPC", "NPCInfo");
