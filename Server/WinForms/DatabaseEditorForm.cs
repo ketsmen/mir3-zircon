@@ -211,6 +211,7 @@ namespace Server.WinForms
             _tableSearchText.TextChanged += (_, _) => BuildTree();
             _tableSearchText.KeyDown += TableSearchText_KeyDown;
             toolStrip.Items.Add(_tableSearchText);
+            AddButton(toolStrip, "清空表过滤", (_, _) => _tableSearchText.Text = string.Empty);
             toolStrip.Items.Add(new ToolStripSeparator());
             toolStrip.Items.Add(new ToolStripLabel("搜索"));
             _searchText.AutoSize = false;
@@ -222,6 +223,7 @@ namespace Server.WinForms
             };
             _searchText.KeyDown += SearchText_KeyDown;
             toolStrip.Items.Add(_searchText);
+            AddButton(toolStrip, "清空搜索", (_, _) => _searchText.Text = string.Empty);
             toolStrip.Items.Add(new ToolStripSeparator());
             toolStrip.Items.Add(new ToolStripLabel("Index"));
             _indexText.AutoSize = false;
