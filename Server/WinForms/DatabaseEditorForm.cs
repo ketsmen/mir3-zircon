@@ -110,6 +110,7 @@ namespace Server.WinForms
             AddButton(toolStrip, "导出当前视图", (_, _) => _activeGrid?.ExportVisibleRows(this));
             AddButton(toolStrip, "导入 Mir2 掉落", (_, _) => ImportMir2Drops());
             AddButton(toolStrip, "导出 Mir2 掉落", (_, _) => ExportMir2Drops());
+            AddButton(toolStrip, "迁移怪物形象", (_, _) => MigrateLegacyMonsterImages());
             AddButton(toolStrip, "验证文本 NPC", (_, _) => ValidateTextNpcs());
             AddButton(toolStrip, "导入文本 NPC", (_, _) => ImportTextNpcs());
             AddButton(toolStrip, "导出 NPC 文本", (_, _) => ExportTextNpcs());
@@ -889,6 +890,46 @@ namespace Server.WinForms
             {
                 MessageBox.Show(this, ex.ToString(), "导出 Mir2 掉落失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void MigrateLegacyMonsterImages()
+        {
+            if (_readOnly)
+            {
+                MessageBox.Show(this, "数据库当前以只读模式打开，不能迁移怪物形象。", "迁移怪物形象", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            List<MonsterInfo> monsters = _session.GetCollection<MonsterInfo>().Binding.ToList();
+            MonsterImageMigrationService service = new MonsterImageMigrationService();
+            MonsterImageMigrationReport preview = service.Preview(monsters);
+
+            if (preview.LegacyMarkers == 0)
+            {
+                MessageBox.Show(
+                    this,
+                    "没有检测到旧格式怪物形象标记。\r\n\r\n旧数据通常会存在 Image 为 1-9 的怪物；当前数据库看起来已经使用新枚举，未执行迁移。",
+                    "迁移怪物形象",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            string confirmText = preview.ToDisplayText() +
+                "\r\n\r\n此操作会按旧服务器编辑器的 OldMonsterImage 顺序重写 MonsterInfo.Image，执行后仍需要保存数据库才会落盘。确定继续吗？";
+
+            if (MessageBox.Show(this, confirmText, "迁移怪物形象", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                return;
+
+            MonsterImageMigrationReport report = service.Migrate(monsters);
+            _rootGrid?.RefreshBinding();
+            ShowChildLists(_rootGrid?.CurrentObject);
+
+            string message = report.ToDisplayText();
+            if (_onlineMode)
+                message += "\r\n\r\n在线模式下已更新内存对象；请保存数据库，并根据怪物刷新情况评估是否需要重启或重刷地图。";
+
+            MessageBox.Show(this, message, "迁移怪物形象", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void ValidateTextNpcs()
