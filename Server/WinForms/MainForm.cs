@@ -591,6 +591,7 @@ namespace Server.WinForms
         private void NavigationTree_AfterSelect(object sender, TreeViewEventArgs e)
         {
             if (_buildingNavigationTree) return;
+            if (e.Action != TreeViewAction.ByMouse) return;
             if (e.Node?.Tag is Action action)
                 action();
         }
@@ -611,9 +612,14 @@ namespace Server.WinForms
             if (node?.Tag is Action action)
             {
                 if (_navigationTree.SelectedNode == node)
+                {
                     action();
+                }
                 else
+                {
                     _navigationTree.SelectedNode = node;
+                    action();
+                }
             }
 
             e.Handled = true;
