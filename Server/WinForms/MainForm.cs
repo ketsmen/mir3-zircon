@@ -17,6 +17,8 @@ namespace Server.WinForms
     public sealed class MainForm : Form
     {
         private readonly ContextMenuStrip _logMenu = new ContextMenuStrip();
+        private readonly SplitContainer _workspaceSplit = new SplitContainer();
+        private readonly TreeView _navigationTree = new TreeView();
         private readonly Panel _logPanel = new Panel();
         private readonly TabControl _logTabs = new TabControl();
         private readonly TabPage _systemLogPage = new TabPage("系统日志");
@@ -191,6 +193,7 @@ namespace Server.WinForms
 
             BuildLogMenu();
             BuildLogPanel();
+            BuildWorkspacePanel();
 
             _statusPanel.Dock = DockStyle.Fill;
             _statusPanel.BackColor = SystemColors.Window;
@@ -210,7 +213,7 @@ namespace Server.WinForms
             layout.Controls.Add(menu, 0, 0);
             layout.Controls.Add(toolStrip, 0, 1);
             layout.Controls.Add(_metricsPanel, 0, 2);
-            layout.Controls.Add(_logPanel, 0, 3);
+            layout.Controls.Add(_workspaceSplit, 0, 3);
             layout.Controls.Add(_statusPanel, 0, 4);
 
             Controls.Add(layout);
@@ -287,6 +290,118 @@ namespace Server.WinForms
             list.SelectionMode = SelectionMode.MultiExtended;
             list.ContextMenuStrip = _logMenu;
             SetDoubleBuffered(list);
+        }
+
+        private void BuildWorkspacePanel()
+        {
+            _workspaceSplit.Dock = DockStyle.Fill;
+            _workspaceSplit.Margin = Padding.Empty;
+            _workspaceSplit.FixedPanel = FixedPanel.Panel1;
+            _workspaceSplit.SplitterDistance = 230;
+
+            _navigationTree.Dock = DockStyle.Fill;
+            _navigationTree.HideSelection = false;
+            _navigationTree.AfterSelect += NavigationTree_AfterSelect;
+
+            BuildNavigationTree();
+
+            _workspaceSplit.Panel1.Controls.Add(_navigationTree);
+            _workspaceSplit.Panel2.Controls.Add(_logPanel);
+        }
+
+        private void BuildNavigationTree()
+        {
+            _navigationTree.BeginUpdate();
+            try
+            {
+                _navigationTree.Nodes.Clear();
+
+                TreeNode operations = AddNavigationGroup("运维");
+                AddNavigationAction(operations, "系统日志", () => _logTabs.SelectedTab = _systemLogPage);
+                AddNavigationAction(operations, "聊天日志", () => _logTabs.SelectedTab = _chatLogPage);
+                AddNavigationAction(operations, "配置编辑器", OpenConfigEditor);
+                AddNavigationAction(operations, "服务器诊断", OpenDiagnostics);
+                AddNavigationAction(operations, "地图查看器", () => new MapViewerForm().Show(this));
+
+                TreeNode player = AddNavigationGroup("玩家");
+                AddDatabaseNavigation(player, "基础属性", "BaseStat");
+                AddDatabaseNavigation(player, "技能", "MagicInfo");
+                AddDatabaseNavigation(player, "名望", "FameInfo");
+                AddDatabaseNavigation(player, "修炼", "DisciplineInfo");
+                AddDatabaseNavigation(player, "宠物", "CompanionInfo");
+                AddDatabaseNavigation(player, "货币", "CurrencyInfo");
+                AddDatabaseNavigation(player, "帮助", "HelpInfo");
+
+                TreeNode map = AddNavigationGroup("地图");
+                AddDatabaseNavigation(map, "地图", "MapInfo");
+                AddDatabaseNavigation(map, "副本", "InstanceInfo");
+                AddDatabaseNavigation(map, "地图区域", "MapRegion");
+                AddDatabaseNavigation(map, "移动点", "MovementInfo");
+                AddDatabaseNavigation(map, "安全区", "SafeZoneInfo");
+                AddDatabaseNavigation(map, "钓鱼", "FishingInfo");
+                AddDatabaseNavigation(map, "城堡", "CastleInfo");
+                AddDatabaseNavigation(map, "事件", "WorldEventInfo");
+
+                TreeNode npc = AddNavigationGroup("NPC与任务");
+                AddDatabaseNavigation(npc, "NPC", "NPCInfo");
+                AddDatabaseNavigation(npc, "NPC页面", "NPCPage");
+                AddDatabaseNavigation(npc, "NPC数据", "GameNPCList");
+                AddDatabaseNavigation(npc, "任务", "QuestInfo");
+                AddDatabaseNavigation(npc, "里程碑", "MilestoneInfo");
+                AddDatabaseNavigation(npc, "商店", "StoreInfo");
+
+                TreeNode item = AddNavigationGroup("物品");
+                AddDatabaseNavigation(item, "物品", "ItemInfo");
+                AddDatabaseNavigation(item, "物品属性", "ItemInfoStat");
+                AddDatabaseNavigation(item, "套装", "SetInfo");
+                AddDatabaseNavigation(item, "武器制作属性", "WeaponCraftStatInfo");
+                AddDatabaseNavigation(item, "礼包", "BundleInfo");
+                AddDatabaseNavigation(item, "宝箱", "LootBoxInfo");
+
+                TreeNode monster = AddNavigationGroup("怪物");
+                AddDatabaseNavigation(monster, "怪物", "MonsterInfo");
+                AddDatabaseNavigation(monster, "怪物属性", "MonsterInfoStat");
+                AddDatabaseNavigation(monster, "掉落", "DropInfo");
+                AddDatabaseNavigation(monster, "刷新", "RespawnInfo");
+
+                TreeNode management = AddNavigationGroup("管理");
+                AddDatabaseNavigation(management, "账号", "AccountInfo");
+                AddDatabaseNavigation(management, "角色", "CharacterInfo");
+                AddDatabaseNavigation(management, "用户掉落", "UserDrop");
+                AddDatabaseNavigation(management, "充值记录", "GameGoldPayment");
+                AddDatabaseNavigation(management, "商城销售", "GameStoreSale");
+                AddDatabaseNavigation(management, "邮件", "MailInfo");
+                AddDatabaseNavigation(management, "攻城统计", "UserConquestStats");
+
+                _navigationTree.ExpandAll();
+            }
+            finally
+            {
+                _navigationTree.EndUpdate();
+            }
+        }
+
+        private TreeNode AddNavigationGroup(string text)
+        {
+            TreeNode node = new TreeNode(text);
+            _navigationTree.Nodes.Add(node);
+            return node;
+        }
+
+        private static void AddNavigationAction(TreeNode parent, string text, Action action)
+        {
+            parent.Nodes.Add(new TreeNode(text) { Tag = action });
+        }
+
+        private void AddDatabaseNavigation(TreeNode parent, string text, string typeName)
+        {
+            AddNavigationAction(parent, text, () => OpenDatabaseEditor(typeName));
+        }
+
+        private void NavigationTree_AfterSelect(object sender, TreeViewEventArgs e)
+        {
+            if (e.Node?.Tag is Action action)
+                action();
         }
 
         private void BuildMetricsPanel()
