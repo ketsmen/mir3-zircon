@@ -532,7 +532,7 @@ namespace Server.WinForms
             {
                 if (!MatchesTypeFilter(type, filter)) continue;
 
-                TreeNode node = new TreeNode($"{type.Name} ({_metadata.GetCount(type)})")
+                TreeNode node = new TreeNode(GetTypeNodeText(type))
                 {
                     Tag = type
                 };
@@ -588,7 +588,11 @@ namespace Server.WinForms
                 };
                 _rootGrid.BecameActive += (_, _) => SetActiveGrid(_rootGrid);
                 _rootGrid.ReferenceOpenRequested += Grid_ReferenceOpenRequested;
-                _rootGrid.ContentChanged += (_, _) => MarkDirty();
+                _rootGrid.ContentChanged += (_, _) =>
+                {
+                    MarkDirty();
+                    UpdateCurrentTypeNodeText();
+                };
 
                 _gridHost.Controls.Add(_rootGrid);
                 SetActiveGrid(_rootGrid);
@@ -630,7 +634,11 @@ namespace Server.WinForms
                     grid.CurrentObjectChanged += (_, _) => UpdateMapRegionCommand();
                     grid.BecameActive += (_, _) => SetActiveGrid(grid);
                     grid.ReferenceOpenRequested += Grid_ReferenceOpenRequested;
-                    grid.ContentChanged += (_, _) => MarkDirty();
+                    grid.ContentChanged += (_, _) =>
+                    {
+                        page.Text = $"{property.Name} ({list.Count})";
+                        MarkDirty();
+                    };
                     page.Controls.Add(grid);
                     _childTabs.TabPages.Add(page);
                 }
@@ -671,6 +679,20 @@ namespace Server.WinForms
             _activeGrid = grid;
             UpdateGridStatus();
             UpdateMapRegionCommand();
+        }
+
+        private string GetTypeNodeText(Type type)
+        {
+            return $"{type.Name} ({_metadata.GetCount(type)})";
+        }
+
+        private void UpdateCurrentTypeNodeText()
+        {
+            if (_currentType == null) return;
+
+            TreeNode node = FindNodeByType(_tree.Nodes, _currentType);
+            if (node != null)
+                node.Text = GetTypeNodeText(_currentType);
         }
 
         private void UpdateGridStatus()
