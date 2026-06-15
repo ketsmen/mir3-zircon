@@ -62,7 +62,7 @@ namespace Server.WinForms
             _onlineMode = onlineMode;
             _initialTypeName = initialTypeName;
 
-            Text = onlineMode ? "MirDB 数据库编辑器 - 在线模式" : "MirDB 数据库编辑器";
+            UpdateWindowTitle();
             Width = 1280;
             Height = 760;
             KeyPreview = true;
@@ -649,7 +649,13 @@ namespace Server.WinForms
             if (_readOnly || _dirty) return;
 
             _dirty = true;
+            UpdateWindowTitle();
             UpdateGridStatus();
+        }
+
+        private void UpdateWindowTitle()
+        {
+            Text = (_onlineMode ? "MirDB 数据库编辑器 - 在线模式" : "MirDB 数据库编辑器") + (_dirty ? " *" : string.Empty);
         }
 
         private void UpdateMapRegionCommand()
@@ -813,6 +819,7 @@ namespace Server.WinForms
                     message += "\r\n\r\n" + runtimeRefresh;
 
                 _dirty = false;
+                UpdateWindowTitle();
                 UpdateGridStatus();
                 MessageBox.Show(this, message, "保存", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
