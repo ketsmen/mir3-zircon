@@ -38,6 +38,8 @@ namespace Server.WinForms
             Width = 1100;
             Height = 720;
             StartPosition = FormStartPosition.CenterParent;
+            KeyPreview = true;
+            KeyDown += DiagnosticsForm_KeyDown;
 
             BuildLayout();
             LoadNetworkDiagnostics();
@@ -140,6 +142,40 @@ namespace Server.WinForms
             button.Click += click;
             toolStrip.Items.Add(button);
             return button;
+        }
+
+        private void DiagnosticsForm_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Control && e.KeyCode == Keys.C && !IsReportTextCopy(e))
+            {
+                CopyCurrentPage();
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.Control && e.KeyCode == Keys.S)
+            {
+                ExportCurrentPage();
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.KeyCode == Keys.F5)
+            {
+                RefreshNetworkDiagnostics();
+                SuppressKey(e);
+            }
+        }
+
+        private bool IsReportTextCopy(KeyEventArgs e)
+        {
+            return e.Control && e.KeyCode == Keys.C && _reportText.Focused && !string.IsNullOrEmpty(_reportText.SelectedText);
+        }
+
+        private static void SuppressKey(KeyEventArgs e)
+        {
+            e.Handled = true;
+            e.SuppressKeyPress = true;
         }
 
         private void LoadNetworkDiagnostics()
