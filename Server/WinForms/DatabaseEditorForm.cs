@@ -40,6 +40,7 @@ namespace Server.WinForms
         private MirDbGridControl _activeGrid;
         private Type _currentType;
         private readonly string _initialTypeName;
+        private bool _buildingTree;
         private bool _dirty;
         private static readonly string UiCachePath = Path.Combine(Application.StartupPath, "DatabaseEditor.WinForms.cache.json");
 
@@ -562,63 +563,71 @@ namespace Server.WinForms
             Type selectedType = _tree.SelectedNode?.Tag as Type;
             string filter = _tableSearchText.Text?.Trim();
 
+            _buildingTree = true;
             _tree.BeginUpdate();
-            _tree.Nodes.Clear();
-
-            TreeNode systemNode = new TreeNode("系统数据");
-            TreeNode userNode = new TreeNode("用户数据");
-            Dictionary<string, TreeNode> systemGroups = new Dictionary<string, TreeNode>();
-            Dictionary<string, TreeNode> userGroups = new Dictionary<string, TreeNode>();
-
-            foreach (Type type in _metadata.ObjectTypes)
+            try
             {
-                if (!MatchesTypeFilter(type, filter)) continue;
+                _tree.Nodes.Clear();
 
-                TreeNode node = new TreeNode(GetTypeNodeText(type))
+                TreeNode systemNode = new TreeNode("系统数据");
+                TreeNode userNode = new TreeNode("用户数据");
+                Dictionary<string, TreeNode> systemGroups = new Dictionary<string, TreeNode>();
+                Dictionary<string, TreeNode> userGroups = new Dictionary<string, TreeNode>();
+
+                foreach (Type type in _metadata.ObjectTypes)
                 {
-                    Tag = type
-                };
+                    if (!MatchesTypeFilter(type, filter)) continue;
 
-                if (_metadata.IsUserObject(type))
-                    GetGroupNode(userNode, userGroups, GetTypeGroup(type)).Nodes.Add(node);
-                else
-                    GetGroupNode(systemNode, systemGroups, GetTypeGroup(type)).Nodes.Add(node);
+                    TreeNode node = new TreeNode(GetTypeNodeText(type))
+                    {
+                        Tag = type
+                    };
+
+                    if (_metadata.IsUserObject(type))
+                        GetGroupNode(userNode, userGroups, GetTypeGroup(type)).Nodes.Add(node);
+                    else
+                        GetGroupNode(systemNode, systemGroups, GetTypeGroup(type)).Nodes.Add(node);
+                }
+
+                bool hasFilter = !string.IsNullOrWhiteSpace(filter);
+                bool hasMatches = systemNode.Nodes.Count > 0 || userNode.Nodes.Count > 0;
+
+                if (!hasFilter || systemNode.Nodes.Count > 0)
+                    _tree.Nodes.Add(systemNode);
+
+                if (!hasFilter || userNode.Nodes.Count > 0)
+                    _tree.Nodes.Add(userNode);
+
+                if (hasFilter && !hasMatches)
+                    _tree.Nodes.Add(new TreeNode("无匹配表"));
+
+                if (_tree.Nodes.Contains(systemNode))
+                    systemNode.Expand();
+
+                if (hasFilter && userNode.Nodes.Count > 0)
+                    userNode.Expand();
+
+                foreach (TreeNode group in systemGroups.Values)
+                    if (hasFilter)
+                        group.Expand();
+
+                foreach (TreeNode group in userGroups.Values)
+                    if (hasFilter)
+                        group.Expand();
+
+                if (selectedType != null)
+                    SelectTypeNode(selectedType);
             }
-
-            bool hasFilter = !string.IsNullOrWhiteSpace(filter);
-            bool hasMatches = systemNode.Nodes.Count > 0 || userNode.Nodes.Count > 0;
-
-            if (!hasFilter || systemNode.Nodes.Count > 0)
-                _tree.Nodes.Add(systemNode);
-
-            if (!hasFilter || userNode.Nodes.Count > 0)
-                _tree.Nodes.Add(userNode);
-
-            if (hasFilter && !hasMatches)
-                _tree.Nodes.Add(new TreeNode("无匹配表"));
-
-            if (_tree.Nodes.Contains(systemNode))
-                systemNode.Expand();
-
-            if (hasFilter && userNode.Nodes.Count > 0)
-                userNode.Expand();
-
-            foreach (TreeNode group in systemGroups.Values)
-                if (hasFilter)
-                    group.Expand();
-
-            foreach (TreeNode group in userGroups.Values)
-                if (hasFilter)
-                    group.Expand();
-
-            if (selectedType != null)
-                SelectTypeNode(selectedType);
-
-            _tree.EndUpdate();
+            finally
+            {
+                _tree.EndUpdate();
+                _buildingTree = false;
+            }
         }
 
         private void Tree_AfterSelect(object sender, TreeViewEventArgs e)
         {
+            if (_buildingTree) return;
             if (e.Node?.Tag is not Type type) return;
             ShowCollection(type);
         }
