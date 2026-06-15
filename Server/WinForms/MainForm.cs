@@ -214,6 +214,7 @@ namespace Server.WinForms
             AddDatabaseShortcut(monsterDataMenu, "怪物", "MonsterInfo");
             AddDatabaseShortcut(monsterDataMenu, "怪物属性", "MonsterInfoStat");
             AddDatabaseShortcut(monsterDataMenu, "掉落", "DropInfo");
+            AddDatabaseShortcut(monsterDataMenu, "掉落组", "DropGroupInfo");
             AddDatabaseShortcut(monsterDataMenu, "刷新", "RespawnInfo");
 
             ToolStripMenuItem commerceDataMenu = AddDatabaseGroup(databaseMenu, "商城与货币");
@@ -448,6 +449,7 @@ namespace Server.WinForms
                 AddDatabaseNavigation(monster, "怪物", "MonsterInfo");
                 AddDatabaseNavigation(monster, "怪物属性", "MonsterInfoStat");
                 AddDatabaseNavigation(monster, "掉落", "DropInfo");
+                AddDatabaseNavigation(monster, "掉落组", "DropGroupInfo");
                 AddDatabaseNavigation(monster, "刷新", "RespawnInfo");
 
                 TreeNode management = AddNavigationGroup("管理");
