@@ -347,6 +347,16 @@ namespace Server.WinForms
             UpdateGridStatus();
         }
 
+        private void MarkExternalDatabaseChanged()
+        {
+            MarkDirty();
+            _rootGrid?.RefreshBinding();
+            _activeGrid?.RefreshBinding();
+            _propertyGrid.Refresh();
+            ShowChildLists(_rootGrid?.CurrentObject);
+            UpdateGridStatus();
+        }
+
         private static TreeNode GetGroupNode(TreeNode root, Dictionary<string, TreeNode> groups, string groupName)
         {
             if (groups.TryGetValue(groupName, out TreeNode node))
@@ -757,7 +767,7 @@ namespace Server.WinForms
             {
                 MapRegion = region
             };
-            viewer.RegionSaved += (_, _) => MarkDirty();
+            viewer.RegionSaved += (_, _) => MarkExternalDatabaseChanged();
             viewer.Show(this);
         }
 
@@ -861,7 +871,7 @@ namespace Server.WinForms
         private void OpenDiagnostics()
         {
             DiagnosticsForm form = new DiagnosticsForm(_session);
-            form.DatabaseChanged += (_, _) => MarkDirty();
+            form.DatabaseChanged += (_, _) => MarkExternalDatabaseChanged();
             form.Show(this);
         }
 
