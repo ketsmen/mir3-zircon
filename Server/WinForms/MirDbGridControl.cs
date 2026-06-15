@@ -163,6 +163,17 @@ namespace Server.WinForms
             MessageBox.Show(owner, $"已复制当前视图 {_grid.Rows.Count:#,##0} 行。", "复制当前视图", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
+        public void FocusGrid()
+        {
+            if (_grid.Rows.Count > 0 && _grid.CurrentCell == null)
+            {
+                DataGridViewRow firstRow = _grid.Rows[0];
+                _grid.CurrentCell = firstRow.Cells.Cast<DataGridViewCell>().FirstOrDefault(x => x.Visible);
+            }
+
+            _grid.Focus();
+        }
+
         public bool SelectByIndex(int index)
         {
             foreach (DataGridViewRow row in _grid.Rows)

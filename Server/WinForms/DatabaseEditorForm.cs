@@ -202,14 +202,7 @@ namespace Server.WinForms
             _tableSearchText.Width = 170;
             _tableSearchText.ToolTipText = "按表名过滤左侧导航，例如 Item、Monster、NPC。";
             _tableSearchText.TextChanged += (_, _) => BuildTree();
-            _tableSearchText.KeyDown += (_, e) =>
-            {
-                if (e.KeyCode != Keys.Enter) return;
-
-                SelectFirstVisibleTypeNode();
-                e.Handled = true;
-                e.SuppressKeyPress = true;
-            };
+            _tableSearchText.KeyDown += TableSearchText_KeyDown;
             toolStrip.Items.Add(_tableSearchText);
             toolStrip.Items.Add(new ToolStripSeparator());
             toolStrip.Items.Add(new ToolStripLabel("搜索"));
@@ -220,6 +213,7 @@ namespace Server.WinForms
                 _activeGrid?.ApplySearch(_searchText.Text);
                 UpdateGridStatus();
             };
+            _searchText.KeyDown += SearchText_KeyDown;
             toolStrip.Items.Add(_searchText);
             toolStrip.Items.Add(new ToolStripSeparator());
             toolStrip.Items.Add(new ToolStripLabel("Index"));
@@ -336,6 +330,36 @@ namespace Server.WinForms
                 SuppressKey(e);
                 return;
             }
+        }
+
+        private void TableSearchText_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Escape)
+            {
+                _tableSearchText.Text = string.Empty;
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.KeyCode != Keys.Enter) return;
+
+            SelectFirstVisibleTypeNode();
+            SuppressKey(e);
+        }
+
+        private void SearchText_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Escape)
+            {
+                _searchText.Text = string.Empty;
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.KeyCode != Keys.Enter) return;
+
+            _activeGrid?.FocusGrid();
+            SuppressKey(e);
         }
 
         private static void SuppressKey(KeyEventArgs e)
@@ -547,11 +571,19 @@ namespace Server.WinForms
                     GetGroupNode(systemNode, systemGroups, GetTypeGroup(type)).Nodes.Add(node);
             }
 
-            _tree.Nodes.Add(systemNode);
-            _tree.Nodes.Add(userNode);
-
             bool hasFilter = !string.IsNullOrWhiteSpace(filter);
+            bool hasMatches = systemNode.Nodes.Count > 0 || userNode.Nodes.Count > 0;
+
             if (!hasFilter || systemNode.Nodes.Count > 0)
+                _tree.Nodes.Add(systemNode);
+
+            if (!hasFilter || userNode.Nodes.Count > 0)
+                _tree.Nodes.Add(userNode);
+
+            if (hasFilter && !hasMatches)
+                _tree.Nodes.Add(new TreeNode("无匹配表"));
+
+            if (_tree.Nodes.Contains(systemNode))
                 systemNode.Expand();
 
             if (hasFilter && userNode.Nodes.Count > 0)
