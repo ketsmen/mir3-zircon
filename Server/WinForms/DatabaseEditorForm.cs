@@ -1051,8 +1051,10 @@ namespace Server.WinForms
                     return;
                 }
 
-                string text = FormatValidationMessages(validationMessages, 50);
-                MessageBox.Show(this, $"数据库验证完成，发现 {validationMessages.Count:#,##0} 条问题：\r\n\r\n{text}", "验证", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                OpenDiagnosticsForm()?.ShowReport(BuildValidationReport(validationMessages));
+
+                string text = FormatValidationMessages(validationMessages, 20);
+                MessageBox.Show(this, $"数据库验证完成，发现 {validationMessages.Count:#,##0} 条问题，已在诊断窗口显示完整报告：\r\n\r\n{text}", "验证", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             catch (Exception ex)
             {
@@ -1066,19 +1068,25 @@ namespace Server.WinForms
 
         private void OpenDiagnostics()
         {
+            OpenDiagnosticsForm()?.ShowReportPage();
+        }
+
+        private DiagnosticsForm OpenDiagnosticsForm()
+        {
             if (_diagnosticsForm == null || _diagnosticsForm.IsDisposed)
             {
                 _diagnosticsForm = new DiagnosticsForm(_session);
                 _diagnosticsForm.DatabaseChanged += (_, _) => MarkExternalDatabaseChanged();
                 _diagnosticsForm.FormClosed += (_, _) => _diagnosticsForm = null;
                 _diagnosticsForm.Show(this);
+                return _diagnosticsForm;
             }
             else
             {
                 ActivateForm(_diagnosticsForm);
             }
 
-            _diagnosticsForm?.ShowReportPage();
+            return _diagnosticsForm;
         }
 
         private static void ActivateForm(Form form)
@@ -1102,6 +1110,15 @@ namespace Server.WinForms
                 text += $"\r\n... 还有 {messages.Count - maxMessages} 条。";
 
             return text;
+        }
+
+        private static string BuildValidationReport(List<string> messages)
+        {
+            if (messages.Count == 0)
+                return "数据库验证完成，未发现重复身份字段、断开的对象引用或业务规则问题。";
+
+            return $"数据库验证完成，发现 {messages.Count:#,##0} 条问题。\r\n\r\n" +
+                   string.Join("\r\n", messages);
         }
 
         private string RefreshOnlineRuntimeCaches()

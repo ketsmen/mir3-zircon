@@ -118,6 +118,12 @@ namespace Server.WinForms
             _tabs.SelectedTab = _reportPage;
         }
 
+        public void ShowReport(string text)
+        {
+            _reportText.Text = text ?? string.Empty;
+            ShowReportPage();
+        }
+
         public void ShowOrphanPage()
         {
             _tabs.SelectedTab = _orphanPage;
