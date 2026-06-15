@@ -519,7 +519,7 @@ namespace Server.WinForms
                     SEnvir.Log($"已迁移 {migratedMapStats:#,##0} 条旧地图倍率字段到 BuffStats。");
 
                 PluginLoader.Instance.Log += (_, e) => SEnvir.Log(e.Message);
-                PluginLoader.Instance.View += (_, e) => MessageBox.Show(this, $"插件请求打开视图: {e.View?.FullName}", "插件", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                PluginLoader.Instance.View += (_, e) => OpenPluginView(e.View);
                 PluginLoader.Instance.MapViewer += (_, e) =>
                 {
                     if (string.IsNullOrEmpty(e.MapPath)) return;
@@ -533,6 +533,33 @@ namespace Server.WinForms
             catch (Exception ex)
             {
                 SEnvir.Log($"插件加载失败: {ex}");
+            }
+        }
+
+        private void OpenPluginView(Type viewType)
+        {
+            if (viewType == null)
+            {
+                MessageBox.Show(this, "插件请求打开的视图类型为空。", "插件", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (!typeof(Form).IsAssignableFrom(viewType))
+            {
+                MessageBox.Show(this, $"插件视图 {viewType.FullName} 不是 WinForms Form，无法在当前管理器中直接打开。", "插件", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            try
+            {
+                Form view = (Form)Activator.CreateInstance(viewType);
+                view.StartPosition = FormStartPosition.CenterParent;
+                view.Show(this);
+            }
+            catch (Exception ex)
+            {
+                SEnvir.Log($"打开插件视图失败: {ex}");
+                MessageBox.Show(this, ex.ToString(), "打开插件视图失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
