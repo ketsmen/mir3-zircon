@@ -249,9 +249,9 @@
             // 
             // splitContainer1
             // 
-            splitContainer1.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left | System.Windows.Forms.AnchorStyles.Right;
             splitContainer1.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            splitContainer1.Location = new System.Drawing.Point(0, 67);
+            splitContainer1.Dock = System.Windows.Forms.DockStyle.Fill;
+            splitContainer1.Location = new System.Drawing.Point(0, 56);
             splitContainer1.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             splitContainer1.Name = "splitContainer1";
             splitContainer1.Orientation = System.Windows.Forms.Orientation.Horizontal;
@@ -264,7 +264,7 @@
             // splitContainer1.Panel2
             // 
             splitContainer1.Panel2.Controls.Add(PreviewListView);
-            splitContainer1.Size = new System.Drawing.Size(1256, 967);
+            splitContainer1.Size = new System.Drawing.Size(1256, 859);
             splitContainer1.SplitterDistance = 479;
             splitContainer1.SplitterWidth = 5;
             splitContainer1.TabIndex = 1;
@@ -660,14 +660,14 @@
             // PreviewListView
             // 
             PreviewListView.Activation = System.Windows.Forms.ItemActivation.OneClick;
-            PreviewListView.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left | System.Windows.Forms.AnchorStyles.Right;
             PreviewListView.BackColor = System.Drawing.Color.GhostWhite;
+            PreviewListView.Dock = System.Windows.Forms.DockStyle.Fill;
             PreviewListView.ForeColor = System.Drawing.Color.FromArgb(142, 152, 156);
             PreviewListView.LargeImageList = ImageList;
             PreviewListView.Location = new System.Drawing.Point(0, 0);
             PreviewListView.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             PreviewListView.Name = "PreviewListView";
-            PreviewListView.Size = new System.Drawing.Size(1253, 384);
+            PreviewListView.Size = new System.Drawing.Size(1254, 363);
             PreviewListView.TabIndex = 0;
             PreviewListView.UseCompatibleStateImageBehavior = false;
             PreviewListView.VirtualMode = true;
@@ -800,8 +800,8 @@
             AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
             AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             ClientSize = new System.Drawing.Size(1256, 939);
-            Controls.Add(panel1);
             Controls.Add(splitContainer1);
+            Controls.Add(panel1);
             Controls.Add(statusStrip);
             Controls.Add(MainMenu);
             DoubleBuffered = true;
