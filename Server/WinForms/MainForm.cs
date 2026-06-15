@@ -551,6 +551,17 @@ namespace Server.WinForms
 
         private void StopServer()
         {
+            if (SEnvir.Started &&
+                MessageBox.Show(
+                    this,
+                    "确定要停止当前服务端吗？",
+                    "停止服务端",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning) != DialogResult.Yes)
+            {
+                return;
+            }
+
             SEnvir.Started = false;
             UpdateInterface();
         }
