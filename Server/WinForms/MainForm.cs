@@ -702,7 +702,7 @@ namespace Server.WinForms
         {
             if (_diagnosticsForm == null || _diagnosticsForm.IsDisposed)
             {
-                _diagnosticsForm = new DiagnosticsForm(SEnvir.Session);
+                _diagnosticsForm = new DiagnosticsForm();
                 _diagnosticsForm.FormClosed += (_, _) => _diagnosticsForm = null;
                 _diagnosticsForm.Show(this);
                 return;
