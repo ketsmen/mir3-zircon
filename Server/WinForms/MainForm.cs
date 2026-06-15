@@ -41,6 +41,11 @@ namespace Server.WinForms
         private ToolStripButton _startToolButton;
         private ToolStripButton _stopToolButton;
         private Session _pluginSession;
+        private DatabaseEditorForm _databaseEditorForm;
+        private DatabaseEditorForm _onlineDatabaseEditorForm;
+        private ConfigEditorForm _configEditorForm;
+        private DiagnosticsForm _diagnosticsForm;
+        private MapViewerForm _mapViewerForm;
         private const int MaxLogLines = 2000;
         private static readonly string UiCachePath = Path.Combine(Application.StartupPath, "Server.WinForms.cache.json");
 
@@ -191,7 +196,7 @@ namespace Server.WinForms
             configMenu.DropDownItems.Add("保存配置", null, (_, _) => ConfigReader.Save(typeof(Config).Assembly));
 
             ToolStripMenuItem toolsMenu = new ToolStripMenuItem("工具");
-            toolsMenu.DropDownItems.Add("地图查看器", null, (_, _) => new MapViewerForm().Show(this));
+            toolsMenu.DropDownItems.Add("地图查看器", null, (_, _) => OpenMapViewer());
             toolsMenu.DropDownItems.Add("服务器诊断", null, (_, _) => OpenDiagnostics());
             toolsMenu.DropDownItems.Add(new ToolStripSeparator());
             toolsMenu.DropDownItems.Add("导出当前日志", null, (_, _) => ExportDisplayedLogs());
@@ -216,7 +221,7 @@ namespace Server.WinForms
             AddToolButton(toolStrip, "怪物", (_, _) => OpenDatabaseEditor("MonsterInfo"));
             AddToolButton(toolStrip, "NPC", (_, _) => OpenDatabaseEditor("NPCInfo"));
             AddToolButton(toolStrip, "配置", (_, _) => OpenConfigEditor());
-            AddToolButton(toolStrip, "地图", (_, _) => new MapViewerForm().Show(this));
+            AddToolButton(toolStrip, "地图", (_, _) => OpenMapViewer());
             AddToolButton(toolStrip, "诊断", (_, _) => OpenDiagnostics());
 
             BuildMetricsPanel();
@@ -352,7 +357,7 @@ namespace Server.WinForms
                 AddNavigationAction(operations, "聊天日志", () => _logTabs.SelectedTab = _chatLogPage);
                 AddNavigationAction(operations, "配置编辑器", OpenConfigEditor);
                 AddNavigationAction(operations, "服务器诊断", OpenDiagnostics);
-                AddNavigationAction(operations, "地图查看器", () => new MapViewerForm().Show(this));
+                AddNavigationAction(operations, "地图查看器", () => OpenMapViewer());
 
                 TreeNode player = AddNavigationGroup("玩家");
                 AddDatabaseNavigation(player, "基础属性", "BaseStat");
@@ -534,9 +539,8 @@ namespace Server.WinForms
                 PluginLoader.Instance.MapViewer += (_, e) =>
                 {
                     if (string.IsNullOrEmpty(e.MapPath)) return;
-                    MapViewerForm viewer = new MapViewerForm();
+                    MapViewerForm viewer = OpenMapViewer();
                     viewer.LoadMap(e.MapPath);
-                    viewer.Show(this);
                 };
 
                 PluginLoader.LoadPlugins(new PluginMenuHost(_pluginsMenu), _pluginSession);
@@ -614,25 +618,83 @@ namespace Server.WinForms
                     return;
                 }
 
-                DatabaseEditorForm onlineForm = new DatabaseEditorForm(SEnvir.Session, true, initialTypeName);
-                onlineForm.Show(this);
+                if (_onlineDatabaseEditorForm == null || _onlineDatabaseEditorForm.IsDisposed)
+                {
+                    _onlineDatabaseEditorForm = new DatabaseEditorForm(SEnvir.Session, true, initialTypeName);
+                    _onlineDatabaseEditorForm.FormClosed += (_, _) => _onlineDatabaseEditorForm = null;
+                    _onlineDatabaseEditorForm.Show(this);
+                }
+                else
+                {
+                    _onlineDatabaseEditorForm.TryNavigateToType(initialTypeName);
+                    ActivateForm(_onlineDatabaseEditorForm);
+                }
+
                 return;
             }
 
-            DatabaseEditorForm form = new DatabaseEditorForm(initialTypeName);
-            form.Show(this);
+            if (_databaseEditorForm == null || _databaseEditorForm.IsDisposed)
+            {
+                _databaseEditorForm = new DatabaseEditorForm(initialTypeName);
+                _databaseEditorForm.FormClosed += (_, _) => _databaseEditorForm = null;
+                _databaseEditorForm.Show(this);
+            }
+            else
+            {
+                _databaseEditorForm.TryNavigateToType(initialTypeName);
+                ActivateForm(_databaseEditorForm);
+            }
         }
 
         private void OpenConfigEditor()
         {
-            ConfigEditorForm form = new ConfigEditorForm();
-            form.Show(this);
+            if (_configEditorForm == null || _configEditorForm.IsDisposed)
+            {
+                _configEditorForm = new ConfigEditorForm();
+                _configEditorForm.FormClosed += (_, _) => _configEditorForm = null;
+                _configEditorForm.Show(this);
+                return;
+            }
+
+            ActivateForm(_configEditorForm);
         }
 
         private void OpenDiagnostics()
         {
-            DiagnosticsForm form = new DiagnosticsForm(SEnvir.Session);
-            form.Show(this);
+            if (_diagnosticsForm == null || _diagnosticsForm.IsDisposed)
+            {
+                _diagnosticsForm = new DiagnosticsForm(SEnvir.Session);
+                _diagnosticsForm.FormClosed += (_, _) => _diagnosticsForm = null;
+                _diagnosticsForm.Show(this);
+                return;
+            }
+
+            ActivateForm(_diagnosticsForm);
+        }
+
+        private MapViewerForm OpenMapViewer()
+        {
+            if (_mapViewerForm == null || _mapViewerForm.IsDisposed)
+            {
+                _mapViewerForm = new MapViewerForm();
+                _mapViewerForm.FormClosed += (_, _) => _mapViewerForm = null;
+                _mapViewerForm.Show(this);
+            }
+            else
+            {
+                ActivateForm(_mapViewerForm);
+            }
+
+            return _mapViewerForm;
+        }
+
+        private static void ActivateForm(Form form)
+        {
+            if (form.WindowState == FormWindowState.Minimized)
+                form.WindowState = FormWindowState.Normal;
+
+            form.BringToFront();
+            form.Activate();
         }
 
         private void CopySelectedLogs()

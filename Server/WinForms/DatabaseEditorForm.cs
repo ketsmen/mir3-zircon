@@ -139,6 +139,29 @@ namespace Server.WinForms
             base.OnFormClosing(e);
         }
 
+        public bool TryNavigateToType(string typeName)
+        {
+            if (string.IsNullOrWhiteSpace(typeName)) return true;
+
+            Type type = _metadata.ObjectTypes.FirstOrDefault(x => x.Name.Equals(typeName, StringComparison.OrdinalIgnoreCase));
+            if (type == null)
+            {
+                MessageBox.Show(this, $"数据库表 `{typeName}` 不存在。", "数据库", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return false;
+            }
+
+            if (!SelectTypeNode(type) && !string.IsNullOrWhiteSpace(_tableSearchText.Text))
+            {
+                _tableSearchText.Text = string.Empty;
+                SelectTypeNode(type);
+            }
+
+            if (_currentType != type)
+                ShowCollection(type);
+
+            return true;
+        }
+
         private void BuildLayout()
         {
             ToolStrip toolStrip = new ToolStrip();
