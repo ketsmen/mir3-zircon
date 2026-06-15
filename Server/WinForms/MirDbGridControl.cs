@@ -1,3 +1,4 @@
+using Library;
 using Library.SystemModels;
 using MirDB;
 using System;
@@ -903,6 +904,26 @@ namespace Server.WinForms
 
         private IReadOnlyList<ObjectChoice> GetObjectChoices(PropertyInfo property, Type propertyType)
         {
+            if (propertyType == typeof(ItemInfo) &&
+                _itemType == typeof(CurrencyInfo) &&
+                property.Name == nameof(CurrencyInfo.DropItem))
+            {
+                return GetFilteredObjectChoices<ItemInfo>(property, x => x.ItemType == Library.ItemType.Currency);
+            }
+
+            if (propertyType == typeof(MonsterInfo) &&
+                _itemType == typeof(CastleInfo) &&
+                property.Name == nameof(CastleInfo.Monster))
+            {
+                return GetFilteredObjectChoices<MonsterInfo>(property, x => x.Flag == MonsterFlag.CastleObjective || x.Flag == MonsterFlag.CastleDefense);
+            }
+
+            if (propertyType == typeof(MapRegion) &&
+                TryGetRegionFilter(property, out Func<MapRegion, bool> regionFilter))
+            {
+                return GetFilteredObjectChoices(property, regionFilter);
+            }
+
             if (_ownerObject is MapInfo map &&
                 _itemType == typeof(MineInfo) &&
                 property.Name == nameof(MineInfo.Region) &&
@@ -912,6 +933,65 @@ namespace Server.WinForms
             }
 
             return _metadata.GetObjectChoices(propertyType);
+        }
+
+        private bool TryGetRegionFilter(PropertyInfo property, out Func<MapRegion, bool> filter)
+        {
+            filter = null;
+
+            if (_itemType == typeof(NPCInfo) && property.Name == nameof(NPCInfo.Region))
+            {
+                filter = x => x.RegionType == RegionType.None || x.RegionType == RegionType.Npc;
+                return true;
+            }
+
+            if (_itemType == typeof(RespawnInfo) && property.Name == nameof(RespawnInfo.Region))
+            {
+                filter = x => x.RegionType == RegionType.None || x.RegionType == RegionType.Spawn || x.RegionType == RegionType.SpawnConnection;
+                return true;
+            }
+
+            if (_itemType == typeof(MovementInfo) &&
+                (property.Name == nameof(MovementInfo.SourceRegion) || property.Name == nameof(MovementInfo.DestinationRegion)))
+            {
+                filter = x => x.RegionType == RegionType.None || x.RegionType == RegionType.Connection || x.RegionType == RegionType.SpawnConnection;
+                return true;
+            }
+
+            if (_itemType == typeof(MilestoneInfoTask) && property.Name == nameof(MilestoneInfoTask.Region))
+            {
+                filter = x => x.RegionType == RegionType.None || x.RegionType == RegionType.Area;
+                return true;
+            }
+
+            if (property.Name == "RegionParameter1" && _itemType.Name.Contains("Event", StringComparison.Ordinal))
+            {
+                filter = x => x.RegionType == RegionType.None || x.RegionType == RegionType.Area;
+                return true;
+            }
+
+            return false;
+        }
+
+        private IReadOnlyList<ObjectChoice> GetFilteredObjectChoices<T>(PropertyInfo property, Func<T, bool> filter) where T : DBObject
+        {
+            List<ObjectChoice> choices = new List<ObjectChoice>
+            {
+                new ObjectChoice(null, "[空]")
+            };
+
+            HashSet<T> added = new HashSet<T>();
+
+            foreach (T item in _metadata.GetBinding(typeof(T)).OfType<T>().Where(filter).OrderBy(x => x.Index))
+            {
+                choices.Add(new ObjectChoice(item, _metadata.GetDisplayText(item)));
+                added.Add(item);
+            }
+
+            foreach (T item in _source.Cast<object>().Select(x => property.GetValue(x)).OfType<T>().Where(x => added.Add(x)).OrderBy(x => x.Index))
+                choices.Add(new ObjectChoice(item, _metadata.GetDisplayText(item) + " [不匹配过滤]"));
+
+            return choices;
         }
 
         private IReadOnlyList<ObjectChoice> GetMiningRegionChoices(MapInfo map)
