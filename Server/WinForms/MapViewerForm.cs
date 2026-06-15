@@ -41,6 +41,8 @@ namespace Server.WinForms
         private bool _drawSelection = true;
         private bool _attributeSelection;
 
+        public event EventHandler RegionSaved;
+
         public MapViewerForm()
         {
             Text = "地图查看器";
@@ -267,6 +269,7 @@ namespace Server.WinForms
 
             UpdateCommands();
             UpdateStatus();
+            RegionSaved?.Invoke(this, EventArgs.Empty);
             MessageBox.Show(this, "地图区域选择已写入当前 MapRegion，请在数据库编辑器中保存数据库。", "地图查看器", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 

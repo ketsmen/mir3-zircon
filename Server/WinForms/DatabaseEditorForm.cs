@@ -38,6 +38,7 @@ namespace Server.WinForms
         private MirDbGridControl _activeGrid;
         private Type _currentType;
         private readonly string _initialTypeName;
+        private bool _dirty;
 
         public DatabaseEditorForm()
             : this(null, false, null)
@@ -95,6 +96,37 @@ namespace Server.WinForms
                 _lockService.Dispose();
 
             base.Dispose(disposing);
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (!_readOnly && _dirty)
+            {
+                DialogResult result = MessageBox.Show(
+                    this,
+                    "当前数据库编辑器有未保存的修改。\r\n\r\n是：先保存再关闭。\r\n否：放弃修改并关闭。\r\n取消：继续编辑。",
+                    "未保存修改",
+                    MessageBoxButtons.YesNoCancel,
+                    MessageBoxIcon.Warning);
+
+                if (result == DialogResult.Cancel)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+
+                if (result == DialogResult.Yes)
+                {
+                    SaveDatabase();
+                    if (_dirty)
+                    {
+                        e.Cancel = true;
+                        return;
+                    }
+                }
+            }
+
+            base.OnFormClosing(e);
         }
 
         private void BuildLayout()
@@ -173,6 +205,7 @@ namespace Server.WinForms
             _propertyGrid.ToolbarVisible = true;
             _propertyGrid.PropertyValueChanged += (_, _) =>
             {
+                MarkDirty();
                 _rootGrid?.RefreshBinding();
                 _activeGrid?.RefreshBinding();
                 UpdateGridStatus();
@@ -469,6 +502,7 @@ namespace Server.WinForms
                 };
                 _rootGrid.BecameActive += (_, _) => SetActiveGrid(_rootGrid);
                 _rootGrid.ReferenceOpenRequested += Grid_ReferenceOpenRequested;
+                _rootGrid.ContentChanged += (_, _) => MarkDirty();
 
                 _gridHost.Controls.Add(_rootGrid);
                 SetActiveGrid(_rootGrid);
@@ -510,6 +544,7 @@ namespace Server.WinForms
                     grid.CurrentObjectChanged += (_, _) => UpdateMapRegionCommand();
                     grid.BecameActive += (_, _) => SetActiveGrid(grid);
                     grid.ReferenceOpenRequested += Grid_ReferenceOpenRequested;
+                    grid.ContentChanged += (_, _) => MarkDirty();
                     page.Controls.Add(grid);
                     _childTabs.TabPages.Add(page);
                 }
@@ -565,7 +600,16 @@ namespace Server.WinForms
                 suffix += "，在线";
 
             string search = string.IsNullOrWhiteSpace(_searchText.Text) ? string.Empty : $"，过滤: {_searchText.Text}";
-            _statusLabel.Text = $"{_activeGrid.ItemTypeName}: {_activeGrid.VisibleCount}/{_activeGrid.TotalCount} 行{search}{suffix}";
+            string dirty = _dirty ? "，未保存" : string.Empty;
+            _statusLabel.Text = $"{_activeGrid.ItemTypeName}: {_activeGrid.VisibleCount}/{_activeGrid.TotalCount} 行{search}{suffix}{dirty}";
+        }
+
+        private void MarkDirty()
+        {
+            if (_readOnly || _dirty) return;
+
+            _dirty = true;
+            UpdateGridStatus();
         }
 
         private void UpdateMapRegionCommand()
@@ -667,6 +711,7 @@ namespace Server.WinForms
             {
                 MapRegion = region
             };
+            viewer.RegionSaved += (_, _) => MarkDirty();
             viewer.Show(this);
         }
 
@@ -729,6 +774,8 @@ namespace Server.WinForms
                 if (!string.IsNullOrWhiteSpace(runtimeRefresh))
                     message += "\r\n\r\n" + runtimeRefresh;
 
+                _dirty = false;
+                UpdateGridStatus();
                 MessageBox.Show(this, message, "保存", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
@@ -781,6 +828,7 @@ namespace Server.WinForms
             try
             {
                 _jsonService.Import(_currentType, this);
+                MarkDirty();
                 _rootGrid?.RefreshBinding();
             }
             catch (Exception ex)
@@ -848,6 +896,7 @@ namespace Server.WinForms
                 if (_onlineMode)
                     SEnvir.RebuildMonsterDropTable();
 
+                MarkDirty();
                 _rootGrid?.RefreshBinding();
                 ShowChildLists(_rootGrid?.CurrentObject);
 
@@ -931,6 +980,9 @@ namespace Server.WinForms
                 return;
 
             MonsterImageMigrationReport report = service.Migrate(monsters);
+            if (report.Updated > 0)
+                MarkDirty();
+
             _rootGrid?.RefreshBinding();
             ShowChildLists(_rootGrid?.CurrentObject);
 
@@ -1002,6 +1054,9 @@ namespace Server.WinForms
             {
                 TextNpcDatabaseImporter importer = new TextNpcDatabaseImporter(_session);
                 TextNpcDatabaseImportReport report = importer.Import(dialog.SelectedPath, mode);
+
+                if (mode != TextNpcDatabaseImportMode.ValidateOnly)
+                    MarkDirty();
 
                 _rootGrid?.RefreshBinding();
                 ShowChildLists(_rootGrid?.CurrentObject);

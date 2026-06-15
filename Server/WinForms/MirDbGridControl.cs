@@ -26,10 +26,12 @@ namespace Server.WinForms
         private readonly ContextMenuStrip _contextMenu = new ContextMenuStrip();
         private string _filterText = string.Empty;
         private bool _loadingColumnLayout;
+        private bool _binding;
 
         public event EventHandler CurrentObjectChanged;
         public event EventHandler BecameActive;
         public event EventHandler<DBObjectReferenceEventArgs> ReferenceOpenRequested;
+        public event EventHandler ContentChanged;
 
         public MirDbGridControl(Session session, MirDbMetadata metadata, Type itemType, IList source, object rootCollection, bool readOnly, object ownerObject = null)
         {
@@ -61,6 +63,7 @@ namespace Server.WinForms
             _grid.CellMouseDown += Grid_CellMouseDown;
             _grid.CellDoubleClick += Grid_CellDoubleClick;
             _grid.KeyDown += Grid_KeyDown;
+            _grid.CellValueChanged += (_, _) => OnContentChanged();
 
             BuildContextMenu();
 
@@ -106,8 +109,16 @@ namespace Server.WinForms
 
         public void RefreshBinding()
         {
-            IList list = CreateVisibleList();
-            _grid.DataSource = list;
+            _binding = true;
+            try
+            {
+                IList list = CreateVisibleList();
+                _grid.DataSource = list;
+            }
+            finally
+            {
+                _binding = false;
+            }
         }
 
         public void ApplySearch(string text)
@@ -178,6 +189,7 @@ namespace Server.WinForms
             _filterText = string.Empty;
             RefreshBinding();
             SelectObject(item);
+            OnContentChanged();
         }
 
         public void InsertAfterCurrent()
@@ -206,6 +218,7 @@ namespace Server.WinForms
             _filterText = string.Empty;
             RefreshBinding();
             SelectObject(item);
+            OnContentChanged();
         }
 
         public void DuplicateCurrent()
@@ -230,6 +243,7 @@ namespace Server.WinForms
             _filterText = string.Empty;
             RefreshBinding();
             SelectObject(item);
+            OnContentChanged();
         }
 
         public void DeleteSelected()
@@ -249,6 +263,7 @@ namespace Server.WinForms
                 item.Delete();
 
             RefreshBinding();
+            OnContentChanged();
         }
 
         private bool ConfirmUserDataMutation(string action)
@@ -670,7 +685,15 @@ namespace Server.WinForms
             {
                 _grid.EndEdit();
                 _grid.Refresh();
+                OnContentChanged();
             }
+        }
+
+        private void OnContentChanged()
+        {
+            if (_binding) return;
+
+            ContentChanged?.Invoke(this, EventArgs.Empty);
         }
 
         private bool TryConvertCellText(string text, Type targetType, out object value)
