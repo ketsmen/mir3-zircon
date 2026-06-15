@@ -343,7 +343,9 @@ namespace Server.WinForms
             _logFilterText.Width = 260;
             _logFilterText.ToolTipText = "按关键字过滤系统日志和聊天日志。";
             _logFilterText.TextChanged += (_, _) => ApplyLogFilters();
+            _logFilterText.KeyDown += LogFilterText_KeyDown;
             logToolStrip.Items.Add(_logFilterText);
+            logToolStrip.Items.Add("清空过滤", null, (_, _) => _logFilterText.Text = string.Empty);
             logToolStrip.Items.Add(new ToolStripSeparator());
             logToolStrip.Items.Add("复制", null, (_, _) => CopySelectedLogs());
             logToolStrip.Items.Add("导出", null, (_, _) => ExportDisplayedLogs());
@@ -681,6 +683,23 @@ namespace Server.WinForms
             _logTabs.SelectedTab = _chatLogPage;
             _chatLogList.Focus();
             UpdateLogStatus();
+        }
+
+        private void LogFilterText_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Escape)
+            {
+                _logFilterText.Text = string.Empty;
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                return;
+            }
+
+            if (e.KeyCode != Keys.Enter) return;
+
+            GetActiveLogList().Focus();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
         }
 
         private void AddDatabaseShortcut(ToolStripMenuItem menu, string text, string typeName)
