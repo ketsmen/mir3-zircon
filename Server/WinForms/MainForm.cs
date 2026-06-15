@@ -5,6 +5,8 @@ using Server.Envir;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
@@ -14,6 +16,7 @@ namespace Server.WinForms
     public sealed class MainForm : Form
     {
         private readonly ListBox _logList = new ListBox();
+        private readonly ContextMenuStrip _logMenu = new ContextMenuStrip();
         private readonly FlowLayoutPanel _metricsPanel = new FlowLayoutPanel();
         private readonly Dictionary<string, Label> _metricLabels = new Dictionary<string, Label>();
         private readonly Panel _statusPanel = new Panel();
@@ -108,6 +111,9 @@ namespace Server.WinForms
             ToolStripMenuItem toolsMenu = new ToolStripMenuItem("工具");
             toolsMenu.DropDownItems.Add("地图查看器", null, (_, _) => new MapViewerForm().Show(this));
             toolsMenu.DropDownItems.Add("服务器诊断", null, (_, _) => OpenDiagnostics());
+            toolsMenu.DropDownItems.Add(new ToolStripSeparator());
+            toolsMenu.DropDownItems.Add("导出当前日志", null, (_, _) => ExportDisplayedLogs());
+            toolsMenu.DropDownItems.Add("清空当前日志", null, (_, _) => ClearDisplayedLogs());
 
             _pluginsMenu = new ToolStripMenuItem("插件");
 
@@ -134,7 +140,9 @@ namespace Server.WinForms
             _logList.Dock = DockStyle.Fill;
             _logList.Font = new Font(FontFamily.GenericMonospace, 9F);
             _logList.Margin = Padding.Empty;
+            _logList.SelectionMode = SelectionMode.MultiExtended;
             SetDoubleBuffered(_logList);
+            BuildLogMenu();
 
             _statusPanel.Dock = DockStyle.Fill;
             _statusPanel.BackColor = SystemColors.Window;
@@ -160,6 +168,15 @@ namespace Server.WinForms
             Controls.Add(layout);
 
             MainMenuStrip = menu;
+        }
+
+        private void BuildLogMenu()
+        {
+            _logMenu.Items.Add("复制选中日志", null, (_, _) => CopySelectedLogs());
+            _logMenu.Items.Add("导出当前日志", null, (_, _) => ExportDisplayedLogs());
+            _logMenu.Items.Add(new ToolStripSeparator());
+            _logMenu.Items.Add("清空当前日志", null, (_, _) => ClearDisplayedLogs());
+            _logList.ContextMenuStrip = _logMenu;
         }
 
         private void BuildMetricsPanel()
@@ -301,6 +318,52 @@ namespace Server.WinForms
         {
             DiagnosticsForm form = new DiagnosticsForm(SEnvir.Session);
             form.Show(this);
+        }
+
+        private void CopySelectedLogs()
+        {
+            IEnumerable<string> lines = _logList.SelectedItems.Cast<object>().Select(x => x?.ToString()).Where(x => !string.IsNullOrEmpty(x));
+            string text = string.Join(Environment.NewLine, lines);
+            if (!string.IsNullOrEmpty(text))
+                Clipboard.SetText(text);
+        }
+
+        private void ExportDisplayedLogs()
+        {
+            if (_logList.Items.Count == 0)
+            {
+                MessageBox.Show(this, "当前没有可导出的日志。", "导出日志", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using SaveFileDialog dialog = new SaveFileDialog
+            {
+                Title = "导出当前日志",
+                Filter = "文本文件|*.txt|所有文件|*.*",
+                FileName = $"ServerLog_{DateTime.Now:yyyyMMdd_HHmmss}.txt"
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+            try
+            {
+                File.WriteAllLines(dialog.FileName, _logList.Items.Cast<object>().Select(x => x?.ToString() ?? string.Empty));
+                MessageBox.Show(this, $"日志已导出到：\r\n{dialog.FileName}", "导出日志", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "导出日志失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ClearDisplayedLogs()
+        {
+            if (_logList.Items.Count == 0) return;
+
+            if (MessageBox.Show(this, "确定清空当前界面上的日志吗？这不会删除已写入磁盘的日志文件。", "清空日志", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            _logList.Items.Clear();
         }
 
         private void UpdateInterface()
