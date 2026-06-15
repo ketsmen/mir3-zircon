@@ -548,14 +548,20 @@ namespace Server.WinForms
 
             _tree.Nodes.Add(systemNode);
             _tree.Nodes.Add(userNode);
-            systemNode.Expand();
+
+            bool hasFilter = !string.IsNullOrWhiteSpace(filter);
+            if (!hasFilter || systemNode.Nodes.Count > 0)
+                systemNode.Expand();
+
+            if (hasFilter && userNode.Nodes.Count > 0)
+                userNode.Expand();
 
             foreach (TreeNode group in systemGroups.Values)
-                if (!string.IsNullOrWhiteSpace(filter))
+                if (hasFilter)
                     group.Expand();
 
             foreach (TreeNode group in userGroups.Values)
-                if (!string.IsNullOrWhiteSpace(filter))
+                if (hasFilter)
                     group.Expand();
 
             if (selectedType != null)
@@ -680,6 +686,7 @@ namespace Server.WinForms
         private void SetActiveGrid(MirDbGridControl grid)
         {
             _activeGrid = grid;
+            _activeGrid?.ApplySearch(_searchText.Text);
             UpdateGridStatus();
             UpdateMapRegionCommand();
         }
