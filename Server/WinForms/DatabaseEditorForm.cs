@@ -686,10 +686,14 @@ namespace Server.WinForms
 
         private void MarkDirty()
         {
-            if (_readOnly || _dirty) return;
+            if (_readOnly) return;
 
-            _dirty = true;
-            UpdateWindowTitle();
+            if (!_dirty)
+            {
+                _dirty = true;
+                UpdateWindowTitle();
+            }
+
             UpdateGridStatus();
         }
 
