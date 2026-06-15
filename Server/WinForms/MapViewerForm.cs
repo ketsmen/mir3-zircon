@@ -22,6 +22,10 @@ namespace Server.WinForms
         private readonly ToolStripButton _attributesButton = new ToolStripButton("属性");
         private readonly ToolStripButton _selectionButton = new ToolStripButton("选择");
         private readonly ToolStripButton _blockedOnlyButton = new ToolStripButton("属性选择");
+        private readonly ToolStripTextBox _jumpXText = new ToolStripTextBox();
+        private readonly ToolStripTextBox _jumpYText = new ToolStripTextBox();
+        private readonly ToolStripButton _jumpButton = new ToolStripButton("跳转");
+        private readonly ToolStripButton _copyCoordinateButton = new ToolStripButton("复制坐标");
         private readonly Panel _canvas = new DoubleBufferedCanvas();
         private readonly HScrollBar _hScroll = new HScrollBar();
         private readonly VScrollBar _vScroll = new VScrollBar();
@@ -134,6 +138,16 @@ namespace Server.WinForms
                 Save();
                 e.Handled = true;
             }
+            else if (e.Control && e.KeyCode == Keys.G)
+            {
+                FocusCoordinateJump();
+                e.Handled = true;
+            }
+            else if (e.Control && e.Shift && e.KeyCode == Keys.C)
+            {
+                CopyCurrentCoordinate();
+                e.Handled = true;
+            }
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -168,6 +182,17 @@ namespace Server.WinForms
             AddButton(toolStrip, "重置", (_, _) => SetZoom(1F));
             AddButton(toolStrip, "放大", (_, _) => SetZoom(_zoom * 2F));
             AddButton(toolStrip, "缩小", (_, _) => SetZoom(_zoom / 2F));
+            toolStrip.Items.Add(new ToolStripSeparator());
+            toolStrip.Items.Add(new ToolStripLabel("X"));
+            ConfigureCoordinateTextBox(_jumpXText);
+            toolStrip.Items.Add(_jumpXText);
+            toolStrip.Items.Add(new ToolStripLabel("Y"));
+            ConfigureCoordinateTextBox(_jumpYText);
+            toolStrip.Items.Add(_jumpYText);
+            _jumpButton.Click += (_, _) => JumpToTextCoordinate();
+            toolStrip.Items.Add(_jumpButton);
+            _copyCoordinateButton.Click += (_, _) => CopyCurrentCoordinate();
+            toolStrip.Items.Add(_copyCoordinateButton);
             toolStrip.Items.Add(new ToolStripSeparator());
 
             _attributesButton.CheckOnClick = true;
@@ -253,6 +278,22 @@ namespace Server.WinForms
             toolStrip.Items.Add(button);
         }
 
+        private void ConfigureCoordinateTextBox(ToolStripTextBox textBox)
+        {
+            textBox.AutoSize = false;
+            textBox.Width = 56;
+            textBox.KeyDown += CoordinateTextBox_KeyDown;
+        }
+
+        private void CoordinateTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode != Keys.Enter) return;
+
+            JumpToTextCoordinate();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+
         private void OpenMap()
         {
             using OpenFileDialog dialog = new OpenFileDialog
@@ -332,6 +373,10 @@ namespace Server.WinForms
             _attributesButton.Enabled = hasMap;
             _selectionButton.Enabled = hasMap;
             _blockedOnlyButton.Enabled = hasMap;
+            _jumpXText.Enabled = hasMap;
+            _jumpYText.Enabled = hasMap;
+            _jumpButton.Enabled = hasMap;
+            _copyCoordinateButton.Enabled = hasMap;
             _hScroll.Enabled = hasMap;
             _vScroll.Enabled = hasMap;
         }
@@ -528,6 +573,7 @@ namespace Server.WinForms
             if (_mouseLocation == location) return false;
 
             _mouseLocation = location;
+            UpdateJumpText(location);
             return true;
         }
 
@@ -607,6 +653,74 @@ namespace Server.WinForms
 
         private float CellWidth => BaseCellWidth * _zoom;
         private float CellHeight => BaseCellHeight * _zoom;
+
+        private void FocusCoordinateJump()
+        {
+            if (_map.IsEmpty) return;
+
+            UpdateJumpText(_mouseLocation, force: true);
+            _jumpXText.Focus();
+            _jumpXText.SelectAll();
+        }
+
+        private void JumpToTextCoordinate()
+        {
+            if (_map.IsEmpty) return;
+
+            if (!int.TryParse(_jumpXText.Text, out int x) || !int.TryParse(_jumpYText.Text, out int y))
+            {
+                MessageBox.Show(this, "请输入有效的地图坐标。", "跳转坐标", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            CenterOnCoordinate(x, y);
+        }
+
+        private void CenterOnCoordinate(int x, int y)
+        {
+            if (_map.IsEmpty) return;
+
+            Point location = new Point(
+                Math.Min(_map.Width - 1, Math.Max(0, x)),
+                Math.Min(_map.Height - 1, Math.Max(0, y)));
+
+            int visibleColumns = Math.Max(1, (int)Math.Ceiling(_canvas.Width / CellWidth));
+            int visibleRows = Math.Max(1, (int)Math.Ceiling(_canvas.Height / CellHeight));
+            SetScrollValue(_hScroll, location.X - visibleColumns / 2);
+            SetScrollValue(_vScroll, location.Y - visibleRows / 2);
+
+            _mouseLocation = location;
+            UpdateJumpText(location, force: true);
+            UpdateStatus();
+            _canvas.Focus();
+            _canvas.Invalidate();
+        }
+
+        private static void SetScrollValue(ScrollBar scrollBar, int value)
+        {
+            int maximum = Math.Max(scrollBar.Minimum, scrollBar.Maximum - scrollBar.LargeChange + 1);
+            scrollBar.Value = Math.Min(maximum, Math.Max(scrollBar.Minimum, value));
+        }
+
+        private void CopyCurrentCoordinate()
+        {
+            if (_map.IsEmpty)
+            {
+                MessageBox.Show(this, "当前没有已加载的地图。", "复制坐标", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            Clipboard.SetText($"{_mouseLocation.X},{_mouseLocation.Y}");
+            _positionLabel.Text = $"坐标: {_mouseLocation.X},{_mouseLocation.Y} 已复制 半径: {_radius} 缩放: {_zoom:0.###}x";
+        }
+
+        private void UpdateJumpText(Point location, bool force = false)
+        {
+            if (!force && (_jumpXText.Focused || _jumpYText.Focused)) return;
+
+            _jumpXText.Text = location.X.ToString();
+            _jumpYText.Text = location.Y.ToString();
+        }
 
         private static string ResolveMapPath(string value)
         {
