@@ -56,6 +56,8 @@ namespace Server.WinForms
             Width = 1100;
             Height = 720;
             StartPosition = FormStartPosition.CenterScreen;
+            KeyPreview = true;
+            KeyDown += MainForm_KeyDown;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
 
             BuildLayout();
@@ -690,14 +692,42 @@ namespace Server.WinForms
             if (e.KeyCode == Keys.Escape)
             {
                 _logFilterText.Text = string.Empty;
-                e.Handled = true;
-                e.SuppressKeyPress = true;
+                SuppressKey(e);
                 return;
             }
 
             if (e.KeyCode != Keys.Enter) return;
 
             GetActiveLogList().Focus();
+            SuppressKey(e);
+        }
+
+        private void MainForm_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Control && e.KeyCode == Keys.F)
+            {
+                _logFilterText.Focus();
+                _logFilterText.TextBox.SelectAll();
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.Control && (e.KeyCode == Keys.D1 || e.KeyCode == Keys.NumPad1))
+            {
+                ShowSystemLog();
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.Control && (e.KeyCode == Keys.D2 || e.KeyCode == Keys.NumPad2))
+            {
+                ShowChatLog();
+                SuppressKey(e);
+            }
+        }
+
+        private static void SuppressKey(KeyEventArgs e)
+        {
             e.Handled = true;
             e.SuppressKeyPress = true;
         }
