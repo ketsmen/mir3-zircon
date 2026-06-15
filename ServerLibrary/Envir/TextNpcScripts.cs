@@ -437,6 +437,20 @@ namespace Server.Envir
                     else
                         report.Failures.Add($"{line.Source}: CHECKGENDER 条件格式无效。");
                     break;
+                case "DAYOFWEEK":
+                case "CHECKDAY":
+                    if (parts.Count >= 2 && TryParseDays(parts[1], out DaysOfWeek days))
+                        checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.DayOfWeek, Days = days }, line));
+                    else
+                        report.Failures.Add($"{line.Source}: {parts[0]} 条件格式无效。");
+                    break;
+                case "HOUR":
+                    ParseTimeCheck(line, parts, checks, CompiledNpcCheckType.Hour, 0, 23, report);
+                    break;
+                case "MIN":
+                case "MINUTE":
+                    ParseTimeCheck(line, parts, checks, CompiledNpcCheckType.Minute, 0, 59, report);
+                    break;
                 case "CHECKPKPOINT":
                     if (TryParseComparison(parts.Skip(1).ToList(), Operator.LessThanOrEqual, out Operator pkOp, out int pkValue))
                         checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.PKPoint, Operator = pkOp, IntParameter1 = pkValue }, line));
@@ -602,6 +616,14 @@ namespace Server.Envir
             }
 
             checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Currency, Operator = op, IntParameter1 = amount, StringParameter1 = currency.Name }, line));
+        }
+
+        private void ParseTimeCheck(TextNpcScriptLine line, List<string> parts, List<CompiledNpcCheck> checks, CompiledNpcCheckType checkType, int minValue, int maxValue, TextNpcLoadReport report)
+        {
+            if (TryParseComparison(parts.Skip(1).ToList(), Operator.Equal, out Operator op, out int value) && value >= minValue && value <= maxValue)
+                checks.Add(WithSource(new CompiledNpcCheck { CheckType = checkType, Operator = op, IntParameter1 = value }, line));
+            else
+                report.Failures.Add($"{line.Source}: {parts[0]} 需要 {minValue}-{maxValue} 的数字参数。");
         }
 
         private void ParseValueCheck(TextNpcScriptLine line, List<CompiledNpcCheck> checks, TextNpcLoadReport report)
@@ -1405,6 +1427,7 @@ namespace Server.Envir
         public ItemInfo ItemParameter1;
         public RequiredClass Class;
         public RequiredGender Gender = RequiredGender.None;
+        public DaysOfWeek Days = DaysOfWeek.None;
         public NPCDataType DataType = NPCDataType.User;
     }
 
@@ -1427,6 +1450,9 @@ namespace Server.Envir
         Item,
         Class,
         Gender,
+        DayOfWeek,
+        Hour,
+        Minute,
         PKPoint,
         Random,
         NameList,

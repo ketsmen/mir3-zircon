@@ -74,6 +74,9 @@ CHECKCURRENCY "声望" >= 10
 CHECKITEM "回城卷" 1
 CHECKCLASS Warrior
 CHECKGENDER Male
+DAYOFWEEK Weekend
+HOUR >= 20
+MINUTE < 30
 CHECKPKPOINT <= 200
 RANDOM 10
 CHECKNAMELIST DailyGift User
@@ -148,6 +151,7 @@ LOCALMESSAGE 已完成操作。
 
 - `CHECKCLASS` 导入数据库只支持 `All/None` 或单职业；多职业组合仍可用于文本运行时，但不能无损导入旧 DB 条件。
 - 页面参数和 `%ARG(n)` 仅支持文本运行时；带动态参数的对话、按钮、`GOTO/#SUCCESS`、条件或动作会在导入数据库前报错。
+- `DAYOFWEEK/HOUR/MINUTE` 当前仅支持文本运行时，导入数据库时会报映射错误。
 - 带对话文本的 `GOTO` 不能导入数据库；无对话文本的 `GOTO` 会转换成旧 `SuccessPage`。
 - `LOCALMESSAGE` 当前只支持文本运行时，导入数据库时会报映射错误。
 - `CHECKCURRENCY/GIVECURRENCY/TAKECURRENCY` 可以无损导入和导出数据库 NPC。

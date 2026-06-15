@@ -507,6 +507,16 @@ namespace Server.Models
                     case CompiledNpcCheckType.Gender:
                         if (!HasRequiredGender(check.Gender, ob.Gender)) return false;
                         break;
+                    case CompiledNpcCheckType.DayOfWeek:
+                        var flag = (DaysOfWeek)Enum.ToObject(typeof(DaysOfWeek), 1 << (int)SEnvir.Now.DayOfWeek);
+                        if (check.Days != DaysOfWeek.None && !check.Days.HasFlag(flag)) return false;
+                        break;
+                    case CompiledNpcCheckType.Hour:
+                        if (!Compare(check.Operator, SEnvir.Now.Hour, check.IntParameter1)) return false;
+                        break;
+                    case CompiledNpcCheckType.Minute:
+                        if (!Compare(check.Operator, SEnvir.Now.Minute, check.IntParameter1)) return false;
+                        break;
                     case CompiledNpcCheckType.PKPoint:
                         if (!Compare(check.Operator, ob.Stats[Stat.PKPoint], check.IntParameter1)) return false;
                         break;

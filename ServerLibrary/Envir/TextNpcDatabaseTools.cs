@@ -93,6 +93,14 @@ namespace Server.Envir
                         result = false;
                     }
 
+                    if (check.CheckType == CompiledNpcCheckType.DayOfWeek ||
+                        check.CheckType == CompiledNpcCheckType.Hour ||
+                        check.CheckType == CompiledNpcCheckType.Minute)
+                    {
+                        report.Failures.Add(FormatIssue(info, page, check.Source, $"条件 `{check.CheckType}` 当前仅支持文本运行时，旧数据库条件没有等价映射。"));
+                        result = false;
+                    }
+
                     if (check.CheckType == CompiledNpcCheckType.Class && !CanMapClassCheck(check.Class))
                     {
                         report.Failures.Add(FormatIssue(info, page, check.Source, $"CHECKCLASS `{check.Class}` 不能无损导入旧数据库条件，只支持 All/None 或单职业。"));
