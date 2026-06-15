@@ -650,6 +650,7 @@ namespace Server.WinForms
                 {
                     ShowChildLists(_rootGrid.CurrentObject);
                     UpdateMapRegionCommand();
+                    UpdateGridStatus();
                 };
                 _rootGrid.BecameActive += (_, _) => SetActiveGrid(_rootGrid);
                 _rootGrid.ReferenceOpenRequested += Grid_ReferenceOpenRequested;
@@ -696,7 +697,11 @@ namespace Server.WinForms
                     Type childType = property.PropertyType.GetGenericArguments()[0];
                     TabPage page = new TabPage($"{property.Name} ({list.Count})");
                     MirDbGridControl grid = new MirDbGridControl(_session, _metadata, childType, list, null, _readOnly, owner);
-                    grid.CurrentObjectChanged += (_, _) => UpdateMapRegionCommand();
+                    grid.CurrentObjectChanged += (_, _) =>
+                    {
+                        UpdateMapRegionCommand();
+                        UpdateGridStatus();
+                    };
                     grid.BecameActive += (_, _) => SetActiveGrid(grid);
                     grid.ReferenceOpenRequested += Grid_ReferenceOpenRequested;
                     grid.ContentChanged += (_, _) =>
@@ -774,8 +779,11 @@ namespace Server.WinForms
                 suffix += "，在线";
 
             string search = string.IsNullOrWhiteSpace(_searchText.Text) ? string.Empty : $"，过滤: {_searchText.Text}";
+            string current = string.IsNullOrWhiteSpace(_activeGrid.CurrentIndexText) ? string.Empty : $"，当前 Index={_activeGrid.CurrentIndexText}";
+            int selectedCount = _activeGrid.SelectedObjectCount;
+            string selected = selectedCount > 1 ? $"，选中 {selectedCount:#,##0}" : string.Empty;
             string dirty = _dirty ? "，未保存" : string.Empty;
-            _statusLabel.Text = $"{_activeGrid.ItemTypeName}: {_activeGrid.VisibleCount}/{_activeGrid.TotalCount} 行{search}{suffix}{dirty}";
+            _statusLabel.Text = $"{_activeGrid.ItemTypeName}: {_activeGrid.VisibleCount}/{_activeGrid.TotalCount} 行{current}{selected}{search}{suffix}{dirty}";
         }
 
         private void MarkDirty()

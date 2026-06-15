@@ -88,6 +88,10 @@ namespace Server.WinForms
 
         public int TotalCount => _source.Count;
 
+        public int SelectedObjectCount => SelectedObjects.Count();
+
+        public string CurrentIndexText => CurrentObject is DBObject dbObject ? dbObject.Index.ToString("#,##0") : string.Empty;
+
         public IEnumerable<object> AllObjects => _source.Cast<object>();
 
         public IEnumerable<object> SelectedObjects
