@@ -315,6 +315,9 @@ namespace Server.Envir
 
         public static List<Type> MagicTypes = [];
 
+        public static CompiledMonsterDropTable MonsterDropTable;
+        private static IReadOnlyDictionary<MonsterInfo, CompiledMonsterDrop> DropTextOverrides;
+
         #endregion
 
         #region Game Variables
@@ -586,15 +589,63 @@ namespace Server.Envir
                 if (UserQuestTaskList[i].Task == null)
                     UserQuestTaskList[i].Delete();
 
+            DropTextOverrides = LoadDropTextOverrides();
+            RebuildMonsterDropTable();
+
             foreach (MonsterInfo monster in MonsterInfoList.Binding)
             {
                 if (!monster.IsBoss) continue;
-                if (monster.Drops.Count == 0) continue;
+                if (MonsterDropTable?.Get(monster).HasDrops != true) continue;
 
                 BossList.Add(monster);
             }
 
             CreateMagic();
+        }
+
+        public static void RebuildMonsterDropTable()
+        {
+            MonsterDropTable = MonsterInfoList == null ? null : CompiledMonsterDropTable.Build(MonsterInfoList.Binding, DropTextOverrides);
+        }
+
+        private static IReadOnlyDictionary<MonsterInfo, CompiledMonsterDrop> LoadDropTextOverrides()
+        {
+            if (!Config.DropTextOverrideEnabled) return null;
+
+            string path = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Config.DropTextOverridePath));
+            if (!Directory.Exists(path))
+            {
+                Log($"[DropTextOverride] 跳过，目录不存在: {path}");
+                return null;
+            }
+
+            try
+            {
+                Mir2DropImporter importer = new(Session);
+                Mir2DropOverrideLoadResult result = importer.BuildCompiledOverrides(path);
+                Mir2DropImportReport report = result.Report;
+
+                Log($"[DropTextOverride] 已从 {Config.DropTextOverridePath} 加载文本覆盖，覆盖只在本次运行内存中生效。");
+                Log(report.ToDisplayText());
+
+                if (report.Failures.Count > 0)
+                    foreach (string failure in report.Failures.Take(100))
+                        Log($"[DropTextOverride][Failure] {failure}");
+
+                foreach (string monster in report.MissingMonsters.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
+                    Log($"[DropTextOverride][MissingMonster] {monster}");
+
+                foreach (string item in report.MissingItems.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
+                    Log($"[DropTextOverride][MissingItem] {item}");
+
+                return result.Overrides;
+            }
+            catch (Exception ex)
+            {
+                Log("[DropTextOverride] 加载失败，继续使用数据库掉落。");
+                Log(ex.ToString());
+                return null;
+            }
         }
 
         public static void RankingSort(CharacterInfo character, bool updateLead = true, bool initialSetup = false)
@@ -1384,6 +1435,7 @@ namespace Server.Envir
             Spawns.Clear();
             BossList.Clear();
             MagicTypes.Clear();
+            MonsterDropTable = null;
 
             _ObjectID = 0;
 

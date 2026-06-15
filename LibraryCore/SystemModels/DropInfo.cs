@@ -113,6 +113,21 @@ namespace Library.SystemModels
         }
         private bool _EasterEvent;
 
+        public bool Mir2Gold
+        {
+            get { return _Mir2Gold; }
+            set
+            {
+                if (_Mir2Gold == value) return;
+
+                var oldValue = _Mir2Gold;
+                _Mir2Gold = value;
+
+                OnChanged(oldValue, value, "Mir2Gold");
+            }
+        }
+        private bool _Mir2Gold;
+
         protected internal override void OnCreated()
         {
             base.OnCreated();

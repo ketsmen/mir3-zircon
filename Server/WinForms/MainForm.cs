@@ -4,6 +4,7 @@ using PluginCore;
 using Server.Envir;
 using System;
 using System.Drawing;
+using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -12,11 +13,8 @@ namespace Server.WinForms
     public sealed class MainForm : Form
     {
         private readonly ListBox _logList = new ListBox();
-        private readonly StatusStrip _statusStrip = new StatusStrip();
-        private readonly ToolStripStatusLabel _connectionLabel = new ToolStripStatusLabel();
-        private readonly ToolStripStatusLabel _objectLabel = new ToolStripStatusLabel();
-        private readonly ToolStripStatusLabel _loopLabel = new ToolStripStatusLabel();
-        private readonly ToolStripStatusLabel _speedLabel = new ToolStripStatusLabel();
+        private readonly Panel _statusPanel = new Panel();
+        private readonly Label _statusLabel = new Label();
         private readonly System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer();
         private ToolStripMenuItem _pluginsMenu;
         private Session _pluginSession;
@@ -27,6 +25,7 @@ namespace Server.WinForms
             Width = 1100;
             Height = 720;
             StartPosition = FormStartPosition.CenterScreen;
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
 
             BuildLayout();
 
@@ -60,7 +59,22 @@ namespace Server.WinForms
 
         private void BuildLayout()
         {
+            TableLayoutPanel layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 4,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty,
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+
             MenuStrip menu = new MenuStrip();
+            menu.Margin = Padding.Empty;
 
             ToolStripMenuItem serverMenu = new ToolStripMenuItem("服务端");
             serverMenu.DropDownItems.Add("启动", null, (_, _) => StartServer());
@@ -87,6 +101,7 @@ namespace Server.WinForms
             menu.Items.Add(_pluginsMenu);
 
             ToolStrip toolStrip = new ToolStrip();
+            toolStrip.Margin = Padding.Empty;
             AddToolButton(toolStrip, "启动", (_, _) => StartServer());
             AddToolButton(toolStrip, "停止", (_, _) => StopServer());
             AddToolButton(toolStrip, "数据库", (_, _) => OpenDatabaseEditor());
@@ -95,21 +110,32 @@ namespace Server.WinForms
 
             _logList.Dock = DockStyle.Fill;
             _logList.Font = new Font(FontFamily.GenericMonospace, 9F);
+            _logList.Margin = Padding.Empty;
+            SetDoubleBuffered(_logList);
 
-            _statusStrip.Items.Add(_connectionLabel);
-            _statusStrip.Items.Add(_objectLabel);
-            _statusStrip.Items.Add(_loopLabel);
-            _statusStrip.Items.Add(_speedLabel);
+            _statusPanel.Dock = DockStyle.Fill;
+            _statusPanel.BackColor = SystemColors.Window;
+            _statusPanel.Margin = Padding.Empty;
+            _statusPanel.Padding = new Padding(8, 0, 8, 0);
 
-            Controls.Add(_logList);
-            Controls.Add(_statusStrip);
-            Controls.Add(toolStrip);
-            Controls.Add(menu);
+            _statusLabel.Dock = DockStyle.Fill;
+            _statusLabel.AutoEllipsis = true;
+            _statusLabel.Font = new Font("Microsoft YaHei UI", 9F);
+            _statusLabel.ForeColor = SystemColors.ControlText;
+            _statusLabel.BackColor = SystemColors.Window;
+            _statusLabel.TextAlign = ContentAlignment.MiddleLeft;
+            _statusLabel.Margin = Padding.Empty;
+            _statusLabel.Padding = Padding.Empty;
+            _statusPanel.Controls.Add(_statusLabel);
+
+            layout.Controls.Add(menu, 0, 0);
+            layout.Controls.Add(toolStrip, 0, 1);
+            layout.Controls.Add(_logList, 0, 2);
+            layout.Controls.Add(_statusPanel, 0, 3);
+
+            Controls.Add(layout);
 
             MainMenuStrip = menu;
-            menu.Dock = DockStyle.Top;
-            toolStrip.Dock = DockStyle.Top;
-            _statusStrip.Dock = DockStyle.Bottom;
         }
 
         private static void AddToolButton(ToolStrip toolStrip, string text, EventHandler click)
@@ -189,18 +215,42 @@ namespace Server.WinForms
 
         private void UpdateInterface()
         {
-            while (SEnvir.DisplayLogs.TryDequeue(out string log))
+            if (!SEnvir.DisplayLogs.IsEmpty)
             {
-                _logList.Items.Add(log);
-                if (_logList.Items.Count > 1000)
-                    _logList.Items.RemoveAt(0);
-                _logList.TopIndex = _logList.Items.Count - 1;
+                _logList.BeginUpdate();
+                try
+                {
+                    while (SEnvir.DisplayLogs.TryDequeue(out string log))
+                    {
+                        _logList.Items.Add(log);
+                        if (_logList.Items.Count > 1000)
+                            _logList.Items.RemoveAt(0);
+                    }
+
+                    _logList.TopIndex = Math.Max(0, _logList.Items.Count - 1);
+                }
+                finally
+                {
+                    _logList.EndUpdate();
+                }
             }
 
-            _connectionLabel.Text = $"连接数: {SEnvir.Connections.Count}";
-            _objectLabel.Text = $"对象: {SEnvir.ActiveObjects.Count} / {SEnvir.Objects.Count}";
-            _loopLabel.Text = $"循环数: {SEnvir.LoopCount}";
-            _speedLabel.Text = $"下载/上传: {FormatBytes(SEnvir.DownloadSpeed)}/s / {FormatBytes(SEnvir.UploadSpeed)}/s";
+            SetStatusText(
+                _statusLabel,
+                $"连接数: {SEnvir.Connections.Count}    对象: {SEnvir.ActiveObjects.Count} / {SEnvir.Objects.Count}    循环数: {SEnvir.LoopCount}    下载/上传: {FormatBytes(SEnvir.DownloadSpeed)}/s / {FormatBytes(SEnvir.UploadSpeed)}/s");
+        }
+
+        private static void SetStatusText(Label label, string text)
+        {
+            if (label.Text == text) return;
+
+            label.Text = text;
+        }
+
+        private static void SetDoubleBuffered(Control control)
+        {
+            typeof(Control).GetProperty("DoubleBuffered", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?.SetValue(control, true, null);
         }
 
         private static string FormatBytes(long value)

@@ -263,6 +263,10 @@ namespace Library.SystemModels
         public DBBindingList<DropInfo> Drops { get; set; }
 
         [JsonIgnore]
+        [Association("DropGroups", true)]
+        public DBBindingList<DropGroupInfo> DropGroups { get; set; }
+
+        [JsonIgnore]
         [Association("Events", true)]
         public DBBindingList<MonsterEventTrigger> Events { get; set; }
 

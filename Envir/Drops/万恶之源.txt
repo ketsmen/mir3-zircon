@@ -1,0 +1,35 @@
+1/1 金币 Amount=2112500
+1/3 急救丸（特大） Amount=155
+1/1 清心丸（特） Amount=55
+1/3 奥丁教徒 PartOnly
+1/10000000 大师徽章
+1/1 结晶
+1/3 奥丁之罪 PartOnly
+1/3 奥丁元素 PartOnly
+1/3 奥丁神话 PartOnly
+1/2444 辐射项链
+1/2444 神秘项链
+1/2444 破碎项链
+1/2555 黄昏项链
+1/500 蠕虫骚扰者 PartOnly
+1/1 守日之盔(男) Amount=3 PartOnly
+1/1 守日之盔(女) Amount=3 PartOnly
+1/1 奥术之怒(男) Amount=3 PartOnly
+1/1 奥术之怒(女) Amount=3 PartOnly
+1/1 永恒之铠(男) Amount=3 PartOnly
+1/1 永恒之铠(女) Amount=3 PartOnly
+1/1 轻语之衣(男) Amount=3 PartOnly
+1/100 传送戒指 PartOnly
+1/100 麻痹戒指 PartOnly
+1/100 复活戒指 PartOnly
+1/100 护身戒指 PartOnly
+1/100 隐身戒指 PartOnly
+1/1000 辐射戒指
+1/1000 辐射戒指
+1/1000 破碎戒指
+1/1000 黄昏戒指
+1/1000 辐射手镯
+1/1000 破碎手镯
+1/1000 神秘手镯
+1/1000 黄昏手镯
+1/1 轻语之衣(女) Amount=3 PartOnly

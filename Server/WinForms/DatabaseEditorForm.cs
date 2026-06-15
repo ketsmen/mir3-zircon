@@ -1,10 +1,12 @@
 using Library.SystemModels;
 using MirDB;
+using Server.Envir;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.IO;
 using System.Windows.Forms;
 
 namespace Server.WinForms
@@ -43,6 +45,7 @@ namespace Server.WinForms
             Text = onlineMode ? "MirDB 数据库编辑器 - 在线模式" : "MirDB 数据库编辑器";
             Width = 1280;
             Height = 760;
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
 
             string lockReason = string.Empty;
             if (onlineMode)
@@ -83,6 +86,8 @@ namespace Server.WinForms
             AddButton(toolStrip, "删除", (_, _) => _activeGrid?.DeleteSelected());
             AddButton(toolStrip, "导入", (_, _) => ImportCurrent());
             AddButton(toolStrip, "导出", (_, _) => ExportCurrent());
+            AddButton(toolStrip, "导入 Mir2 掉落", (_, _) => ImportMir2Drops());
+            AddButton(toolStrip, "导出 Mir2 掉落", (_, _) => ExportMir2Drops());
             _mapRegionButton = AddButton(toolStrip, "编辑地图区域", (_, _) => OpenSelectedMapRegion());
             toolStrip.Items.Add(new ToolStripSeparator());
             toolStrip.Items.Add(new ToolStripLabel("搜索"));
@@ -158,46 +163,67 @@ namespace Server.WinForms
 
         private void ShowCollection(Type type)
         {
-            _currentType = type;
-            _gridHost.Controls.Clear();
-            _childTabs.TabPages.Clear();
+            SuspendLayout();
+            _gridHost.SuspendLayout();
+            _childTabs.SuspendLayout();
 
-            IList source = _metadata.GetBinding(type);
-            _rootGrid = new MirDbGridControl(_session, _metadata, type, source, _metadata.GetCollection(type), _readOnly);
-            _rootGrid.CurrentObjectChanged += (_, _) =>
+            try
             {
+                _currentType = type;
+                _gridHost.Controls.Clear();
+                _childTabs.TabPages.Clear();
+
+                IList source = _metadata.GetBinding(type);
+                _rootGrid = new MirDbGridControl(_session, _metadata, type, source, _metadata.GetCollection(type), _readOnly);
+                _rootGrid.CurrentObjectChanged += (_, _) =>
+                {
+                    ShowChildLists(_rootGrid.CurrentObject);
+                    UpdateMapRegionCommand();
+                };
+                _rootGrid.BecameActive += (_, _) => SetActiveGrid(_rootGrid);
+
+                _gridHost.Controls.Add(_rootGrid);
+                SetActiveGrid(_rootGrid);
+                _searchText.Text = string.Empty;
+                _statusLabel.Text = $"{type.Name}: {source.Count} 行" + (_readOnly ? "，只读" : string.Empty);
+                if (_onlineMode)
+                    _statusLabel.Text += "，在线";
+
                 ShowChildLists(_rootGrid.CurrentObject);
-                UpdateMapRegionCommand();
-            };
-            _rootGrid.BecameActive += (_, _) => SetActiveGrid(_rootGrid);
-
-            _gridHost.Controls.Add(_rootGrid);
-            SetActiveGrid(_rootGrid);
-            _searchText.Text = string.Empty;
-            _statusLabel.Text = $"{type.Name}: {source.Count} 行" + (_readOnly ? "，只读" : string.Empty);
-            if (_onlineMode)
-                _statusLabel.Text += "，在线";
-
-            ShowChildLists(_rootGrid.CurrentObject);
+            }
+            finally
+            {
+                _childTabs.ResumeLayout();
+                _gridHost.ResumeLayout();
+                ResumeLayout();
+            }
         }
 
         private void ShowChildLists(object owner)
         {
-            _childTabs.TabPages.Clear();
-            if (owner == null || _currentType == null) return;
-
-            foreach (PropertyInfo property in _metadata.GetChildListProperties(_currentType))
+            _childTabs.SuspendLayout();
+            try
             {
-                IList list = property.GetValue(owner) as IList;
-                if (list == null) continue;
+                _childTabs.TabPages.Clear();
+                if (owner == null || _currentType == null) return;
 
-                Type childType = property.PropertyType.GetGenericArguments()[0];
-                TabPage page = new TabPage($"{property.Name} ({list.Count})");
-                MirDbGridControl grid = new MirDbGridControl(_session, _metadata, childType, list, null, _readOnly);
-                grid.CurrentObjectChanged += (_, _) => UpdateMapRegionCommand();
-                grid.BecameActive += (_, _) => SetActiveGrid(grid);
-                page.Controls.Add(grid);
-                _childTabs.TabPages.Add(page);
+                foreach (PropertyInfo property in _metadata.GetChildListProperties(_currentType))
+                {
+                    IList list = property.GetValue(owner) as IList;
+                    if (list == null) continue;
+
+                    Type childType = property.PropertyType.GetGenericArguments()[0];
+                    TabPage page = new TabPage($"{property.Name} ({list.Count})");
+                    MirDbGridControl grid = new MirDbGridControl(_session, _metadata, childType, list, null, _readOnly);
+                    grid.CurrentObjectChanged += (_, _) => UpdateMapRegionCommand();
+                    grid.BecameActive += (_, _) => SetActiveGrid(grid);
+                    page.Controls.Add(grid);
+                    _childTabs.TabPages.Add(page);
+                }
+            }
+            finally
+            {
+                _childTabs.ResumeLayout();
             }
         }
 
@@ -331,6 +357,90 @@ namespace Server.WinForms
             catch (Exception ex)
             {
                 MessageBox.Show(this, ex.ToString(), "导出失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ImportMir2Drops()
+        {
+            if (_readOnly)
+            {
+                MessageBox.Show(this, "数据库当前以只读模式打开，不能导入 Mir2 掉落。", "导入 Mir2 掉落", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            using FolderBrowserDialog dialog = new FolderBrowserDialog
+            {
+                Description = "选择 Mir2 服务端 Envir\\Drops 目录",
+                UseDescriptionForTitle = true
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+            bool replaceExisting = MessageBox.Show(
+                this,
+                "是否清空匹配怪物现有掉落后重新导入？\r\n\r\n选择“是”会避免重复掉落，这是推荐方式；选择“否”会合并导入。",
+                "导入 Mir2 掉落",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question) == DialogResult.Yes;
+
+            try
+            {
+                Mir2DropImporter importer = new Mir2DropImporter(_session);
+                Mir2DropImportReport report = importer.Import(dialog.SelectedPath, replaceExisting);
+
+                if (_onlineMode)
+                    SEnvir.RebuildMonsterDropTable();
+
+                _rootGrid?.RefreshBinding();
+                ShowChildLists(_rootGrid?.CurrentObject);
+
+                string details = report.ToDisplayText();
+                if (report.MissingItems.Count > 0)
+                    details += "\r\n\r\n缺失物品示例:\r\n" + string.Join("\r\n", report.MissingItems.Distinct(StringComparer.OrdinalIgnoreCase).Take(20));
+                if (report.MissingMonsters.Count > 0)
+                    details += "\r\n\r\n缺失怪物示例:\r\n" + string.Join("\r\n", report.MissingMonsters.Distinct(StringComparer.OrdinalIgnoreCase).Take(20));
+                if (report.QuestOnlyLines.Count > 0)
+                    details += "\r\n\r\n任务专属行示例:\r\n" + string.Join("\r\n", report.QuestOnlyLines.Take(20));
+                if (report.Failures.Count > 0)
+                    details += "\r\n\r\n失败示例:\r\n" + string.Join("\r\n", report.Failures.Take(20));
+
+                MessageBox.Show(this, details, "导入 Mir2 掉落完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "导入 Mir2 掉落失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ExportMir2Drops()
+        {
+            using FolderBrowserDialog dialog = new FolderBrowserDialog
+            {
+                Description = "请选择导出 Mir2 掉落文件的输出目录",
+                UseDescriptionForTitle = true,
+                SelectedPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Mir2DropsExport")
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.SelectedPath))
+                return;
+
+            try
+            {
+                Mir2DropExporter exporter = new Mir2DropExporter(_session);
+                Mir2DropExportReport report = exporter.Export(dialog.SelectedPath);
+
+                string details =
+                    $"输出目录: {dialog.SelectedPath}\r\n" +
+                    $"已导出怪物: {report.MonstersExported}\r\n" +
+                    $"普通掉落行: {report.DropLines}\r\n" +
+                    $"GROUP 行: {report.GroupLines}\r\n" +
+                    $"组内物品行: {report.GroupItemLines}";
+
+                MessageBox.Show(this, details, "导出 Mir2 掉落完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "导出 Mir2 掉落失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 

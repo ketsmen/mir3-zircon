@@ -3037,202 +3037,16 @@ namespace Server.Models
             bool companionAutoCollect = owner.Stats[Stat.CompanionCollection] > 0 && owner.Companion != null;
 
             List<UserItem> drops = null;
-            foreach (DropInfo drop in MonsterInfo.Drops)
+
+            CompiledMonsterDrop compiledDrops = SEnvir.MonsterDropTable?.Get(MonsterInfo);
+
+            if (compiledDrops != null)
             {
-                if (drop?.Item == null || drop.Chance == 0 || (DropSet & drop.DropSet) != drop.DropSet) continue;
+                foreach (CompiledDropEntry drop in compiledDrops.Entries)
+                    result |= ProcessDropEntry(owner, players, rate, companionAutoCollect, ref drops, drop);
 
-                if (drop.EasterEvent && !EasterEventMob) continue;
-
-                long amount = Math.Max(1, drop.Amount / 2 + SEnvir.Random.Next(drop.Amount));
-
-                long chance;
-                if (drop.Item == SEnvir.GoldInfo)
-                {
-                    if (owner.Character.Account.GoldBot && Level < owner.Level) continue;
-
-                    chance = int.MaxValue / drop.Chance;
-
-                    amount /= players;
-
-                    amount += (int)(amount * owner.Stats[Stat.GoldRate] / 100M);
-
-                    amount += (int)(amount * owner.Stats[Stat.BaseGoldRate] / 100M);
-
-                    if (PetOwner == null && CurrentMap != null)
-                        amount += (int)(amount * MapGoldRate / 100M);
-
-                    if (GrowthLevel > 0)
-                        amount += (int)(amount * (GrowthLevel * 10) / 100M);
-
-                    if (amount == 0) continue;
-                }
-                else
-                {
-                    chance = (long)(int.MaxValue / (drop.Chance * players) * rate);
-                }
-
-                UserDrop userDrop = owner.Character.Account.UserDrops.FirstOrDefault(x => x.Item == drop.Item);
-
-                if (userDrop == null)
-                {
-                    userDrop = SEnvir.UserDropList.CreateNewObject();
-                    userDrop.Item = drop.Item;
-                    userDrop.Account = owner.Character.Account;
-                }
-
-                if (Config.EnableFortune)
-                {
-                    decimal progress = chance / (decimal)int.MaxValue;
-
-                    progress *= amount;
-
-                    if (!drop.PartOnly)
-                        userDrop.Progress += progress;
-                }
-
-                var roll = SEnvir.Random.Next();
-
-                //(drop is partOnly) OR
-                //(roll has failed OR ItemBot) AND (fortune progress not reached)
-                if (drop.PartOnly || ((roll > chance || owner.Character.Account.ItemBot) && ((long)userDrop.Progress <= userDrop.DropCount)))
-                {
-                    if (SEnvir.ItemPartInfo == null || drop.Item.PartCount <= 1 || SEnvir.IsCurrencyItem(drop.Item)) continue;
-
-                    var partRoll = SEnvir.Random.Next();
-
-                    if (drop.PartOnly)
-                    {
-                        //part roll failed
-                        if (partRoll > chance) continue;
-                    }
-                    else
-                    {
-                        //part roll for non partOnly drop failed
-                        if (partRoll > chance * drop.Item.PartCount) continue;
-                    }
-
-                    result = true;
-
-                    UserItem item = SEnvir.CreateDropItem(SEnvir.ItemPartInfo);
-
-                    item.AddStat(Stat.ItemIndex, drop.Item.Index, StatSource.Added);
-                    item.StatsChanged();
-
-                    item.IsTemporary = true;
-
-                    if (NeedHarvest)
-                    {
-                        if (drops == null)
-                            drops = new List<UserItem>();
-
-                        if (drop.Item.Rarity != Rarity.Common)
-                        {
-                            owner.Connection.ReceiveChatWithObservers(con => string.Format(con.Language.HarvestRare, MonsterInfo.MonsterName), MessageType.System);
-                        }
-
-                        drops.Add(item);
-                        continue;
-                    }
-
-                    Cell cell = GetDropLocation(Config.DropDistance, owner) ?? CurrentCell;
-
-                    ItemObject ob = new ItemObject
-                    {
-                        Item = item,
-                        Account = owner.Character.Account,
-                        MonsterDrop = true,
-                    };
-
-                    ob.Spawn(CurrentMap, cell.Location);
-
-                    if (companionAutoCollect)
-                    {
-                        ItemCheck check = new ItemCheck(ob.Item, ob.Item.Count, ob.Item.Flags,
-                            ob.Item.ExpireTime);
-
-                        if (owner.Companion.CanGainItems(true, check)) ob.PickUpItem(owner.Companion);
-                    }
-
-                    continue;
-                }
-
-                if (Config.EnableFortune)
-                {
-                    if (!SEnvir.IsCurrencyItem(drop.Item) && (Math.Floor(userDrop.Progress) > userDrop.DropCount + amount))
-                        amount = (long)(userDrop.Progress - userDrop.DropCount);
-                }
-
-                userDrop.DropCount += amount;
-
-                result = true;
-                while (amount > 0)
-                {
-                    UserItem item = SEnvir.CreateDropItem(drop.Item);
-                    if (companionAutoCollect && drop.Item == SEnvir.GoldInfo)
-                        item.Count = amount;
-                    else
-                        item.Count = Math.Min(drop.Item.StackSize, amount);
-
-                    amount -= item.Count;
-
-                    item.IsTemporary = true; //REMOVE ON Gain
-
-                    if (NeedHarvest)
-                    {
-                        if (drops == null)
-                            drops = new List<UserItem>();
-
-                        if (item.Info.Rarity != Rarity.Common)
-                        {
-                            owner.Connection.ReceiveChatWithObservers(con => string.Format(con.Language.HarvestRare, MonsterInfo.MonsterName), MessageType.System);
-                        }
-
-                        drops.Add(item);
-                        continue;
-                    }
-
-                    if (SEnvir.IsUndroppableCurrencyItem(drop.Item))
-                    {
-                        //Only gold
-                        long taxableAmount = owner.Character.Account.GuildMember?.Guild?.CalculateGuildTax(item) ?? 0;
-
-                        if (taxableAmount > 0)
-                        {
-                            item.Count -= taxableAmount;
-
-                            owner.Character.Account.GuildMember.Contribute(taxableAmount);
-                        }
-
-                        owner.GainItem(item);
-                        continue;
-                    }
-
-                    Cell cell = GetDropLocation(Config.DropDistance, owner) ?? CurrentCell;
-
-                    ItemObject ob = new ItemObject
-                    {
-                        Item = item,
-                        Account = owner.Character.Account,
-                        MonsterDrop = true,
-                    };
-
-                    ob.Spawn(CurrentMap, cell.Location);
-
-                    if (companionAutoCollect)
-                    {
-                        long goldAmount = 0;
-
-                        if (ob.Item.Info == SEnvir.GoldInfo && ob.Account.GuildMember != null && ob.Account.GuildMember.Guild.GuildTax > 0)
-                        {
-                            goldAmount = ob.Account?.GuildMember?.Guild?.CalculateGuildTax(ob.Item) ?? 0;
-                        }
-
-                        ItemCheck check = new ItemCheck(ob.Item, ob.Item.Count - goldAmount, ob.Item.Flags,
-                            ob.Item.ExpireTime);
-
-                        if (owner.Companion.CanGainItems(true, check)) ob.PickUpItem(owner.Companion);
-                    }
-                }
+                foreach (CompiledDropGroup group in compiledDrops.Groups)
+                    result |= ProcessDropGroup(owner, players, rate, companionAutoCollect, ref drops, group);
             }
 
             foreach (UserQuest quest in owner.Quests)
@@ -3357,6 +3171,362 @@ namespace Server.Models
                 Drops = new Dictionary<AccountInfo, List<UserItem>>();
 
             Drops[owner.Character.Account] = drops;
+        }
+
+        private bool ProcessDropGroup(PlayerObject owner, int players, decimal rate, bool companionAutoCollect, ref List<UserItem> drops, CompiledDropGroup group, bool chancePassed = false)
+        {
+            ProcessDropGroup(owner, players, rate, companionAutoCollect, ref drops, group, out bool produced, chancePassed);
+            return produced;
+        }
+
+        private bool ProcessDropGroup(PlayerObject owner, int players, decimal rate, bool companionAutoCollect, ref List<UserItem> drops, CompiledDropGroup group, out bool produced, bool chancePassed = false)
+        {
+            produced = false;
+
+            if (!CanProcessDrop(group.DropSet, group.EasterEvent)) return false;
+            if (!chancePassed && RollChance(group.Chance) != 0) return false;
+
+            if (group.Mode == DropGroupMode.RandomOneMatched)
+            {
+                List<CompiledDropEntry> randomEntries = null;
+                List<CompiledDropEntry> goldEntries = null;
+
+                foreach (CompiledDropGroupChild child in group.Children)
+                    CollectDropChildResult(owner, players, rate, child, ref randomEntries, ref goldEntries);
+
+                if (goldEntries != null)
+                    foreach (CompiledDropEntry entry in goldEntries)
+                        produced |= ProcessDropEntry(owner, players, rate, companionAutoCollect, ref drops, entry, true);
+
+                if (randomEntries != null)
+                    produced |= ProcessDropEntry(owner, players, rate, companionAutoCollect, ref drops, randomEntries[SEnvir.Random.Next(randomEntries.Count)], true);
+
+                return true;
+            }
+
+            foreach (CompiledDropGroupChild child in group.Children)
+            {
+                bool childMatched;
+                bool childProduced;
+
+                if (child.IsGroup)
+                {
+                    childMatched = ProcessDropGroup(owner, players, rate, companionAutoCollect, ref drops, child.Group, out childProduced);
+                }
+                else
+                {
+                    childProduced = ProcessDropEntry(owner, players, rate, companionAutoCollect, ref drops, child.Entry);
+                    childMatched = childProduced;
+                }
+
+                produced |= childProduced;
+                if (group.Mode == DropGroupMode.FirstMatched && childMatched) break;
+            }
+
+            return true;
+        }
+
+        private bool CollectDropGroupResult(PlayerObject owner, int players, decimal rate, CompiledDropGroup group, ref List<CompiledDropEntry> itemEntries, ref List<CompiledDropEntry> goldEntries, bool chancePassed = false)
+        {
+            if (!CanProcessDrop(group.DropSet, group.EasterEvent)) return false;
+            if (!chancePassed && RollChance(group.Chance) != 0) return false;
+
+            if (group.Mode == DropGroupMode.RandomOneMatched)
+            {
+                List<CompiledDropEntry> randomEntries = null;
+
+                foreach (CompiledDropGroupChild child in group.Children)
+                    CollectDropChildResult(owner, players, rate, child, ref randomEntries, ref goldEntries);
+
+                if (randomEntries != null)
+                    AddCollectedEntry(ref itemEntries, randomEntries[SEnvir.Random.Next(randomEntries.Count)]);
+
+                return true;
+            }
+
+            foreach (CompiledDropGroupChild child in group.Children)
+            {
+                int itemCount = itemEntries?.Count ?? 0;
+                int goldCount = goldEntries?.Count ?? 0;
+
+                bool childMatched = CollectDropChildResult(owner, players, rate, child, ref itemEntries, ref goldEntries);
+                if (group.Mode == DropGroupMode.FirstMatched && childMatched && ((itemEntries?.Count ?? 0) > itemCount || (goldEntries?.Count ?? 0) > goldCount || child.IsGroup)) break;
+            }
+
+            return true;
+        }
+
+        private bool CollectDropChildResult(PlayerObject owner, int players, decimal rate, CompiledDropGroupChild child, ref List<CompiledDropEntry> itemEntries, ref List<CompiledDropEntry> goldEntries)
+        {
+            if (child.IsGroup)
+            {
+                return CollectDropGroupResult(owner, players, rate, child.Group, ref itemEntries, ref goldEntries);
+            }
+
+            if (!DropEntryChanceMatched(owner, players, rate, child.Entry)) return false;
+
+            if (child.Entry.Item == SEnvir.GoldInfo)
+                AddCollectedEntry(ref goldEntries, child.Entry);
+            else
+                AddCollectedEntry(ref itemEntries, child.Entry);
+
+            return true;
+        }
+
+        private static void AddCollectedEntry(ref List<CompiledDropEntry> entries, CompiledDropEntry entry)
+        {
+            entries ??= new List<CompiledDropEntry>();
+            entries.Add(entry);
+        }
+
+        private bool ProcessDropEntry(PlayerObject owner, int players, decimal rate, bool companionAutoCollect, ref List<UserItem> drops, CompiledDropEntry drop, bool chancePassed = false)
+        {
+            if (!CanProcessDrop(drop.DropSet, drop.EasterEvent)) return false;
+            if (!RollDropEntry(owner, players, rate, drop, out DropRoll roll, chancePassed)) return false;
+
+            if (drop.PartOnly || ((roll.Roll > roll.Chance || owner.Character.Account.ItemBot) && ((long)roll.UserDrop.Progress <= roll.UserDrop.DropCount)))
+                return ProcessItemPartDrop(owner, companionAutoCollect, ref drops, drop, roll.Chance);
+
+            if (Config.EnableFortune)
+            {
+                if (!SEnvir.IsCurrencyItem(drop.Item) && Math.Floor(roll.UserDrop.Progress) > roll.UserDrop.DropCount + roll.Amount)
+                    roll.Amount = (long)(roll.UserDrop.Progress - roll.UserDrop.DropCount);
+            }
+
+            roll.UserDrop.DropCount += roll.Amount;
+
+            while (roll.Amount > 0)
+            {
+                UserItem item = SEnvir.CreateDropItem(drop.Item);
+                if (companionAutoCollect && drop.Item == SEnvir.GoldInfo)
+                    item.Count = roll.Amount;
+                else
+                    item.Count = Math.Min(drop.Item.StackSize, roll.Amount);
+
+                roll.Amount -= item.Count;
+
+                item.IsTemporary = true; //REMOVE ON Gain
+
+                SpawnDropItem(owner, companionAutoCollect, ref drops, item);
+            }
+
+            return true;
+        }
+
+        private bool DropEntryChanceMatched(PlayerObject owner, int players, decimal rate, CompiledDropEntry drop)
+        {
+            if (!CanProcessDrop(drop.DropSet, drop.EasterEvent)) return false;
+
+            long chance;
+            if (drop.Item == SEnvir.GoldInfo)
+            {
+                if (owner.Character.Account.GoldBot && Level < owner.Level) return false;
+
+                chance = GetGoldChance(drop.Chance);
+            }
+            else
+            {
+                chance = GetItemChance(drop.Chance, players, rate);
+            }
+
+            if (drop.PartOnly) return true;
+            if (SEnvir.Random.Next() <= chance) return true;
+            if (owner.Character.Account.ItemBot) return false;
+
+            UserDrop userDrop = owner.Character.Account.GetOrCreateUserDrop(drop.Item);
+            return userDrop != null && (long)userDrop.Progress > userDrop.DropCount;
+        }
+
+        private bool RollDropEntry(PlayerObject owner, int players, decimal rate, CompiledDropEntry drop, out DropRoll roll, bool chancePassed = false)
+        {
+            roll = default;
+
+            long amount = GetDropAmount(drop);
+            long chance;
+
+            if (drop.Item == SEnvir.GoldInfo)
+            {
+                if (owner.Character.Account.GoldBot && Level < owner.Level) return false;
+
+                chance = GetGoldChance(drop.Chance);
+
+                amount /= players;
+
+                amount += (int)(amount * owner.Stats[Stat.GoldRate] / 100M);
+
+                amount += (int)(amount * owner.Stats[Stat.BaseGoldRate] / 100M);
+
+                if (PetOwner == null && CurrentMap != null)
+                    amount += (int)(amount * MapGoldRate / 100M);
+
+                if (GrowthLevel > 0)
+                    amount += (int)(amount * (GrowthLevel * 10) / 100M);
+
+                if (amount == 0) return false;
+            }
+            else
+            {
+                chance = GetItemChance(drop.Chance, players, rate);
+            }
+
+            UserDrop userDrop = owner.Character.Account.GetOrCreateUserDrop(drop.Item);
+            if (userDrop == null) return false;
+
+            if (Config.EnableFortune)
+            {
+                decimal progress = chance / (decimal)int.MaxValue;
+
+                progress *= amount;
+
+                if (!drop.PartOnly)
+                    userDrop.Progress += progress;
+            }
+
+            long rollValue = chancePassed ? 0 : SEnvir.Random.Next();
+            if (!chancePassed && rollValue > chance && !drop.PartOnly && ((long)userDrop.Progress > userDrop.DropCount))
+                rollValue = 0;
+
+            roll = new DropRoll
+            {
+                Amount = amount,
+                Chance = chance,
+                Roll = rollValue,
+                UserDrop = userDrop
+            };
+
+            return true;
+        }
+
+        private bool ProcessItemPartDrop(PlayerObject owner, bool companionAutoCollect, ref List<UserItem> drops, CompiledDropEntry drop, long chance)
+        {
+            if (SEnvir.ItemPartInfo == null || drop.Item.PartCount <= 1 || SEnvir.IsCurrencyItem(drop.Item)) return false;
+
+            long partRoll = SEnvir.Random.Next();
+            decimal partChance = drop.PartOnly ? chance : chance * (decimal)drop.Item.PartCount;
+            if (partRoll > partChance) return false;
+
+            UserItem item = SEnvir.CreateDropItem(SEnvir.ItemPartInfo);
+
+            item.AddStat(Stat.ItemIndex, drop.Item.Index, StatSource.Added);
+            item.StatsChanged();
+
+            item.IsTemporary = true;
+
+            SpawnDropItem(owner, companionAutoCollect, ref drops, item, drop.Item.Rarity);
+            return true;
+        }
+
+        private void SpawnDropItem(PlayerObject owner, bool companionAutoCollect, ref List<UserItem> drops, UserItem item, Rarity? sourceRarity = null)
+        {
+            Rarity rarity = sourceRarity ?? item.Info.Rarity;
+
+            if (NeedHarvest)
+            {
+                if (drops == null)
+                    drops = new List<UserItem>();
+
+                if (rarity != Rarity.Common)
+                    owner.Connection.ReceiveChatWithObservers(con => string.Format(con.Language.HarvestRare, MonsterInfo.MonsterName), MessageType.System);
+
+                drops.Add(item);
+                return;
+            }
+
+            if (SEnvir.IsUndroppableCurrencyItem(item.Info))
+            {
+                long taxableAmount = owner.Character.Account.GuildMember?.Guild?.CalculateGuildTax(item) ?? 0;
+
+                if (taxableAmount > 0)
+                {
+                    item.Count -= taxableAmount;
+
+                    owner.Character.Account.GuildMember.Contribute(taxableAmount);
+                }
+
+                owner.GainItem(item);
+                return;
+            }
+
+            Cell cell = GetDropLocation(Config.DropDistance, owner) ?? CurrentCell;
+
+            ItemObject ob = new ItemObject
+            {
+                Item = item,
+                Account = owner.Character.Account,
+                MonsterDrop = true,
+            };
+
+            ob.Spawn(CurrentMap, cell.Location);
+
+            if (!companionAutoCollect) return;
+
+            long goldAmount = 0;
+
+            if (ob.Item.Info == SEnvir.GoldInfo && ob.Account.GuildMember != null && ob.Account.GuildMember.Guild.GuildTax > 0)
+                goldAmount = ob.Account?.GuildMember?.Guild?.CalculateGuildTax(ob.Item) ?? 0;
+
+            ItemCheck check = new ItemCheck(ob.Item, ob.Item.Count - goldAmount, ob.Item.Flags, ob.Item.ExpireTime);
+
+            if (owner.Companion.CanGainItems(true, check)) ob.PickUpItem(owner.Companion);
+        }
+
+        private bool CanProcessDrop(int dropSet, bool easterEvent)
+        {
+            if ((DropSet & dropSet) != dropSet) return false;
+            if (easterEvent && !EasterEventMob) return false;
+
+            return true;
+        }
+
+        private static long GetDropAmount(CompiledDropEntry drop)
+        {
+            if (drop.Mir2Gold && drop.Item == SEnvir.GoldInfo)
+            {
+                int lowerGoldRange = drop.Amount / 2;
+                int upperGoldRange = drop.Amount + drop.Amount / 2;
+                if (lowerGoldRange > upperGoldRange) lowerGoldRange = upperGoldRange;
+
+                int min = Math.Max(0, lowerGoldRange);
+                int max = Math.Max(min + 1, upperGoldRange + 1);
+                return Math.Max(1, SEnvir.Random.Next(min, max));
+            }
+
+            return Math.Max(1, drop.Amount / 2 + SEnvir.Random.Next(drop.Amount));
+        }
+
+        private static long GetGoldChance(int chance)
+        {
+            if (chance <= 1) return int.MaxValue;
+
+            return Math.Max(1, int.MaxValue / chance);
+        }
+
+        private static long GetItemChance(int chance, int players, decimal rate)
+        {
+            if (chance <= 1) return int.MaxValue;
+
+            decimal denominator = Math.Max(1M, (decimal)chance * Math.Max(1, players));
+            decimal value = int.MaxValue / denominator * rate;
+
+            if (value >= int.MaxValue) return int.MaxValue;
+            if (value <= 1M) return 1;
+
+            return (long)value;
+        }
+
+        private static int RollChance(int chance)
+        {
+            if (chance <= 1) return 0;
+
+            return SEnvir.Random.Next(chance);
+        }
+
+        private struct DropRoll
+        {
+            public long Amount;
+            public long Chance;
+            public long Roll;
+            public UserDrop UserDrop;
         }
 
         public virtual void Turn(MirDirection direction)

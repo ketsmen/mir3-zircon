@@ -1,0 +1,81 @@
+1/500 阿尔法残酷之锤
+1/500 太阳元素之怒
+1/500 探求者复仇之光
+1/500 收割者三叶刀
+1/500 复仇女神背叛之刃
+1/500 洪水雪崩法器
+1/500 天堂天神之扇
+1/500 混沌螺旋回斩
+1/500 守日之盔(男)
+1/500 守日之盔(女)
+1/500 奥术之怒(男)
+1/500 奥术之怒(女)
+1/500 永恒之铠(男)
+1/500 永恒之铠(女)
+1/500 轻语之衣(男)
+1/333 御林军之盔
+1/333 闪烁光冠
+1/500 半月面罩
+1/222 夜行者面具
+1/500 大师徽章
+1/500 冠军徽章
+1/500 国王徽章
+1/500 锆石徽章
+1/500 显著之靴
+1/500 迅捷之靴
+1/500 守护之靴
+1/500 黑曜石戒指
+1/500 蓝宝石戒指
+1/500 绿宝石戒指
+1/500 黑曜石手镯
+1/500 蓝宝石手镯
+1/500 绿宝石手镯
+1/500 黑曜石项链
+1/500 蓝宝石项链
+1/500 绿宝石项链
+1/1 阿尔法残酷之锤 PartOnly
+1/1 太阳元素之怒 PartOnly
+1/1 探求者复仇之光 PartOnly
+1/1 收割者三叶刀 PartOnly
+1/1 复仇女神背叛之刃 PartOnly
+1/1 洪水雪崩法器 PartOnly
+1/1 天堂天神之扇 PartOnly
+1/1 混沌螺旋回斩 PartOnly
+1/1 守日之盔(男) PartOnly
+1/1 守日之盔(女) PartOnly
+1/1 奥术之怒(男) PartOnly
+1/1 奥术之怒(女) PartOnly
+1/1 永恒之铠(男) PartOnly
+1/1 永恒之铠(女) PartOnly
+1/1 轻语之衣(男) PartOnly
+1/1 御林军之盔 PartOnly
+1/1 闪烁光冠 PartOnly
+1/1 半月面罩 PartOnly
+1/1 夜行者面具 PartOnly
+1/1 冠军徽章 PartOnly
+1/1 国王徽章 PartOnly
+1/1 锆石徽章 PartOnly
+1/1 显著之靴 PartOnly
+1/1 迅捷之靴 PartOnly
+1/1 守护之靴 PartOnly
+1/1 黑曜石戒指 PartOnly
+1/1 蓝宝石戒指 PartOnly
+1/1 绿宝石戒指 PartOnly
+1/1 黑曜石手镯 PartOnly
+1/1 蓝宝石手镯 PartOnly
+1/1 绿宝石手镯 PartOnly
+1/1 黑曜石项链 PartOnly
+1/1 蓝宝石项链 PartOnly
+1/1 绿宝石项链 PartOnly
+1/1 急救丸（特） Amount=25
+1/1 魔法药（特） Amount=12
+1/5 奥丁之罪 Amount=2 PartOnly
+1/5 奥丁元素 Amount=2 PartOnly
+1/5 奥丁神话 Amount=2 PartOnly
+1/5 奥丁教徒 Amount=2 PartOnly
+1/122 地狱回疗 PartOnly
+1/111 天之怒火 PartOnly
+1/111 集中 PartOnly
+1/110 天雷锤 PartOnly
+1/500 轻语之衣(女)
+1/1 轻语之衣(女) PartOnly

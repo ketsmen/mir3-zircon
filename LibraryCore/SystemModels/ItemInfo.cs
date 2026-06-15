@@ -454,6 +454,10 @@ namespace Library.SystemModels
         public DBBindingList<DropInfo> Drops { get; set; }
 
         [JsonIgnore]
+        [Association("DropGroupItemDrops", true)]
+        public DBBindingList<DropGroupItemInfo> DropGroupItems { get; set; }
+
+        [JsonIgnore]
         [IgnoreProperty]
         public bool ShouldLinkInfo => StackSize > 1 || ItemType == ItemType.Consumable || ItemType == ItemType.Scroll;
 

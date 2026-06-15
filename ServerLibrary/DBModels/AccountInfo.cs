@@ -5,6 +5,7 @@ using Server.Envir;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 
 namespace Server.DBModels
 {
@@ -576,6 +577,10 @@ namespace Server.DBModels
         [Association("UserDrops")]
         public DBBindingList<UserDrop> UserDrops { get; set; }
 
+        [JsonIgnore]
+        [IgnoreProperty]
+        internal Dictionary<ItemInfo, UserDrop> UserDropCache { get; set; }
+
         [Association("Companions")]
         public DBBindingList<UserCompanion> Companions { get; set; }
 
@@ -660,6 +665,45 @@ namespace Server.DBModels
 
             AddDefaultCurrencies();
             RemoveDeletedCurrencies();
+
+            RebuildUserDropCache();
+        }
+
+        public void RebuildUserDropCache()
+        {
+            UserDropCache = new Dictionary<ItemInfo, UserDrop>();
+
+            foreach (UserDrop drop in UserDrops)
+            {
+                if (drop?.Item == null) continue;
+                UserDropCache[drop.Item] = drop;
+            }
+        }
+
+        public UserDrop GetOrCreateUserDrop(ItemInfo item)
+        {
+            if (item == null) return null;
+
+            if (UserDropCache == null)
+                RebuildUserDropCache();
+
+            if (UserDropCache.TryGetValue(item, out UserDrop drop))
+                return drop;
+
+            drop = Session.GetCollection<UserDrop>().CreateNewObject();
+            drop.Account = this;
+            drop.Item = item;
+
+            UserDropCache[item] = drop;
+            return drop;
+        }
+
+        protected override void OnDeleted()
+        {
+            UserDropCache?.Clear();
+            UserDropCache = null;
+
+            base.OnDeleted();
         }
 
         private void AddDefaultCurrencies()

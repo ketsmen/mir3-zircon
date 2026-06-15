@@ -35,7 +35,9 @@ namespace Server.WinForms
             _readOnly = readOnly;
 
             Dock = DockStyle.Fill;
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
             _grid.Dock = DockStyle.Fill;
+            SetDoubleBuffered(_grid);
             _grid.AllowUserToAddRows = false;
             _grid.AllowUserToDeleteRows = false;
             _grid.AutoGenerateColumns = false;
@@ -318,6 +320,12 @@ namespace Server.WinForms
         private void Grid_DataError(object sender, DataGridViewDataErrorEventArgs e)
         {
             e.ThrowException = false;
+        }
+
+        private static void SetDoubleBuffered(Control control)
+        {
+            typeof(Control).GetProperty("DoubleBuffered", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?.SetValue(control, true, null);
         }
     }
 }

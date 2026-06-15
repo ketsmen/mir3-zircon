@@ -123,6 +123,8 @@ namespace Server.Envir
         public static int MysteryShipRegionIndex { get; set; } = 0;
         public static int LairRegionIndex { get; set; } = 0;
         public static int MaxRespawnBatchSize { get; set; } = 25;
+        public static bool DropTextOverrideEnabled { get; set; } = true;
+        public static string DropTextOverridePath { get; set; } = @".\Envir\Drops\";
 
         [ConfigSection("Items")]
         public static TimeSpan DropDuration { get; set; } = TimeSpan.FromMinutes(60);

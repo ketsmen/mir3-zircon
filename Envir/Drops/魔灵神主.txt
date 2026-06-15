@@ -1,0 +1,24 @@
+1/1 金币 Amount=7000000
+1/50 龙血头盔
+1/50 龙血鞋
+1/50 龙血项链
+1/50 龙血手镯
+1/50 龙血戒指
+1/1 胡萝卜 EasterEvent
+1/100 祝福油 PartOnly EasterEvent
+1/300 传送戒指 PartOnly
+1/300 麻痹戒指 PartOnly
+1/300 复活戒指 PartOnly
+1/300 护身戒指 PartOnly
+1/300 隐身戒指 PartOnly
+1/33 探测项链 PartOnly
+1/1000 白色口哨
+1/10000000 大师徽章
+1/1 清心丸（特） Amount=44
+1/1 急救丸（特） Amount=44
+1/3 结晶
+1/50000 结晶
+1/350 天之怒火 PartOnly
+1/350 集中 PartOnly
+1/350 天雷锤 PartOnly
+1/350 地狱回疗 PartOnly
