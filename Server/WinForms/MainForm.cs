@@ -92,17 +92,58 @@ namespace Server.WinForms
             ToolStripMenuItem databaseMenu = new ToolStripMenuItem("数据库");
             databaseMenu.DropDownItems.Add("打开数据库编辑器", null, (_, _) => OpenDatabaseEditor());
             databaseMenu.DropDownItems.Add(new ToolStripSeparator());
-            AddDatabaseShortcut(databaseMenu, "物品", "ItemInfo");
-            AddDatabaseShortcut(databaseMenu, "怪物", "MonsterInfo");
-            AddDatabaseShortcut(databaseMenu, "地图", "MapInfo");
-            AddDatabaseShortcut(databaseMenu, "地图区域", "MapRegion");
-            AddDatabaseShortcut(databaseMenu, "NPC", "NPCInfo");
-            AddDatabaseShortcut(databaseMenu, "NPC页面", "NPCPage");
-            AddDatabaseShortcut(databaseMenu, "任务", "QuestInfo");
-            AddDatabaseShortcut(databaseMenu, "商城", "StoreInfo");
-            databaseMenu.DropDownItems.Add(new ToolStripSeparator());
-            AddDatabaseShortcut(databaseMenu, "账号", "AccountInfo");
-            AddDatabaseShortcut(databaseMenu, "角色", "CharacterInfo");
+
+            ToolStripMenuItem playerDataMenu = AddDatabaseGroup(databaseMenu, "玩家");
+            AddDatabaseShortcut(playerDataMenu, "基础属性", "BaseStat");
+            AddDatabaseShortcut(playerDataMenu, "技能", "MagicInfo");
+            AddDatabaseShortcut(playerDataMenu, "名望", "FameInfo");
+            AddDatabaseShortcut(playerDataMenu, "修炼", "DisciplineInfo");
+            AddDatabaseShortcut(playerDataMenu, "宠物", "CompanionInfo");
+            AddDatabaseShortcut(playerDataMenu, "帮助", "HelpInfo");
+
+            ToolStripMenuItem mapDataMenu = AddDatabaseGroup(databaseMenu, "地图");
+            AddDatabaseShortcut(mapDataMenu, "地图", "MapInfo");
+            AddDatabaseShortcut(mapDataMenu, "副本", "InstanceInfo");
+            AddDatabaseShortcut(mapDataMenu, "地图区域", "MapRegion");
+            AddDatabaseShortcut(mapDataMenu, "移动点", "MovementInfo");
+            AddDatabaseShortcut(mapDataMenu, "安全区", "SafeZoneInfo");
+            AddDatabaseShortcut(mapDataMenu, "钓鱼", "FishingInfo");
+            AddDatabaseShortcut(mapDataMenu, "城堡", "CastleInfo");
+            AddDatabaseShortcut(mapDataMenu, "事件", "WorldEventInfo");
+
+            ToolStripMenuItem npcDataMenu = AddDatabaseGroup(databaseMenu, "NPC与任务");
+            AddDatabaseShortcut(npcDataMenu, "NPC", "NPCInfo");
+            AddDatabaseShortcut(npcDataMenu, "NPC页面", "NPCPage");
+            AddDatabaseShortcut(npcDataMenu, "NPC数据", "GameNPCList");
+            AddDatabaseShortcut(npcDataMenu, "任务", "QuestInfo");
+            AddDatabaseShortcut(npcDataMenu, "里程碑", "MilestoneInfo");
+            AddDatabaseShortcut(npcDataMenu, "商店", "StoreInfo");
+
+            ToolStripMenuItem itemDataMenu = AddDatabaseGroup(databaseMenu, "物品");
+            AddDatabaseShortcut(itemDataMenu, "物品", "ItemInfo");
+            AddDatabaseShortcut(itemDataMenu, "物品属性", "ItemInfoStat");
+            AddDatabaseShortcut(itemDataMenu, "套装", "SetInfo");
+            AddDatabaseShortcut(itemDataMenu, "武器制作属性", "WeaponCraftStatInfo");
+            AddDatabaseShortcut(itemDataMenu, "礼包", "BundleInfo");
+            AddDatabaseShortcut(itemDataMenu, "宝箱", "LootBoxInfo");
+
+            ToolStripMenuItem monsterDataMenu = AddDatabaseGroup(databaseMenu, "怪物");
+            AddDatabaseShortcut(monsterDataMenu, "怪物", "MonsterInfo");
+            AddDatabaseShortcut(monsterDataMenu, "怪物属性", "MonsterInfoStat");
+            AddDatabaseShortcut(monsterDataMenu, "掉落", "DropInfo");
+            AddDatabaseShortcut(monsterDataMenu, "刷新", "RespawnInfo");
+
+            ToolStripMenuItem commerceDataMenu = AddDatabaseGroup(databaseMenu, "商城与货币");
+            AddDatabaseShortcut(commerceDataMenu, "货币", "CurrencyInfo");
+            AddDatabaseShortcut(commerceDataMenu, "充值记录", "GameGoldPayment");
+            AddDatabaseShortcut(commerceDataMenu, "商城销售", "GameStoreSale");
+
+            ToolStripMenuItem managementDataMenu = AddDatabaseGroup(databaseMenu, "管理");
+            AddDatabaseShortcut(managementDataMenu, "账号", "AccountInfo");
+            AddDatabaseShortcut(managementDataMenu, "角色", "CharacterInfo");
+            AddDatabaseShortcut(managementDataMenu, "用户掉落", "UserDrop");
+            AddDatabaseShortcut(managementDataMenu, "邮件", "MailInfo");
+            AddDatabaseShortcut(managementDataMenu, "攻城统计", "UserConquestStats");
 
             ToolStripMenuItem configMenu = new ToolStripMenuItem("配置");
             configMenu.DropDownItems.Add("打开配置编辑器", null, (_, _) => OpenConfigEditor());
@@ -244,6 +285,13 @@ namespace Server.WinForms
         private void AddDatabaseShortcut(ToolStripMenuItem menu, string text, string typeName)
         {
             menu.DropDownItems.Add(text, null, (_, _) => OpenDatabaseEditor(typeName));
+        }
+
+        private static ToolStripMenuItem AddDatabaseGroup(ToolStripMenuItem menu, string text)
+        {
+            ToolStripMenuItem group = new ToolStripMenuItem(text);
+            menu.DropDownItems.Add(group);
+            return group;
         }
 
         private void LoadPlugins()
