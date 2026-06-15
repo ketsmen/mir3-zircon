@@ -18,6 +18,7 @@ namespace Server.WinForms
         private readonly TextBox _reportText = new TextBox();
         private readonly DataGridView _orphanGrid = new DataGridView();
         private readonly DataGridView _networkGrid = new DataGridView();
+        private readonly System.Windows.Forms.Timer _refreshTimer = new System.Windows.Forms.Timer();
         private readonly ToolStripButton _networkMonitorButton = new ToolStripButton("网络诊断");
         private readonly BindingList<OrphanDiagnostic.OrphanTypeResult> _orphanResults = new BindingList<OrphanDiagnostic.OrphanTypeResult>();
         private readonly BindingList<DiagnosticValue> _networkDiagnostics = new BindingList<DiagnosticValue>();
@@ -33,6 +34,18 @@ namespace Server.WinForms
 
             BuildLayout();
             LoadNetworkDiagnostics();
+
+            _refreshTimer.Interval = 1000;
+            _refreshTimer.Tick += (_, _) => RefreshNetworkDiagnostics();
+            _refreshTimer.Start();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                _refreshTimer.Dispose();
+
+            base.Dispose(disposing);
         }
 
         private void BuildLayout()
@@ -47,6 +60,7 @@ namespace Server.WinForms
             _networkMonitorButton.Checked = BaseConnection.Monitor;
             _networkMonitorButton.CheckedChanged += (_, _) => BaseConnection.Monitor = _networkMonitorButton.Checked;
             toolStrip.Items.Add(_networkMonitorButton);
+            AddButton(toolStrip, "刷新网络统计", (_, _) => RefreshNetworkDiagnostics());
             AddButton(toolStrip, "重置网络统计", (_, _) => ResetNetworkDiagnostics());
 
             _tabs.Dock = DockStyle.Fill;
@@ -102,8 +116,20 @@ namespace Server.WinForms
         {
             _networkDiagnostics.Clear();
 
-            foreach (DiagnosticValue value in BaseConnection.Diagnostics.Values)
+            foreach (DiagnosticValue value in BaseConnection.Diagnostics.Values.OrderBy(x => x.Name))
                 _networkDiagnostics.Add(value);
+        }
+
+        private void RefreshNetworkDiagnostics()
+        {
+            foreach (DiagnosticValue value in BaseConnection.Diagnostics.Values.OrderBy(x => x.Name))
+            {
+                if (_networkDiagnostics.Contains(value)) continue;
+
+                _networkDiagnostics.Add(value);
+            }
+
+            _networkGrid.Refresh();
         }
 
         private async Task RunDatabaseValidation()
@@ -206,6 +232,7 @@ namespace Server.WinForms
             }
 
             _networkGrid.Refresh();
+            RefreshNetworkDiagnostics();
             _reportText.Text = "网络诊断统计已重置。";
         }
     }
