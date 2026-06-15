@@ -30,6 +30,7 @@ namespace Server.WinForms
         private readonly ToolStripTextBox _searchText = new ToolStripTextBox();
         private readonly ToolStripTextBox _indexText = new ToolStripTextBox();
         private readonly ToolStripLabel _statusLabel = new ToolStripLabel();
+        private ToolStripButton _openMapButton;
         private ToolStripButton _mapRegionButton;
 
         private MirDbGridControl _rootGrid;
@@ -111,6 +112,7 @@ namespace Server.WinForms
             AddButton(toolStrip, "验证文本 NPC", (_, _) => ValidateTextNpcs());
             AddButton(toolStrip, "导入文本 NPC", (_, _) => ImportTextNpcs());
             AddButton(toolStrip, "导出 NPC 文本", (_, _) => ExportTextNpcs());
+            _openMapButton = AddButton(toolStrip, "打开地图", (_, _) => OpenSelectedMap());
             _mapRegionButton = AddButton(toolStrip, "编辑地图区域", (_, _) => OpenSelectedMapRegion());
             toolStrip.Items.Add(new ToolStripSeparator());
             toolStrip.Items.Add(new ToolStripLabel("表"));
@@ -565,9 +567,38 @@ namespace Server.WinForms
 
         private void UpdateMapRegionCommand()
         {
-            if (_mapRegionButton == null) return;
+            if (_mapRegionButton == null || _openMapButton == null) return;
 
-            _mapRegionButton.Enabled = !_readOnly && _activeGrid?.CurrentObject is MapRegion;
+            object current = _activeGrid?.CurrentObject;
+            _openMapButton.Enabled = current is MapInfo || current is MapRegion { Map: not null };
+            _mapRegionButton.Enabled = !_readOnly && current is MapRegion;
+        }
+
+        private void OpenSelectedMap()
+        {
+            object current = _activeGrid?.CurrentObject;
+            MapInfo map = current switch
+            {
+                MapInfo mapInfo => mapInfo,
+                MapRegion region => region.Map,
+                _ => null
+            };
+
+            if (map == null)
+            {
+                MessageBox.Show(this, "请先选择 MapInfo，或选择已关联 Map 的 MapRegion。", "地图", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(map.FileName))
+            {
+                MessageBox.Show(this, "当前地图没有 FileName，无法打开地图文件。", "地图", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            MapViewerForm viewer = new MapViewerForm();
+            viewer.LoadMap(map.FileName);
+            viewer.Show(this);
         }
 
         private void JumpToIndex()
