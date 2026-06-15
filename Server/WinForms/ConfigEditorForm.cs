@@ -42,6 +42,40 @@ namespace Server.WinForms
             LoadSettings();
         }
 
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            EndGridEdits();
+
+            int modified = CountModifiedSettings();
+            if (modified > 0)
+            {
+                DialogResult result = MessageBox.Show(
+                    this,
+                    $"当前有 {modified:#,##0} 个配置项尚未保存。\r\n\r\n是：保存后关闭。\r\n否：放弃修改并关闭。\r\n取消：继续编辑。",
+                    "未保存配置",
+                    MessageBoxButtons.YesNoCancel,
+                    MessageBoxIcon.Warning);
+
+                if (result == DialogResult.Cancel)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+
+                if (result == DialogResult.Yes)
+                {
+                    SaveSettings();
+                    if (CountModifiedSettings() > 0)
+                    {
+                        e.Cancel = true;
+                        return;
+                    }
+                }
+            }
+
+            base.OnFormClosing(e);
+        }
+
         private void BuildLayout()
         {
             ToolStrip toolStrip = new ToolStrip();
@@ -529,6 +563,13 @@ namespace Server.WinForms
         {
             foreach (ConfigSetting setting in _settings)
                 setting.UpdateOriginalValue(setting.Property.GetValue(null));
+        }
+
+        private int CountModifiedSettings()
+        {
+            return _settings.Count(setting =>
+                _propertyRows.TryGetValue(setting.Property.Name, out DataGridViewRow row) &&
+                IsModified(setting, row));
         }
 
         private void FocusRow(DataGridViewRow row)
