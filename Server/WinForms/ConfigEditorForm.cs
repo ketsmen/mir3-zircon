@@ -117,6 +117,7 @@ namespace Server.WinForms
             _modifiedOnlyButton.ToolTipText = "只显示当前窗口中已修改但尚未保存的配置项。";
             _modifiedOnlyButton.CheckedChanged += (_, _) => ApplyFilter();
             toolStrip.Items.Add(_modifiedOnlyButton);
+            AddButton(toolStrip, "定位修改", (_, _) => FocusNextModifiedSetting());
             AddButton(toolStrip, "还原当前项", (_, _) => ResetCurrentSetting());
             toolStrip.Items.Add(new ToolStripSeparator());
             AddButton(toolStrip, "选择版本文件", (_, _) => SelectFileProperty("VersionPath", "选择客户端版本文件"));
@@ -201,6 +202,13 @@ namespace Server.WinForms
             if (e.KeyCode == Keys.F5)
             {
                 ReloadSettings();
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.Control && e.Shift && e.KeyCode == Keys.M)
+            {
+                FocusNextModifiedSetting();
                 SuppressKey(e);
                 return;
             }
@@ -614,6 +622,31 @@ namespace Server.WinForms
             return _settings.Count(setting =>
                 _propertyRows.TryGetValue(setting.Property.Name, out DataGridViewRow row) &&
                 IsModified(setting, row));
+        }
+
+        private void FocusNextModifiedSetting()
+        {
+            List<ConfigSetting> modified = _settings
+                .Where(setting => _propertyRows.TryGetValue(setting.Property.Name, out DataGridViewRow row) && IsModified(setting, row))
+                .ToList();
+
+            if (modified.Count == 0)
+            {
+                MessageBox.Show(this, "当前没有未保存的配置修改。", "定位修改", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            ConfigSetting current = _tabs.SelectedTab?
+                .Controls.OfType<DataGridView>()
+                .FirstOrDefault()?
+                .CurrentRow?
+                .Tag as ConfigSetting;
+
+            int index = current == null ? -1 : modified.FindIndex(x => ReferenceEquals(x, current));
+            ConfigSetting next = modified[(index + 1 + modified.Count) % modified.Count];
+
+            if (_propertyRows.TryGetValue(next.Property.Name, out DataGridViewRow nextRow))
+                FocusRow(nextRow);
         }
 
         private void FocusRow(DataGridViewRow row)
