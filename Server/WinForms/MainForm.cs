@@ -404,6 +404,7 @@ namespace Server.WinForms
             _navigationFilterText.Width = 150;
             _navigationFilterText.ToolTipText = "按入口名称或数据库类型名过滤左侧导航。";
             _navigationFilterText.TextChanged += (_, _) => BuildNavigationTree();
+            _navigationFilterText.KeyDown += NavigationFilterText_KeyDown;
             navigationToolStrip.Items.Add(_navigationFilterText);
             navigationToolStrip.Items.Add("清空", null, (_, _) => _navigationFilterText.Text = string.Empty);
 
@@ -499,6 +500,9 @@ namespace Server.WinForms
 
                 RemoveEmptyNavigationGroups(filter);
 
+                if (_navigationTree.Nodes.Count == 0 && !string.IsNullOrWhiteSpace(filter))
+                    _navigationTree.Nodes.Add(new TreeNode("无匹配入口"));
+
                 _navigationTree.ExpandAll();
             }
             finally
@@ -558,6 +562,44 @@ namespace Server.WinForms
         {
             if (e.Node?.Tag is Action action)
                 action();
+        }
+
+        private void NavigationFilterText_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Escape)
+            {
+                _navigationFilterText.Text = string.Empty;
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                return;
+            }
+
+            if (e.KeyCode != Keys.Enter) return;
+
+            TreeNode node = FindFirstActionNode(_navigationTree.Nodes);
+            if (node?.Tag is Action action)
+            {
+                if (_navigationTree.SelectedNode == node)
+                    action();
+                else
+                    _navigationTree.SelectedNode = node;
+            }
+
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+
+        private static TreeNode FindFirstActionNode(TreeNodeCollection nodes)
+        {
+            foreach (TreeNode node in nodes)
+            {
+                if (node.Tag is Action) return node;
+
+                TreeNode child = FindFirstActionNode(node.Nodes);
+                if (child != null) return child;
+            }
+
+            return null;
         }
 
         private void BuildMetricsPanel()
