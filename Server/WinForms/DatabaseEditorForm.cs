@@ -60,6 +60,8 @@ namespace Server.WinForms
             Text = onlineMode ? "MirDB 数据库编辑器 - 在线模式" : "MirDB 数据库编辑器";
             Width = 1280;
             Height = 760;
+            KeyPreview = true;
+            KeyDown += DatabaseEditorForm_KeyDown;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
 
             string lockReason = string.Empty;
@@ -179,6 +181,92 @@ namespace Server.WinForms
             toolStrip.Dock = DockStyle.Top;
 
             UpdateMapRegionCommand();
+        }
+
+        private void DatabaseEditorForm_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Control && e.KeyCode == Keys.S)
+            {
+                SaveDatabase();
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.Control && e.KeyCode == Keys.F)
+            {
+                FocusToolStripTextBox(_searchText);
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.Control && e.KeyCode == Keys.L)
+            {
+                FocusToolStripTextBox(_tableSearchText);
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.Control && e.KeyCode == Keys.G)
+            {
+                FocusToolStripTextBox(_indexText);
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.KeyCode == Keys.F5)
+            {
+                RefreshActiveGrid();
+                SuppressKey(e);
+                return;
+            }
+
+            if (_readOnly || IsEditingText()) return;
+
+            if (e.Control && e.Shift && e.KeyCode == Keys.N)
+            {
+                _activeGrid?.InsertAfterCurrent();
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.Control && e.KeyCode == Keys.N)
+            {
+                _activeGrid?.AddNew();
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.Control && e.KeyCode == Keys.D)
+            {
+                _activeGrid?.DuplicateCurrent();
+                SuppressKey(e);
+                return;
+            }
+        }
+
+        private static void SuppressKey(KeyEventArgs e)
+        {
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+
+        private static void FocusToolStripTextBox(ToolStripTextBox textBox)
+        {
+            textBox.Focus();
+            textBox.TextBox.SelectAll();
+        }
+
+        private bool IsEditingText()
+        {
+            Control focused = ActiveControl;
+            return focused is TextBoxBase || _tableSearchText.Focused || _searchText.Focused || _indexText.Focused;
+        }
+
+        private void RefreshActiveGrid()
+        {
+            _activeGrid?.RefreshBinding();
+            ShowChildLists(_rootGrid?.CurrentObject);
+            UpdateGridStatus();
         }
 
         private static TreeNode GetGroupNode(TreeNode root, Dictionary<string, TreeNode> groups, string groupName)

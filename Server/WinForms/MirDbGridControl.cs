@@ -54,6 +54,7 @@ namespace Server.WinForms
             _grid.SelectionChanged += (_, _) => CurrentObjectChanged?.Invoke(this, EventArgs.Empty);
             _grid.Enter += (_, _) => BecameActive?.Invoke(this, EventArgs.Empty);
             _grid.CellMouseDown += Grid_CellMouseDown;
+            _grid.CellDoubleClick += Grid_CellDoubleClick;
             _grid.KeyDown += Grid_KeyDown;
 
             BuildContextMenu();
@@ -339,20 +340,46 @@ namespace Server.WinForms
 
         private void OpenCurrentReference()
         {
-            if (_grid.CurrentCell == null || _grid.CurrentRow?.DataBoundItem == null) return;
+            if (_grid.CurrentCell == null) return;
 
-            DataGridViewColumn column = _grid.Columns[_grid.CurrentCell.ColumnIndex];
-            PropertyInfo property = _itemType.GetProperty(column.DataPropertyName);
-            if (property == null) return;
+            OpenReference(_grid.CurrentCell.RowIndex, _grid.CurrentCell.ColumnIndex, true);
+        }
 
-            object value = property.GetValue(_grid.CurrentRow.DataBoundItem);
-            if (value is not DBObject dbObject)
+        private void Grid_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+
+            OpenReference(e.RowIndex, e.ColumnIndex, false);
+        }
+
+        private void OpenReference(int rowIndex, int columnIndex, bool showMessage)
+        {
+            if (!TryGetReference(rowIndex, columnIndex, out DBObject dbObject))
             {
-                MessageBox.Show(this, "当前单元格不是数据库对象引用。", "打开引用对象", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                if (showMessage)
+                    MessageBox.Show(this, "当前单元格不是数据库对象引用。", "打开引用对象", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
                 return;
             }
 
             ReferenceOpenRequested?.Invoke(this, new DBObjectReferenceEventArgs(dbObject));
+        }
+
+        private bool TryGetReference(int rowIndex, int columnIndex, out DBObject dbObject)
+        {
+            dbObject = null;
+            if (rowIndex < 0 || columnIndex < 0 || rowIndex >= _grid.Rows.Count || columnIndex >= _grid.Columns.Count)
+                return false;
+
+            object rowObject = _grid.Rows[rowIndex].DataBoundItem;
+            if (rowObject == null) return false;
+
+            DataGridViewColumn column = _grid.Columns[columnIndex];
+            PropertyInfo property = _itemType.GetProperty(column.DataPropertyName);
+            if (property == null) return false;
+
+            dbObject = property.GetValue(rowObject) as DBObject;
+            return dbObject != null;
         }
 
         private void HideCurrentColumn()
