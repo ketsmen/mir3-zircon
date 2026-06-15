@@ -687,6 +687,9 @@ namespace Server.Envir
 
                 foreach (string item in result.Report.MissingItems.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
                     Log($"[NpcText][MissingItem] {item}");
+
+                foreach (string currency in result.Report.MissingCurrencies.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
+                    Log($"[NpcText][MissingCurrency] {currency}");
             }
             catch (Exception ex)
             {

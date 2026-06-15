@@ -35,5 +35,7 @@ CHECKGOLD 100
 [@MOVE_ACT]
 #ACT
 TAKEGOLD 100
+; Optional custom currency example:
+; TAKECURRENCY "声望" 1
 ; Adjust map and coordinates before using.
 MOVE 0 330 330

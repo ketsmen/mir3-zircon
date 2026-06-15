@@ -414,6 +414,9 @@ namespace Server.Envir
                     else
                         report.Failures.Add($"{line.Source}: CHECKGOLD 条件格式无效。");
                     break;
+                case "CHECKCURRENCY":
+                    ParseCurrencyCheck(line, checks, report);
+                    break;
                 case "CHECKITEM":
                     ParseItemCheck(line, checks, report);
                     break;
@@ -471,6 +474,12 @@ namespace Server.Envir
                     break;
                 case "TAKEGOLD":
                     ParseIntAction(line, parts, actions, CompiledNpcActionType.TakeGold, report);
+                    break;
+                case "GIVECURRENCY":
+                    ParseCurrencyAction(line, parts, actions, CompiledNpcActionType.GiveCurrency, report);
+                    break;
+                case "TAKECURRENCY":
+                    ParseCurrencyAction(line, parts, actions, CompiledNpcActionType.TakeCurrency, report);
                     break;
                 case "GIVEITEM":
                     ParseItemAction(line, parts, actions, CompiledNpcActionType.GiveItem, report);
@@ -534,6 +543,44 @@ namespace Server.Envir
             checks.Add(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Item, Operator = Operator.GreaterThanOrEqual, ItemParameter1 = item, IntParameter1 = count });
         }
 
+        private void ParseCurrencyCheck(TextNpcScriptLine line, List<CompiledNpcCheck> checks, TextNpcLoadReport report)
+        {
+            List<string> parts = TokenizeLine(line.Text);
+            if (parts.Count < 3)
+            {
+                report.Failures.Add($"{line.Source}: CHECKCURRENCY 格式应为 CHECKCURRENCY 货币名 [运算符] 数值。");
+                return;
+            }
+
+            Operator op = Operator.GreaterThanOrEqual;
+            int amount;
+            int nameEnd;
+
+            if (parts.Count >= 4 && TryParseOperator(parts[^2], out op) && int.TryParse(parts[^1], out amount))
+            {
+                nameEnd = parts.Count - 2;
+            }
+            else if (int.TryParse(parts[^1], out amount))
+            {
+                nameEnd = parts.Count - 1;
+            }
+            else
+            {
+                report.Failures.Add($"{line.Source}: CHECKCURRENCY 数值无效。");
+                return;
+            }
+
+            string currencyName = string.Join(" ", parts.Skip(1).Take(nameEnd - 1));
+            if (!_currencies.TryGetValue(NormalizeName(currencyName), out CurrencyInfo currency))
+            {
+                report.MissingCurrencies.Add(currencyName);
+                report.Failures.Add($"{line.Source}: 找不到货币 `{currencyName}`。");
+                return;
+            }
+
+            checks.Add(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Currency, Operator = op, IntParameter1 = amount, StringParameter1 = currency.Name });
+        }
+
         private void ParseValueCheck(TextNpcScriptLine line, List<CompiledNpcCheck> checks, TextNpcLoadReport report)
         {
             List<string> parts = TokenizeLine(line.Text);
@@ -586,6 +633,25 @@ namespace Server.Envir
             }
 
             actions.Add(new CompiledNpcAction { ActionType = type, ItemParameter1 = item, IntParameter1 = count });
+        }
+
+        private void ParseCurrencyAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, CompiledNpcActionType type, TextNpcLoadReport report)
+        {
+            if (parts.Count < 3 || !int.TryParse(parts[^1], out int amount))
+            {
+                report.Failures.Add($"{line.Source}: {parts[0]} 格式应为 {parts[0]} 货币名 数值。");
+                return;
+            }
+
+            string currencyName = string.Join(" ", parts.Skip(1).Take(parts.Count - 2));
+            if (!_currencies.TryGetValue(NormalizeName(currencyName), out CurrencyInfo currency))
+            {
+                report.MissingCurrencies.Add(currencyName);
+                report.Failures.Add($"{line.Source}: 找不到货币 `{currencyName}`。");
+                return;
+            }
+
+            actions.Add(new CompiledNpcAction { ActionType = type, StringParameter1 = currency.Name, IntParameter1 = amount });
         }
 
         private void ParseMoveAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, TextNpcLoadReport report)
@@ -688,6 +754,7 @@ namespace Server.Envir
         {
             if (!_currencies.TryGetValue(NormalizeName(line.Text), out CurrencyInfo currency))
             {
+                report.MissingCurrencies.Add(line.Text);
                 report.Failures.Add($"{line.Source}: 找不到货币 `{line.Text}`。");
                 return;
             }
@@ -999,10 +1066,11 @@ namespace Server.Envir
         public List<string> UnknownCommands { get; } = [];
         public List<string> MissingMaps { get; } = [];
         public List<string> MissingItems { get; } = [];
+        public List<string> MissingCurrencies { get; } = [];
 
         public string ToDisplayText()
         {
-            return $"NPCInfo行={InfoLines}, 脚本={ScriptFiles}, Include={IncludeFiles}, 页面={PagesLoaded}, NPC={NpcsLoaded}, 覆盖={OverrideNpcs}, 跳过={NpcsSkipped}, 错误={Failures.Count}";
+            return $"NPCInfo行={InfoLines}, 脚本={ScriptFiles}, Include={IncludeFiles}, 页面={PagesLoaded}, NPC={NpcsLoaded}, 覆盖={OverrideNpcs}, 跳过={NpcsSkipped}, 缺地图={MissingMaps.Count}, 缺物品={MissingItems.Count}, 缺货币={MissingCurrencies.Count}, 错误={Failures.Count}";
         }
     }
 
@@ -1154,7 +1222,8 @@ namespace Server.Envir
         PKPoint,
         Random,
         NameList,
-        Value
+        Value,
+        Currency
     }
 
     public enum CompiledNpcActionType
@@ -1169,7 +1238,9 @@ namespace Server.Envir
         DeleteNameList,
         SetValue,
         ChangeValue,
-        LocalMessage
+        LocalMessage,
+        GiveCurrency,
+        TakeCurrency
     }
 
     internal enum TextNpcParseMode

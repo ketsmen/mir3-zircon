@@ -423,6 +423,10 @@ namespace Server.Models
                         ob.Gold.Amount -= action.IntParameter1;
                         ob.GoldChanged();
                         break;
+                    case CompiledNpcActionType.GiveCurrency:
+                    case CompiledNpcActionType.TakeCurrency:
+                        ChangeCurrency(ob, action.StringParameter1, action.IntParameter1, action.ActionType == CompiledNpcActionType.GiveCurrency);
+                        break;
                     case CompiledNpcActionType.GiveItem:
                         {
                             if (action.ItemParameter1 == null) continue;
@@ -479,6 +483,9 @@ namespace Server.Models
                     case CompiledNpcCheckType.Gold:
                         if (!Compare(check.Operator, ob.Gold.Amount, check.IntParameter1)) return false;
                         break;
+                    case CompiledNpcCheckType.Currency:
+                        if (!Compare(check.Operator, GetCurrencyAmount(ob, check.StringParameter1), check.IntParameter1)) return false;
+                        break;
                     case CompiledNpcCheckType.Item:
                         if (check.ItemParameter1 == null) continue;
                         if (!Compare(check.Operator, ob.GetItemCount(check.ItemParameter1), check.IntParameter1)) return false;
@@ -502,6 +509,30 @@ namespace Server.Models
             }
 
             return true;
+        }
+
+        private static long GetCurrencyAmount(PlayerObject ob, string currencyName)
+        {
+            if (string.IsNullOrWhiteSpace(currencyName)) return 0;
+
+            CurrencyInfo info = SEnvir.CurrencyInfoList.Binding.FirstOrDefault(x => string.Equals(x.Name, currencyName, StringComparison.OrdinalIgnoreCase));
+            return info == null ? 0 : ob.GetCurrency(info).Amount;
+        }
+
+        private static void ChangeCurrency(PlayerObject ob, string currencyName, int amount, bool add)
+        {
+            if (string.IsNullOrWhiteSpace(currencyName)) return;
+
+            CurrencyInfo info = SEnvir.CurrencyInfoList.Binding.FirstOrDefault(x => string.Equals(x.Name, currencyName, StringComparison.OrdinalIgnoreCase));
+            if (info == null) return;
+
+            UserCurrency currency = ob.GetCurrency(info);
+            currency.Amount += add ? amount : -amount;
+
+            if (add)
+                ob.LogMilestone(MilestoneType.CurrencyGain, amount, currency: currency.Info);
+
+            ob.CurrencyChanged(currency);
         }
 
         private static bool HasRequiredClass(RequiredClass requiredClass, MirClass mirClass)

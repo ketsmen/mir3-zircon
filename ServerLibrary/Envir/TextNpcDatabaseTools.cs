@@ -357,6 +357,9 @@ namespace Server.Envir
                 case CompiledNpcCheckType.Gold:
                     check.CheckType = NPCCheckType.Gold;
                     break;
+                case CompiledNpcCheckType.Currency:
+                    check.CheckType = NPCCheckType.Currency;
+                    break;
                 case CompiledNpcCheckType.Item:
                     check.CheckType = NPCCheckType.HasItem;
                     break;
@@ -401,6 +404,12 @@ namespace Server.Envir
                     break;
                 case CompiledNpcActionType.TakeGold:
                     action.ActionType = NPCActionType.TakeGold;
+                    break;
+                case CompiledNpcActionType.GiveCurrency:
+                    action.ActionType = NPCActionType.GiveCurrency;
+                    break;
+                case CompiledNpcActionType.TakeCurrency:
+                    action.ActionType = NPCActionType.TakeCurrency;
                     break;
                 case CompiledNpcActionType.GiveItem:
                     action.ActionType = NPCActionType.GiveItem;
@@ -760,6 +769,10 @@ namespace Server.Envir
                     script.AppendLine($"CHECKGOLD {OperatorText(check.Operator)} {check.IntParameter1}");
                     report.ChecksExported++;
                     break;
+                case NPCCheckType.Currency:
+                    script.AppendLine($"CHECKCURRENCY {Quote(check.StringParameter1)} {OperatorText(check.Operator)} {check.IntParameter1}");
+                    report.ChecksExported++;
+                    break;
                 case NPCCheckType.HasItem:
                     if (check.ItemParameter1 != null && check.Operator == Operator.GreaterThanOrEqual)
                     {
@@ -835,6 +848,14 @@ namespace Server.Envir
                     break;
                 case NPCActionType.TakeGold:
                     script.AppendLine($"TAKEGOLD {action.IntParameter1}");
+                    report.ActionsExported++;
+                    break;
+                case NPCActionType.GiveCurrency:
+                    script.AppendLine($"GIVECURRENCY {Quote(action.StringParameter1)} {action.IntParameter1}");
+                    report.ActionsExported++;
+                    break;
+                case NPCActionType.TakeCurrency:
+                    script.AppendLine($"TAKECURRENCY {Quote(action.StringParameter1)} {action.IntParameter1}");
                     report.ActionsExported++;
                     break;
                 case NPCActionType.GiveItem:
@@ -954,8 +975,17 @@ namespace Server.Envir
                 NPCDialogType.Repair => "@REPAIR",
                 NPCDialogType.Refine => "@REFINE",
                 NPCDialogType.RefineRetrieve => "@REFINERETRIEVE",
+                NPCDialogType.CompanionManage => "@COMPANIONMANAGE",
+                NPCDialogType.WeddingRing => "@WEDDINGRING",
+                NPCDialogType.RefinementStone => "@REFINEMENTSTONE",
                 NPCDialogType.MasterRefine => "@MASTERREFINE",
+                NPCDialogType.WeaponReset => "@WEAPONRESET",
                 NPCDialogType.ItemFragment => "@ITEMFRAGMENT",
+                NPCDialogType.AccessoryRefineUpgrade => "@ACCESSORYREFINEUPGRADE",
+                NPCDialogType.AccessoryRefineLevel => "@ACCESSORYREFINELEVEL",
+                NPCDialogType.AccessoryReset => "@ACCESSORYRESET",
+                NPCDialogType.WeaponCraft => "@WEAPONCRAFT",
+                NPCDialogType.AccessoryRefine => "@ACCESSORYREFINE",
                 NPCDialogType.RollDie => "@ROLLDIE",
                 NPCDialogType.RollYut => "@ROLLYUT",
                 _ => null

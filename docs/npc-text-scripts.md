@@ -48,6 +48,7 @@ Consumable Scroll Weapon Armour
 ```text
 LEVEL >= 10
 CHECKGOLD 1000
+CHECKCURRENCY "声望" >= 10
 CHECKITEM "回城卷" 1
 CHECKCLASS Warrior
 CHECKPKPOINT <= 200
@@ -70,6 +71,8 @@ CHECKVALUE DailyCount >= 1 User
 GOTO @MAIN
 GIVEGOLD 1000
 TAKEGOLD 1000
+GIVECURRENCY "声望" 10
+TAKECURRENCY "声望" 10
 GIVEITEM "回城卷" 1
 TAKEITEM "回城卷" 1
 MOVE 0 330 330
@@ -94,7 +97,7 @@ LOCALMESSAGE 已完成操作。
 [@ACCESSORYREFINE] [@ROLLDIE] [@ROLLYUT]
 ```
 
-商品列表写在 `[TRADE]` 后，出售/修理类型写在 `[TYPES]` 后。货币默认使用金币，可用 `[CURRENCY]` 指定数据库中的货币名或 `CurrencyType`。
+商品列表写在 `[TRADE]` 后，出售/修理类型写在 `[TYPES]` 后。货币默认使用金币，可用 `[CURRENCY]` 指定数据库中的货币名或 `CurrencyType`。脚本条件和动作也可以用 `CHECKCURRENCY/GIVECURRENCY/TAKECURRENCY` 直接操作数据库中的任意 `CurrencyInfo`。
 
 ## 数据库双向工具
 
@@ -123,6 +126,7 @@ LOCALMESSAGE 已完成操作。
 - `CHECKCLASS` 导入数据库只支持 `All/None` 或单职业；多职业组合仍可用于文本运行时，但不能无损导入旧 DB 条件。
 - 带对话文本的 `GOTO` 不能导入数据库；无对话文本的 `GOTO` 会转换成旧 `SuccessPage`。
 - `LOCALMESSAGE` 当前只支持文本运行时，导入数据库时会报映射错误。
+- `CHECKCURRENCY/GIVECURRENCY/TAKECURRENCY` 可以无损导入和导出数据库 NPC。
 - 无法导出的旧 DB 功能会写成 `; TODO` 注释，并出现在导出报告中。
 
 ## 管理员导出命令

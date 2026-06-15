@@ -588,6 +588,8 @@ namespace Server.WinForms
                 details += "\r\n\r\n缺失地图示例:\r\n" + string.Join("\r\n", report.LoadReport.MissingMaps.Distinct(StringComparer.OrdinalIgnoreCase).Take(20));
             if (report.LoadReport?.MissingItems.Count > 0)
                 details += "\r\n\r\n缺失物品示例:\r\n" + string.Join("\r\n", report.LoadReport.MissingItems.Distinct(StringComparer.OrdinalIgnoreCase).Take(20));
+            if (report.LoadReport?.MissingCurrencies.Count > 0)
+                details += "\r\n\r\n缺失货币示例:\r\n" + string.Join("\r\n", report.LoadReport.MissingCurrencies.Distinct(StringComparer.OrdinalIgnoreCase).Take(20));
             if (report.LoadReport?.UnknownCommands.Count > 0)
                 details += "\r\n\r\n未知命令示例:\r\n" + string.Join("\r\n", report.LoadReport.UnknownCommands.Take(20));
             if (report.LoadReport?.Failures.Count > 0)
