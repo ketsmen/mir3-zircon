@@ -259,6 +259,8 @@ namespace Server.WinForms
             AddToolButton(toolStrip, "怪物", (_, _) => OpenDatabaseEditor("MonsterInfo"));
             AddToolButton(toolStrip, "NPC", (_, _) => OpenDatabaseEditor("NPCInfo"));
             AddToolButton(toolStrip, "配置", (_, _) => OpenConfigEditor());
+            AddToolButton(toolStrip, "加密", (_, _) => OpenDatabaseEncryptionSettings());
+            AddToolButton(toolStrip, "同步", (_, _) => OpenDatabaseSynchronizationSettings());
             AddToolButton(toolStrip, "地图", (_, _) => OpenMapViewer());
             AddToolButton(toolStrip, "诊断", (_, _) => OpenDiagnostics());
 
@@ -394,6 +396,8 @@ namespace Server.WinForms
                 AddNavigationAction(operations, "系统日志", () => _logTabs.SelectedTab = _systemLogPage);
                 AddNavigationAction(operations, "聊天日志", () => _logTabs.SelectedTab = _chatLogPage);
                 AddNavigationAction(operations, "配置编辑器", () => OpenConfigEditor());
+                AddNavigationAction(operations, "数据库加密设置", OpenDatabaseEncryptionSettings);
+                AddNavigationAction(operations, "数据库同步设置", OpenDatabaseSynchronizationSettings);
                 AddNavigationAction(operations, "服务器诊断", OpenDiagnostics);
                 AddNavigationAction(operations, "地图查看器", () => OpenMapViewer());
 
