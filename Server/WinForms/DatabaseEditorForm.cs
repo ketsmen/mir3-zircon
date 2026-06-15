@@ -694,12 +694,14 @@ namespace Server.WinForms
 
             try
             {
+                string runtimeRefresh = string.Empty;
                 if (_onlineMode)
                 {
                     lock (_session)
                     {
                         _lockService.Backup();
                         _session.Save(true);
+                        runtimeRefresh = RefreshOnlineRuntimeCaches();
                     }
                 }
                 else
@@ -720,7 +722,11 @@ namespace Server.WinForms
                     return;
                 }
 
-                MessageBox.Show(this, "数据库已保存，并已完成重新读取校验。", "保存", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                string message = "数据库已保存，并已完成重新读取校验。";
+                if (!string.IsNullOrWhiteSpace(runtimeRefresh))
+                    message += "\r\n\r\n" + runtimeRefresh;
+
+                MessageBox.Show(this, message, "保存", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
@@ -729,6 +735,32 @@ namespace Server.WinForms
 
                 MessageBox.Show(this, ex.ToString(), "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private string RefreshOnlineRuntimeCaches()
+        {
+            if (!_onlineMode) return string.Empty;
+
+            List<string> refreshed = new List<string>();
+            Type itemType = _activeGrid?.ItemType ?? _currentType;
+
+            if (itemType != null && (itemType == typeof(MonsterInfo) || itemType.Name.Contains("Drop", StringComparison.OrdinalIgnoreCase)))
+            {
+                SEnvir.RebuildMonsterDropTable();
+                refreshed.Add("已刷新怪物掉落缓存。");
+            }
+
+            if (itemType == typeof(MapInfo) || itemType == typeof(MapInfoStat))
+            {
+                foreach (MapInfo map in SEnvir.MapInfoList?.Binding ?? Enumerable.Empty<MapInfo>())
+                    map.StatsChanged();
+
+                refreshed.Add("已刷新地图 BuffStats 统计。");
+            }
+
+            if (refreshed.Count == 0) return string.Empty;
+
+            return string.Join("\r\n", refreshed);
         }
 
         private void ImportCurrent()
