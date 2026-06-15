@@ -27,6 +27,8 @@ namespace Server.WinForms
         private readonly DataGridView _grid = new DataGridView();
         private readonly ContextMenuStrip _contextMenu = new ContextMenuStrip();
         private string _filterText = string.Empty;
+        private PropertyInfo _sortProperty;
+        private ListSortDirection _sortDirection = ListSortDirection.Ascending;
         private bool _loadingColumnLayout;
         private bool _binding;
 
@@ -64,6 +66,7 @@ namespace Server.WinForms
             _grid.Enter += (_, _) => BecameActive?.Invoke(this, EventArgs.Empty);
             _grid.CellMouseDown += Grid_CellMouseDown;
             _grid.CellDoubleClick += Grid_CellDoubleClick;
+            _grid.ColumnHeaderMouseClick += Grid_ColumnHeaderMouseClick;
             _grid.KeyDown += Grid_KeyDown;
             _grid.CellValueChanged += (_, _) => OnContentChanged();
 
@@ -115,6 +118,7 @@ namespace Server.WinForms
 
         public void RefreshBinding()
         {
+            object current = CurrentObject;
             _binding = true;
             try
             {
@@ -125,6 +129,8 @@ namespace Server.WinForms
             {
                 _binding = false;
             }
+
+            SelectObject(current);
         }
 
         public void ApplySearch(string text)
@@ -334,12 +340,39 @@ namespace Server.WinForms
                 items = items.Where(x => RowContains(x, filter));
             }
 
+            List<object> sortedItems = items.ToList();
+            if (_sortProperty != null)
+                sortedItems.Sort(CompareSortItems);
+
             Type listType = typeof(BindingList<>).MakeGenericType(_itemType);
             IList list = (IList)Activator.CreateInstance(listType);
-            foreach (object item in items)
+            foreach (object item in sortedItems)
                 list.Add(item);
 
             return list;
+        }
+
+        private int CompareSortItems(object left, object right)
+        {
+            object leftValue = _sortProperty.GetValue(left);
+            object rightValue = _sortProperty.GetValue(right);
+            int result = CompareSortValues(leftValue, rightValue);
+            return _sortDirection == ListSortDirection.Descending ? -result : result;
+        }
+
+        private int CompareSortValues(object left, object right)
+        {
+            if (ReferenceEquals(left, right)) return 0;
+            if (left == null) return -1;
+            if (right == null) return 1;
+
+            Type leftType = left.GetType();
+            if (leftType == right.GetType() && left is IComparable comparable)
+                return comparable.CompareTo(right);
+
+            string leftText = _metadata.GetDisplayText(left);
+            string rightText = _metadata.GetDisplayText(right);
+            return string.Compare(leftText, rightText, StringComparison.CurrentCultureIgnoreCase);
         }
 
         private bool RowContains(object item, string filter)
@@ -387,6 +420,47 @@ namespace Server.WinForms
             _grid.CurrentCell = _grid.Rows[e.RowIndex].Cells[e.ColumnIndex];
             if (!_grid.Rows[e.RowIndex].Selected && !_grid[e.ColumnIndex, e.RowIndex].Selected)
                 _grid[e.ColumnIndex, e.RowIndex].Selected = true;
+        }
+
+        private void Grid_ColumnHeaderMouseClick(object sender, DataGridViewCellMouseEventArgs e)
+        {
+            if (e.ColumnIndex < 0) return;
+
+            DataGridViewColumn column = _grid.Columns[e.ColumnIndex];
+            PropertyInfo property = _itemType.GetProperty(column.DataPropertyName);
+            if (property == null) return;
+
+            if (_sortProperty == property)
+            {
+                _sortDirection = _sortDirection == ListSortDirection.Ascending
+                    ? ListSortDirection.Descending
+                    : ListSortDirection.Ascending;
+            }
+            else
+            {
+                _sortProperty = property;
+                _sortDirection = ListSortDirection.Ascending;
+            }
+
+            RefreshBinding();
+            UpdateSortGlyphs();
+        }
+
+        private void UpdateSortGlyphs()
+        {
+            foreach (DataGridViewColumn column in _grid.Columns)
+            {
+                PropertyInfo property = _itemType.GetProperty(column.DataPropertyName);
+                if (property == null || property != _sortProperty)
+                {
+                    column.HeaderCell.SortGlyphDirection = SortOrder.None;
+                    continue;
+                }
+
+                column.HeaderCell.SortGlyphDirection = _sortDirection == ListSortDirection.Ascending
+                    ? SortOrder.Ascending
+                    : SortOrder.Descending;
+            }
         }
 
         private void CopyCurrentCell()
@@ -974,6 +1048,7 @@ namespace Server.WinForms
                 column.HeaderText = property.Name;
                 column.Name = property.Name;
                 column.ReadOnly = _readOnly || !CanWrite(property);
+                column.SortMode = DataGridViewColumnSortMode.Programmatic;
                 _grid.Columns.Add(column);
             }
         }
