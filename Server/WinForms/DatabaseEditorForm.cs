@@ -832,8 +832,9 @@ namespace Server.WinForms
             string current = string.IsNullOrWhiteSpace(_activeGrid.CurrentIndexText) ? string.Empty : $"，当前 Index={_activeGrid.CurrentIndexText}";
             int selectedCount = _activeGrid.SelectedObjectCount;
             string selected = selectedCount > 1 ? $"，选中 {selectedCount:#,##0}" : string.Empty;
+            string sort = string.IsNullOrWhiteSpace(_activeGrid.SortText) ? string.Empty : $"，排序: {_activeGrid.SortText}";
             string dirty = _dirty ? "，未保存" : string.Empty;
-            _statusLabel.Text = $"{_activeGrid.ItemTypeName}: {_activeGrid.VisibleCount}/{_activeGrid.TotalCount} 行{current}{selected}{search}{suffix}{dirty}";
+            _statusLabel.Text = $"{_activeGrid.ItemTypeName}: {_activeGrid.VisibleCount}/{_activeGrid.TotalCount} 行{current}{selected}{search}{sort}{suffix}{dirty}";
         }
 
         private void MarkDirty()

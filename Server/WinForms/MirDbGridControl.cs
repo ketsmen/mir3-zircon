@@ -95,6 +95,8 @@ namespace Server.WinForms
 
         public string CurrentIndexText => CurrentObject is DBObject dbObject ? dbObject.Index.ToString("#,##0") : string.Empty;
 
+        public string SortText => _sortProperty == null ? string.Empty : $"{_sortProperty.Name} {(_sortDirection == ListSortDirection.Ascending ? "升序" : "降序")}";
+
         public IEnumerable<object> AllObjects => _source.Cast<object>();
 
         public IEnumerable<object> SelectedObjects
