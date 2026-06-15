@@ -48,13 +48,13 @@ namespace Server.WinForms
         private DiagnosticsForm _diagnosticsForm;
         private MapViewerForm _mapViewerForm;
         private const int MaxLogLines = 2000;
+        private static readonly Size DefaultWindowSize = new Size(1024, 768);
         private static readonly string UiCachePath = Path.Combine(Application.StartupPath, "Server.WinForms.cache.json");
 
         public MainForm()
         {
             Text = "Zircon 服务端管理器";
-            Width = 1100;
-            Height = 720;
+            Size = DefaultWindowSize;
             StartPosition = FormStartPosition.CenterScreen;
             KeyPreview = true;
             KeyDown += MainForm_KeyDown;
@@ -1331,7 +1331,7 @@ namespace Server.WinForms
                     File.Delete(UiCachePath);
 
                 WindowState = FormWindowState.Normal;
-                Size = new Size(1100, 720);
+                Size = DefaultWindowSize;
                 _workspaceSplit.SplitterDistance = 230;
                 _navigationFilterText.Text = string.Empty;
                 _navigationTree.ExpandAll();
