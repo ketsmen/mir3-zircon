@@ -632,6 +632,7 @@ namespace Server.Envir
             Player.NPCPage = null;
             Player.NPCTextPage = null;
             Player.NPCTextBlock = null;
+            Player.NPCTextArguments = null;
 
             foreach (SConnection con in Observers)
             {

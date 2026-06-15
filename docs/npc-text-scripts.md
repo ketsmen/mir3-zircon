@@ -41,6 +41,28 @@ Consumable Scroll Weapon Armour
 
 支持 `#INSERT [file]` 和 `#INCLUDE [file]`。解析器会检测循环引用。
 
+## 页面参数
+
+文本运行时支持 mir2 风格的页面参数。按钮、`GOTO` 和 `#SUCCESS` 可以跳转到带参数的页面引用，目标页面使用 `[@PAGE()]` 或 `[@PAGE]` 定义，页面内用 `%ARG(n)` 读取参数，`n` 从 0 开始。页面定义暂不支持默认参数，实际参数必须写在跳转目标里。
+
+```text
+[@MAIN]
+#SAY
+请选择奖励。
+<领取金币/@REWARD(金币,1000)>
+<领取物品/@REWARD(回城卷,1)>
+
+[@REWARD()]
+#SAY
+奖励类型：%ARG(0)
+奖励数量：%ARG(1)
+<返回/@MAIN>
+```
+
+参数用逗号分隔；参数里需要逗号时可以写成 `@PAGE("A,B",100)`。`GOTO` 和 `#SUCCESS` 后的页面引用建议不要写未引用空格，例如使用 `GOTO @REWARD(金币,1000)`。
+
+当前 `%ARG(n)` 支持替换对话文本、按钮文字、按钮目标页、`GOTO/#SUCCESS` 目标页、`LOCALMESSAGE` 文本，以及 `CHECKNAMELIST/CHECKVALUE/ADDNAMELIST/DELNAMELIST/SETVALUE/CHANGEVALUE` 的名称参数。数值参数、物品名、地图名等仍在编译阶段解析，暂不支持动态参数。
+
 ## 条件
 
 `#IF` 后支持：
@@ -124,6 +146,7 @@ LOCALMESSAGE 已完成操作。
 导入数据库只接受能无损映射到旧模式的脚本。当前限制：
 
 - `CHECKCLASS` 导入数据库只支持 `All/None` 或单职业；多职业组合仍可用于文本运行时，但不能无损导入旧 DB 条件。
+- 页面参数和 `%ARG(n)` 仅支持文本运行时；带动态参数的对话、按钮、`GOTO/#SUCCESS`、条件或动作会在导入数据库前报错。
 - 带对话文本的 `GOTO` 不能导入数据库；无对话文本的 `GOTO` 会转换成旧 `SuccessPage`。
 - `LOCALMESSAGE` 当前只支持文本运行时，导入数据库时会报映射错误。
 - `CHECKCURRENCY/GIVECURRENCY/TAKECURRENCY` 可以无损导入和导出数据库 NPC。

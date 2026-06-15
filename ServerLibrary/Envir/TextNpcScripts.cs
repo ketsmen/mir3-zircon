@@ -15,7 +15,7 @@ namespace Server.Envir
     public sealed class TextNpcImporter
     {
         private static readonly Regex IncludeRegex = new(@"#(?:INSERT|INCLUDE)\s+\[(.*?)\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        private static readonly Regex PageRegex = new(@"^\[\s*(?<Key>@?[\w\-.]+)\s*\]$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex PageRegex = new(@"^\[\s*(?<Reference>@?[\w\-.]+(?:\([^]]*\))?)\s*\]$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex ButtonRegex = new(@"\<(?<Text>[^<>/]+)\/(?<Target>@?[^<>]+)\>", RegexOptions.Compiled);
 
         private readonly Dictionary<string, MapInfo> _maps = new(StringComparer.OrdinalIgnoreCase);
@@ -252,10 +252,14 @@ namespace Server.Envir
                 Match pageMatch = PageRegex.Match(line.Text);
                 if (pageMatch.Success)
                 {
-                    string key = CompiledNpcScript.NormalizePageKey(pageMatch.Groups["Key"].Value);
+                    string pageReference = pageMatch.Groups["Reference"].Value;
+                    if (CompiledNpcScript.ReferenceHasArguments(pageReference))
+                        report.Failures.Add($"{line.Source}: 页面定义暂不支持默认参数，请使用 [@PAGE()]，并在按钮、GOTO 或 #SUCCESS 目标里传参。");
+
+                    string key = CompiledNpcScript.GetReferencePageKey(pageReference);
                     if (!script.Pages.TryGetValue(key, out currentPage))
                     {
-                        currentPage = new CompiledNpcPage { Key = key };
+                        currentPage = new CompiledNpcPage { Key = key, Source = line.Source };
                         script.Pages[key] = currentPage;
                     }
 
@@ -369,7 +373,8 @@ namespace Server.Envir
                     return true;
                 }
 
-                page.SuccessKey = CompiledNpcScript.NormalizePageKey(parts[1]);
+                page.SuccessKey = CompiledNpcScript.NormalizePageReference(parts[1]);
+                page.SuccessSource = line.Source;
                 return true;
             }
 
@@ -465,7 +470,7 @@ namespace Server.Envir
             {
                 case "GOTO":
                     if (parts.Count >= 2)
-                        actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.Goto, StringParameter1 = CompiledNpcScript.NormalizePageKey(parts[1]) }, line));
+                        actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.Goto, StringParameter1 = CompiledNpcScript.NormalizePageReference(parts[1]) }, line));
                     else
                         report.Failures.Add($"{line.Source}: GOTO 需要目标页面。");
                     break;
@@ -783,8 +788,9 @@ namespace Server.Envir
             block.Say = ButtonRegex.Replace(say, match =>
             {
                 string text = match.Groups["Text"].Value.Trim();
-                string target = CompiledNpcScript.NormalizePageKey(match.Groups["Target"].Value.Trim());
-                int buttonId = target is "@EXIT" or "@CLOSE" ? 0 : nextButtonId++;
+                string target = CompiledNpcScript.NormalizePageReference(match.Groups["Target"].Value.Trim());
+                string targetKey = CompiledNpcScript.GetReferencePageKey(target);
+                int buttonId = targetKey is "@EXIT" or "@CLOSE" ? 0 : nextButtonId++;
 
                 if (buttonId > 0)
                     block.Buttons.Add(new CompiledNpcButton { ButtonID = buttonId, Text = text, DestinationKey = target });
@@ -797,7 +803,8 @@ namespace Server.Envir
         {
             foreach (CompiledNpcButton button in block.Buttons)
             {
-                if (script.Pages.ContainsKey(button.DestinationKey)) continue;
+                string destinationKey = CompiledNpcScript.GetReferencePageKey(button.DestinationKey);
+                if (script.Pages.ContainsKey(destinationKey)) continue;
 
                 report.Failures.Add($"{script.ScriptFile} {page.Key}: 按钮 `{button.Text}` 目标页 `{button.DestinationKey}` 不存在。");
             }
@@ -805,13 +812,18 @@ namespace Server.Envir
             foreach (CompiledNpcAction action in block.Actions)
             {
                 if (action.ActionType != CompiledNpcActionType.Goto) continue;
-                if (script.Pages.ContainsKey(action.StringParameter1)) continue;
+                string destinationKey = CompiledNpcScript.GetReferencePageKey(action.StringParameter1);
+                if (script.Pages.ContainsKey(destinationKey)) continue;
 
                 report.Failures.Add($"{script.ScriptFile} {page.Key}: GOTO 目标页 `{action.StringParameter1}` 不存在。");
             }
 
-            if (!string.IsNullOrWhiteSpace(page.SuccessKey) && !script.Pages.ContainsKey(page.SuccessKey))
-                report.Failures.Add($"{script.ScriptFile} {page.Key}: #SUCCESS 目标页 `{page.SuccessKey}` 不存在。");
+            if (!string.IsNullOrWhiteSpace(page.SuccessKey))
+            {
+                string successKey = CompiledNpcScript.GetReferencePageKey(page.SuccessKey);
+                if (!script.Pages.ContainsKey(successKey))
+                    report.Failures.Add($"{script.ScriptFile} {page.Key}: #SUCCESS 目标页 `{page.SuccessKey}` 不存在。");
+            }
         }
 
         private List<TextNpcScriptLine> ReadCleanLines(string path, string npcDirectory, TextNpcLoadReport report, HashSet<string> stack)
@@ -1121,28 +1133,180 @@ namespace Server.Envir
 
     public sealed class CompiledNpcScript
     {
+        private static readonly Regex PageReferenceRegex = new(@"^(?<Key>@?[\w\-.]+)(?:\((?<Args>.*)\))?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex ArgumentTokenRegex = new(@"\%ARG\((?<Index>\d+)\)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
         public string ScriptFile;
         public Dictionary<string, CompiledNpcPage> Pages { get; } = new(StringComparer.OrdinalIgnoreCase);
         public CompiledNpcPage EntryPage => Pages.TryGetValue("@MAIN", out CompiledNpcPage page) ? page : Pages.Values.FirstOrDefault();
+        public CompiledNpcPageCall EntryPageCall => EntryPage == null ? null : new CompiledNpcPageCall(EntryPage, []);
 
         public CompiledNpcPage GetPage(string key)
         {
-            return Pages.TryGetValue(NormalizePageKey(key), out CompiledNpcPage page) ? page : null;
+            return GetPageCall(key)?.Page;
+        }
+
+        public CompiledNpcPageCall GetPageCall(string reference, IReadOnlyList<string> inheritedArguments = null)
+        {
+            CompiledNpcPageReference pageReference = ParsePageReference(ReplaceArguments(reference, inheritedArguments));
+            return Pages.TryGetValue(pageReference.Key, out CompiledNpcPage page) ? new CompiledNpcPageCall(page, pageReference.Arguments) : null;
         }
 
         public static string NormalizePageKey(string key)
         {
             key = (key ?? string.Empty).Trim();
+            int argumentStart = key.IndexOf('(');
+            if (argumentStart >= 0)
+                key = key[..argumentStart].Trim();
+
             if (key.Length == 0) return "@MAIN";
             if (!key.StartsWith("@", StringComparison.Ordinal)) key = "@" + key;
 
             return key.ToUpperInvariant();
+        }
+
+        public static string NormalizePageReference(string reference)
+        {
+            return ParsePageReference(reference).ToReference();
+        }
+
+        public static string GetReferencePageKey(string reference)
+        {
+            return ParsePageReference(reference).Key;
+        }
+
+        public static bool ReferenceHasArguments(string reference)
+        {
+            return ParsePageReference(reference).Arguments.Count > 0;
+        }
+
+        public static bool ContainsArgumentToken(string value)
+        {
+            return !string.IsNullOrWhiteSpace(value) && ArgumentTokenRegex.IsMatch(value);
+        }
+
+        public static string ReplaceArguments(string value, IReadOnlyList<string> arguments)
+        {
+            if (value == null) return null;
+
+            return ArgumentTokenRegex.Replace(value, match =>
+            {
+                return arguments != null && int.TryParse(match.Groups["Index"].Value, out int index) && index >= 0 && index < arguments.Count
+                    ? arguments[index] ?? string.Empty
+                    : string.Empty;
+            });
+        }
+
+        public static string BuildPageReference(string key, IReadOnlyList<string> arguments)
+        {
+            key = NormalizePageKey(key);
+            if (arguments == null || arguments.Count == 0) return key;
+
+            return $"{key}({string.Join(",", arguments.Select(FormatPageArgument))})";
+        }
+
+        public static string FormatPageArgument(string argument)
+        {
+            if (string.IsNullOrEmpty(argument)) return "\"\"";
+
+            bool quote = argument.Any(c => c == ',' || c == '"' || c == '\\' || char.IsWhiteSpace(c));
+            if (!quote) return argument;
+
+            return $"\"{argument.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
+        }
+
+        private static CompiledNpcPageReference ParsePageReference(string reference)
+        {
+            reference = (reference ?? string.Empty).Trim();
+            if (reference.Length == 0)
+                return new CompiledNpcPageReference("@MAIN", []);
+
+            Match match = PageReferenceRegex.Match(reference);
+            if (!match.Success)
+                return new CompiledNpcPageReference(NormalizePageKey(reference), []);
+
+            List<string> arguments = match.Groups["Args"].Success ? SplitPageArguments(match.Groups["Args"].Value) : [];
+            return new CompiledNpcPageReference(NormalizePageKey(match.Groups["Key"].Value), arguments);
+        }
+
+        private static List<string> SplitPageArguments(string text)
+        {
+            List<string> result = [];
+            if (text == null) return result;
+            if (text.Length == 0) return result;
+
+            StringBuilder current = new();
+            bool quoted = false, escaped = false;
+
+            foreach (char c in text)
+            {
+                if (escaped)
+                {
+                    current.Append(c);
+                    escaped = false;
+                    continue;
+                }
+
+                if (quoted && c == '\\')
+                {
+                    escaped = true;
+                    continue;
+                }
+
+                if (c == '"')
+                {
+                    quoted = !quoted;
+                    continue;
+                }
+
+                if (!quoted && c == ',')
+                {
+                    result.Add(current.ToString().Trim());
+                    current.Clear();
+                    continue;
+                }
+
+                current.Append(c);
+            }
+
+            result.Add(current.ToString().Trim());
+            return result;
+        }
+    }
+
+    public sealed class CompiledNpcPageCall
+    {
+        public CompiledNpcPage Page { get; }
+        public List<string> Arguments { get; }
+
+        public CompiledNpcPageCall(CompiledNpcPage page, IEnumerable<string> arguments)
+        {
+            Page = page;
+            Arguments = arguments?.ToList() ?? [];
+        }
+    }
+
+    public readonly struct CompiledNpcPageReference
+    {
+        public readonly string Key;
+        public readonly List<string> Arguments;
+
+        public CompiledNpcPageReference(string key, List<string> arguments)
+        {
+            Key = key;
+            Arguments = arguments ?? [];
+        }
+
+        public string ToReference()
+        {
+            return Arguments.Count == 0 ? Key : $"{Key}({string.Join(",", Arguments.Select(CompiledNpcScript.FormatPageArgument))})";
         }
     }
 
     public sealed class CompiledNpcPage
     {
         public string Key;
+        public string Source;
         public NPCDialogType DialogType;
         public CurrencyInfo Currency;
         public List<CompiledNpcCheck> Checks { get; } = [];
@@ -1151,16 +1315,22 @@ namespace Server.Envir
         public List<CompiledTextNpcGood> Goods { get; } = [];
         public List<ItemType> Types { get; } = [];
         public string SuccessKey;
+        public string SuccessSource;
 
-        public ClientTextNPCPage ToClientPage(CompiledNpcBlock block)
+        public ClientTextNPCPage ToClientPage(CompiledNpcBlock block, IReadOnlyList<string> arguments = null)
         {
             return new ClientTextNPCPage
             {
-                Key = Key,
-                Say = block.Say ?? string.Empty,
+                Key = CompiledNpcScript.BuildPageReference(Key, arguments),
+                Say = CompiledNpcScript.ReplaceArguments(block.Say ?? string.Empty, arguments),
                 DialogType = DialogType,
                 CurrencyIndex = Currency?.Index ?? 0,
-                Buttons = block.Buttons.Select(x => new ClientTextNPCButton { ButtonID = x.ButtonID, Text = x.Text, DestinationKey = x.DestinationKey }).ToList(),
+                Buttons = block.Buttons.Select(x => new ClientTextNPCButton
+                {
+                    ButtonID = x.ButtonID,
+                    Text = CompiledNpcScript.ReplaceArguments(x.Text, arguments),
+                    DestinationKey = CompiledNpcScript.ReplaceArguments(x.DestinationKey, arguments)
+                }).ToList(),
                 Goods = Goods.Select(x => x.ToClientGood()).ToList(),
                 Types = Types.ToList()
             };

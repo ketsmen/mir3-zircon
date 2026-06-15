@@ -79,8 +79,20 @@ namespace Server.Envir
 
             foreach (CompiledNpcPage page in info.Script.Pages.Values)
             {
+                if (HasDynamicPageReference(page.SuccessKey))
+                {
+                    report.Failures.Add(FormatIssue(info, page, page.SuccessSource, $"#SUCCESS `{page.SuccessKey}` 使用了页面参数或 %ARG(n)，旧数据库 SuccessPage 不能无损表达。"));
+                    result = false;
+                }
+
                 foreach (CompiledNpcCheck check in page.Checks)
                 {
+                    if (CompiledNpcScript.ContainsArgumentToken(check.StringParameter1))
+                    {
+                        report.Failures.Add(FormatIssue(info, page, check.Source, $"条件 `{check.CheckType}` 使用了 %ARG(n)，旧数据库条件不能无损表达动态参数。"));
+                        result = false;
+                    }
+
                     if (check.CheckType == CompiledNpcCheckType.Class && !CanMapClassCheck(check.Class))
                     {
                         report.Failures.Add(FormatIssue(info, page, check.Source, $"CHECKCLASS `{check.Class}` 不能无损导入旧数据库条件，只支持 All/None 或单职业。"));
@@ -102,6 +114,20 @@ namespace Server.Envir
         {
             bool result = true;
             int gotoCount = block.Actions.Count(x => x.ActionType == CompiledNpcActionType.Goto);
+
+            if (CompiledNpcScript.ContainsArgumentToken(block.Say))
+            {
+                report.Failures.Add(FormatIssue(info, page, null, $"{branch}: 对话文本使用了 %ARG(n)，旧数据库对话不能无损表达动态参数。"));
+                result = false;
+            }
+
+            foreach (CompiledNpcButton button in block.Buttons)
+            {
+                if (!CompiledNpcScript.ContainsArgumentToken(button.Text) && !HasDynamicPageReference(button.DestinationKey)) continue;
+
+                report.Failures.Add(FormatIssue(info, page, null, $"{branch}: 按钮 `{button.Text}` 使用了页面参数或 %ARG(n)，旧数据库按钮不能无损表达动态目标。"));
+                result = false;
+            }
 
             if (gotoCount > 1)
             {
@@ -129,6 +155,13 @@ namespace Server.Envir
 
             foreach (CompiledNpcAction action in block.Actions)
             {
+                if (CompiledNpcScript.ContainsArgumentToken(action.StringParameter1) ||
+                    (action.ActionType == CompiledNpcActionType.Goto && HasDynamicPageReference(action.StringParameter1)))
+                {
+                    report.Failures.Add(FormatIssue(info, page, action.Source, $"{branch}: 动作 `{action.ActionType}` 使用了页面参数或 %ARG(n)，旧数据库动作不能无损表达动态参数。"));
+                    result = false;
+                }
+
                 if (action.ActionType == CompiledNpcActionType.LocalMessage)
                 {
                     report.Failures.Add(FormatIssue(info, page, action.Source, $"{branch}: LOCALMESSAGE 当前只能在文本运行时执行，旧数据库动作没有等价运行分支。"));
@@ -137,6 +170,12 @@ namespace Server.Envir
             }
 
             return result;
+        }
+
+        private static bool HasDynamicPageReference(string reference)
+        {
+            return !string.IsNullOrWhiteSpace(reference) &&
+                   (CompiledNpcScript.ReferenceHasArguments(reference) || CompiledNpcScript.ContainsArgumentToken(reference));
         }
 
         private void ImportNpc(CompiledTextNpcInfo info, TextNpcDatabaseImportMode mode, TextNpcDatabaseImportReport report)

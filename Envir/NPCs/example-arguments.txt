@@ -1,0 +1,18 @@
+[@MAIN]
+#SAY
+这是一个页面参数示例。
+<查看金币奖励/@REWARD(金币,1000)>
+<查看物品奖励/@REWARD(回城卷,1)>
+<离开/@EXIT>
+
+[@REWARD()]
+#SAY
+奖励类型：%ARG(0)
+奖励数量：%ARG(1)
+<发送提示/@NOTICE(%ARG(0),%ARG(1))>
+<返回/@MAIN>
+
+[@NOTICE()]
+#ACT
+LOCALMESSAGE 你查看了 %ARG(0) x %ARG(1) 的奖励示例。
+GOTO @MAIN

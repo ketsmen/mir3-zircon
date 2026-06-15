@@ -26,7 +26,7 @@ namespace Server.Models
         {
             if (TextInfo != null)
             {
-                NPCCall(ob, TextInfo.Script.EntryPage);
+                NPCCall(ob, TextInfo.Script.EntryPageCall);
                 return;
             }
 
@@ -57,6 +57,9 @@ namespace Server.Models
 
                     ob.NPC = null;
                     ob.NPCPage = null;
+                    ob.NPCTextPage = null;
+                    ob.NPCTextBlock = null;
+                    ob.NPCTextArguments = null;
                     ob.Enqueue(new S.NPCClose());
                     return;
                 }
@@ -67,6 +70,7 @@ namespace Server.Models
                 ob.NPCPage = page;
                 ob.NPCTextPage = null;
                 ob.NPCTextBlock = null;
+                ob.NPCTextArguments = null;
 
                 ob.Enqueue(new S.NPCResponse { ObjectID = ObjectID, Index = page.Index, Values = values });
                 break;
@@ -77,12 +81,14 @@ namespace Server.Models
         {
             if (TextInfo?.Script == null) return;
 
-            NPCCall(ob, TextInfo.Script.GetPage(pageKey));
+            NPCCall(ob, TextInfo.Script.GetPageCall(pageKey, ob.NPCTextArguments));
         }
 
-        private void NPCCall(PlayerObject ob, CompiledNpcPage page)
+        private void NPCCall(PlayerObject ob, CompiledNpcPageCall pageCall)
         {
             int redirects = 0;
+            CompiledNpcPage page = pageCall?.Page;
+            IReadOnlyList<string> arguments = pageCall?.Arguments;
 
             while (true)
             {
@@ -93,21 +99,24 @@ namespace Server.Models
                     return;
                 }
 
-                CompiledNpcBlock block = CheckTextPage(ob, page) ? page.MainBlock : page.ElseBlock;
+                CompiledNpcBlock block = CheckTextPage(ob, page, arguments) ? page.MainBlock : page.ElseBlock;
                 if (block == null || block.IsEmpty)
                 {
                     ob.NPC = null;
                     ob.NPCPage = null;
                     ob.NPCTextPage = null;
                     ob.NPCTextBlock = null;
+                    ob.NPCTextArguments = null;
                     ob.Enqueue(new S.NPCClose());
                     return;
                 }
 
-                string nextPage = DoTextActions(ob, block);
+                string nextPage = DoTextActions(ob, block, arguments);
                 if (!string.IsNullOrWhiteSpace(nextPage))
                 {
-                    page = TextInfo.Script.GetPage(nextPage);
+                    pageCall = TextInfo.Script.GetPageCall(nextPage, arguments);
+                    page = pageCall?.Page;
+                    arguments = pageCall?.Arguments;
                     continue;
                 }
 
@@ -117,6 +126,7 @@ namespace Server.Models
                     ob.NPCPage = null;
                     ob.NPCTextPage = null;
                     ob.NPCTextBlock = null;
+                    ob.NPCTextArguments = null;
                     ob.Enqueue(new S.NPCClose());
                     return;
                 }
@@ -125,8 +135,9 @@ namespace Server.Models
                 ob.NPCPage = null;
                 ob.NPCTextPage = page;
                 ob.NPCTextBlock = block;
+                ob.NPCTextArguments = arguments?.ToList();
 
-                ob.Enqueue(new S.NPCResponse { ObjectID = ObjectID, TextPage = page.ToClientPage(block), Values = [] });
+                ob.Enqueue(new S.NPCResponse { ObjectID = ObjectID, TextPage = page.ToClientPage(block, arguments), Values = [] });
                 return;
             }
         }
@@ -403,7 +414,7 @@ namespace Server.Models
             }
         }
 
-        private string DoTextActions(PlayerObject ob, CompiledNpcBlock block)
+        private string DoTextActions(PlayerObject ob, CompiledNpcBlock block, IReadOnlyList<string> arguments)
         {
             string nextPage = null;
 
@@ -412,7 +423,7 @@ namespace Server.Models
                 switch (action.ActionType)
                 {
                     case CompiledNpcActionType.Goto:
-                        nextPage = action.StringParameter1;
+                        nextPage = CompiledNpcScript.ReplaceArguments(action.StringParameter1, arguments);
                         break;
                     case CompiledNpcActionType.GiveGold:
                         ob.Gold.Amount += action.IntParameter1;
@@ -425,7 +436,7 @@ namespace Server.Models
                         break;
                     case CompiledNpcActionType.GiveCurrency:
                     case CompiledNpcActionType.TakeCurrency:
-                        ChangeCurrency(ob, action.StringParameter1, action.IntParameter1, action.ActionType == CompiledNpcActionType.GiveCurrency);
+                        ChangeCurrency(ob, CompiledNpcScript.ReplaceArguments(action.StringParameter1, arguments), action.IntParameter1, action.ActionType == CompiledNpcActionType.GiveCurrency);
                         break;
                     case CompiledNpcActionType.GiveItem:
                         {
@@ -450,20 +461,20 @@ namespace Server.Models
                         }
                         break;
                     case CompiledNpcActionType.AddNameList:
-                        SetDataList(ob, action.StringParameter1, action.DataType, true);
+                        SetDataList(ob, CompiledNpcScript.ReplaceArguments(action.StringParameter1, arguments), action.DataType, true);
                         break;
                     case CompiledNpcActionType.DeleteNameList:
-                        SetDataList(ob, action.StringParameter1, action.DataType, false);
+                        SetDataList(ob, CompiledNpcScript.ReplaceArguments(action.StringParameter1, arguments), action.DataType, false);
                         break;
                     case CompiledNpcActionType.SetValue:
-                        SetDataValue(ob, action.StringParameter1, action.DataType, action.IntParameter1, false);
+                        SetDataValue(ob, CompiledNpcScript.ReplaceArguments(action.StringParameter1, arguments), action.DataType, action.IntParameter1, false);
                         break;
                     case CompiledNpcActionType.ChangeValue:
-                        SetDataValue(ob, action.StringParameter1, action.DataType, action.IntParameter1, true);
+                        SetDataValue(ob, CompiledNpcScript.ReplaceArguments(action.StringParameter1, arguments), action.DataType, action.IntParameter1, true);
                         break;
                     case CompiledNpcActionType.LocalMessage:
                         if (!string.IsNullOrWhiteSpace(action.StringParameter1))
-                            ob.Connection.ReceiveChat(action.StringParameter1, MessageType.System);
+                            ob.Connection.ReceiveChat(CompiledNpcScript.ReplaceArguments(action.StringParameter1, arguments), MessageType.System);
                         break;
                 }
             }
@@ -471,7 +482,7 @@ namespace Server.Models
             return nextPage;
         }
 
-        private bool CheckTextPage(PlayerObject ob, CompiledNpcPage page)
+        private bool CheckTextPage(PlayerObject ob, CompiledNpcPage page, IReadOnlyList<string> arguments)
         {
             foreach (CompiledNpcCheck check in page.Checks)
             {
@@ -484,7 +495,7 @@ namespace Server.Models
                         if (!Compare(check.Operator, ob.Gold.Amount, check.IntParameter1)) return false;
                         break;
                     case CompiledNpcCheckType.Currency:
-                        if (!Compare(check.Operator, GetCurrencyAmount(ob, check.StringParameter1), check.IntParameter1)) return false;
+                        if (!Compare(check.Operator, GetCurrencyAmount(ob, CompiledNpcScript.ReplaceArguments(check.StringParameter1, arguments)), check.IntParameter1)) return false;
                         break;
                     case CompiledNpcCheckType.Item:
                         if (check.ItemParameter1 == null) continue;
@@ -500,10 +511,10 @@ namespace Server.Models
                         if (check.IntParameter1 <= 0 || !Compare(check.Operator, SEnvir.Random.Next(check.IntParameter1), check.IntParameter2)) return false;
                         break;
                     case CompiledNpcCheckType.NameList:
-                        if (!CheckDataList(ob, check.StringParameter1, check.DataType)) return false;
+                        if (!CheckDataList(ob, CompiledNpcScript.ReplaceArguments(check.StringParameter1, arguments), check.DataType)) return false;
                         break;
                     case CompiledNpcCheckType.Value:
-                        if (!Compare(check.Operator, GetDataValue(ob, check.StringParameter1, check.DataType), check.IntParameter1)) return false;
+                        if (!Compare(check.Operator, GetDataValue(ob, CompiledNpcScript.ReplaceArguments(check.StringParameter1, arguments), check.DataType), check.IntParameter1)) return false;
                         break;
                 }
             }

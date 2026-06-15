@@ -126,6 +126,7 @@ namespace Server.Models
         public NPCPage NPCPage;
         public CompiledNpcPage NPCTextPage;
         public CompiledNpcBlock NPCTextBlock;
+        public List<string> NPCTextArguments;
         public Dictionary<string, object> NPCVals = new Dictionary<string, object>();
 
         public HorseType Horse;
@@ -1215,7 +1216,7 @@ namespace Server.Models
             if (NPCPage != null)
                 con.Enqueue(new S.NPCResponse { ObjectID = NPC.ObjectID, Index = NPCPage.Index });
             else if (NPCTextPage != null && NPCTextBlock != null)
-                con.Enqueue(new S.NPCResponse { ObjectID = NPC.ObjectID, TextPage = NPCTextPage.ToClientPage(NPCTextBlock), Values = [] });
+                con.Enqueue(new S.NPCResponse { ObjectID = NPC.ObjectID, TextPage = NPCTextPage.ToClientPage(NPCTextBlock, NPCTextArguments), Values = [] });
 
 
             UpdateReviveTimers(con);
@@ -1469,6 +1470,7 @@ namespace Server.Models
             NPCPage = null;
             NPCTextPage = null;
             NPCTextBlock = null;
+            NPCTextArguments = null;
 
             MagicObjects?.Clear();
 
@@ -2641,6 +2643,7 @@ namespace Server.Models
                 NPCPage = null;
                 NPCTextPage = null;
                 NPCTextBlock = null;
+                NPCTextArguments = null;
             }
 
             if (ob.Race == ObjectType.Spell)
@@ -10489,6 +10492,7 @@ namespace Server.Models
             NPCPage = null;
             NPCTextPage = null;
             NPCTextBlock = null;
+            NPCTextArguments = null;
 
             foreach (NPCObject ob in CurrentMap.NPCs)
             {
