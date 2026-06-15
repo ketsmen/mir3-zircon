@@ -776,6 +776,13 @@ namespace Server.WinForms
 
         private void SetActiveGrid(MirDbGridControl grid)
         {
+            if (ReferenceEquals(_activeGrid, grid))
+            {
+                UpdateGridStatus();
+                UpdateMapRegionCommand();
+                return;
+            }
+
             _activeGrid = grid;
             _activeGrid?.ApplySearch(_searchText.Text);
             UpdateGridStatus();

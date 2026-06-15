@@ -11,6 +11,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace Server.WinForms
@@ -48,13 +49,16 @@ namespace Server.WinForms
         private DiagnosticsForm _diagnosticsForm;
         private MapViewerForm _mapViewerForm;
         private const int MaxLogLines = 2000;
-        private static readonly Size DefaultWindowSize = new Size(1200, 760);
+        private static readonly Size PreferredWindowSize = new Size(1440, 900);
+        private static readonly Size MinimumWindowSize = new Size(1200, 760);
         private static readonly string UiCachePath = Path.Combine(Application.StartupPath, "Server.WinForms.cache.json");
+        private bool _pluginEventsAttached;
+        private bool _buildingNavigationTree;
 
         public MainForm()
         {
             Text = "Zircon 服务端管理器";
-            Size = DefaultWindowSize;
+            Size = GetDefaultWindowSize();
             StartPosition = FormStartPosition.CenterScreen;
             KeyPreview = true;
             KeyDown += MainForm_KeyDown;
@@ -71,7 +75,12 @@ namespace Server.WinForms
         {
             base.OnLoad(e);
             LoadUiCache();
-            LoadPlugins();
+        }
+
+        protected override async void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            await LoadPluginsAsync();
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -438,6 +447,7 @@ namespace Server.WinForms
             string filter = _navigationFilterText.Text?.Trim() ?? string.Empty;
 
             _navigationTree.BeginUpdate();
+            _buildingNavigationTree = true;
             try
             {
                 _navigationTree.Nodes.Clear();
@@ -526,6 +536,7 @@ namespace Server.WinForms
             }
             finally
             {
+                _buildingNavigationTree = false;
                 _navigationTree.EndUpdate();
             }
         }
@@ -579,6 +590,7 @@ namespace Server.WinForms
 
         private void NavigationTree_AfterSelect(object sender, TreeViewEventArgs e)
         {
+            if (_buildingNavigationTree) return;
             if (e.Node?.Tag is Action action)
                 action();
         }
@@ -756,35 +768,81 @@ namespace Server.WinForms
             return group;
         }
 
-        private void LoadPlugins()
+        private async Task LoadPluginsAsync()
         {
             try
             {
-                _pluginSession = MirDbSessionFactory.Open(SessionMode.System);
-                if (CurrencyBootstrapService.EnsureDefaultCurrencies(_pluginSession, true))
-                    SEnvir.Log("已补齐默认货币数据。");
-                int updatedCompanions = CompanionBootstrapService.EnsureDefaultCurrency(_pluginSession, true);
-                if (updatedCompanions > 0)
-                    SEnvir.Log($"已为 {updatedCompanions:#,##0} 条宠物数据补齐默认货币。");
-                int migratedMapStats = MapInfoBootstrapService.MigrateLegacyBuffStats(_pluginSession, true);
-                if (migratedMapStats > 0)
-                    SEnvir.Log($"已迁移 {migratedMapStats:#,##0} 条旧地图倍率字段到 BuffStats。");
+                _pluginsMenu.Enabled = false;
+                SetStatusText(_statusLabel, "正在加载插件和基础数据库...");
 
-                PluginLoader.Instance.Log += (_, e) => SEnvir.Log(e.Message);
-                PluginLoader.Instance.View += (_, e) => OpenPluginView(e.View);
-                PluginLoader.Instance.MapViewer += (_, e) =>
-                {
-                    if (string.IsNullOrEmpty(e.MapPath)) return;
-                    MapViewerForm viewer = OpenMapViewer();
-                    viewer.LoadMap(e.MapPath);
-                };
+                PluginBootstrapResult result = await Task.Run(PreparePluginSession);
+                if (IsDisposed) return;
 
+                _pluginSession = result.Session;
+                foreach (string message in result.Messages)
+                    SEnvir.Log(message);
+
+                AttachPluginEvents();
                 PluginLoader.LoadPlugins(new PluginMenuHost(_pluginsMenu), _pluginSession);
+                SetStatusText(_statusLabel, "插件和基础数据库加载完成。");
             }
             catch (Exception ex)
             {
                 SEnvir.Log($"插件加载失败: {ex}");
+                if (!IsDisposed)
+                    SetStatusText(_statusLabel, "插件加载失败，详情请查看系统日志。");
             }
+            finally
+            {
+                if (!IsDisposed)
+                    _pluginsMenu.Enabled = true;
+            }
+        }
+
+        private static PluginBootstrapResult PreparePluginSession()
+        {
+            Session session = MirDbSessionFactory.Open(SessionMode.System);
+            PluginBootstrapResult result = new PluginBootstrapResult(session);
+
+            if (CurrencyBootstrapService.EnsureDefaultCurrencies(session, true))
+                result.Messages.Add("已补齐默认货币数据。");
+
+            int updatedCompanions = CompanionBootstrapService.EnsureDefaultCurrency(session, true);
+            if (updatedCompanions > 0)
+                result.Messages.Add($"已为 {updatedCompanions:#,##0} 条宠物数据补齐默认货币。");
+
+            int migratedMapStats = MapInfoBootstrapService.MigrateLegacyBuffStats(session, true);
+            if (migratedMapStats > 0)
+                result.Messages.Add($"已迁移 {migratedMapStats:#,##0} 条旧地图倍率字段到 BuffStats。");
+
+            return result;
+        }
+
+        private void AttachPluginEvents()
+        {
+            if (_pluginEventsAttached) return;
+
+            PluginLoader.Instance.Log += (_, e) => SEnvir.Log(e.Message);
+            PluginLoader.Instance.View += (_, e) => OpenPluginView(e.View);
+            PluginLoader.Instance.MapViewer += (_, e) =>
+            {
+                if (string.IsNullOrEmpty(e.MapPath)) return;
+                MapViewerForm viewer = OpenMapViewer();
+                viewer.LoadMap(e.MapPath);
+            };
+
+            _pluginEventsAttached = true;
+        }
+
+        private sealed class PluginBootstrapResult
+        {
+            public PluginBootstrapResult(Session session)
+            {
+                Session = session;
+            }
+
+            public Session Session { get; }
+            public List<string> Messages { get; } = new List<string>();
         }
 
         private void OpenPluginView(Type viewType)
@@ -1282,10 +1340,11 @@ namespace Server.WinForms
                 MainFormUiCache cache = JsonSerializer.Deserialize<MainFormUiCache>(File.ReadAllText(UiCachePath));
                 if (cache == null) return;
 
+                Size minimumSize = GetDefaultWindowSize();
                 if (cache.Width >= 900 && cache.Height >= 600)
-                    Size = new Size(
-                        Math.Max(DefaultWindowSize.Width, cache.Width),
-                        Math.Max(DefaultWindowSize.Height, cache.Height));
+                    Size = FitWindowSize(new Size(
+                        Math.Max(minimumSize.Width, cache.Width),
+                        Math.Max(minimumSize.Height, cache.Height)));
 
                 if (cache.Maximized)
                     WindowState = FormWindowState.Maximized;
@@ -1333,7 +1392,7 @@ namespace Server.WinForms
                     File.Delete(UiCachePath);
 
                 WindowState = FormWindowState.Normal;
-                Size = DefaultWindowSize;
+                Size = GetDefaultWindowSize();
                 _workspaceSplit.SplitterDistance = 230;
                 _navigationFilterText.Text = string.Empty;
                 _navigationTree.ExpandAll();
@@ -1393,6 +1452,28 @@ namespace Server.WinForms
             public bool Maximized { get; set; }
             public int SplitterDistance { get; set; }
             public List<string> ExpandedNavigationPaths { get; set; } = new List<string>();
+        }
+
+        private static Size GetDefaultWindowSize()
+        {
+            return FitWindowSize(PreferredWindowSize);
+        }
+
+        private static Size FitWindowSize(Size requested)
+        {
+            Rectangle area = Screen.PrimaryScreen?.WorkingArea ?? Rectangle.Empty;
+            if (area.Width <= 0 || area.Height <= 0)
+                return requested;
+
+            int maxWidth = Math.Max(900, area.Width - 40);
+            int maxHeight = Math.Max(600, area.Height - 40);
+            int width = Math.Min(requested.Width, maxWidth);
+            int height = Math.Min(requested.Height, maxHeight);
+
+            width = Math.Max(Math.Min(MinimumWindowSize.Width, maxWidth), width);
+            height = Math.Max(Math.Min(MinimumWindowSize.Height, maxHeight), height);
+
+            return new Size(width, height);
         }
     }
 }
