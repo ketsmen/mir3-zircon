@@ -68,6 +68,22 @@ namespace Server.WinForms
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            if (SEnvir.EnvirThread != null)
+            {
+                DialogResult result = MessageBox.Show(
+                    this,
+                    "服务端仍在运行，关闭管理器会停止服务端。\r\n\r\n确定停止并退出吗？",
+                    "退出服务端管理器",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+
+                if (result != DialogResult.Yes)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+            }
+
             SaveUiCache();
             base.OnFormClosing(e);
 
