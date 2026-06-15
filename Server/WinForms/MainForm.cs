@@ -48,7 +48,7 @@ namespace Server.WinForms
         private DiagnosticsForm _diagnosticsForm;
         private MapViewerForm _mapViewerForm;
         private const int MaxLogLines = 2000;
-        private static readonly Size DefaultWindowSize = new Size(1024, 768);
+        private static readonly Size DefaultWindowSize = new Size(1200, 760);
         private static readonly string UiCachePath = Path.Combine(Application.StartupPath, "Server.WinForms.cache.json");
 
         public MainForm()
@@ -1283,7 +1283,9 @@ namespace Server.WinForms
                 if (cache == null) return;
 
                 if (cache.Width >= 900 && cache.Height >= 600)
-                    Size = new Size(cache.Width, cache.Height);
+                    Size = new Size(
+                        Math.Max(DefaultWindowSize.Width, cache.Width),
+                        Math.Max(DefaultWindowSize.Height, cache.Height));
 
                 if (cache.Maximized)
                     WindowState = FormWindowState.Maximized;
