@@ -304,7 +304,7 @@ namespace Server.WinForms
 
         private void BuildLogMenu()
         {
-            _logMenu.Items.Add("复制选中日志", null, (_, _) => CopySelectedLogs());
+            _logMenu.Items.Add("复制日志", null, (_, _) => CopySelectedLogs());
             _logMenu.Items.Add("导出当前日志", null, (_, _) => ExportDisplayedLogs());
             _logMenu.Items.Add(new ToolStripSeparator());
             _logMenu.Items.Add("清空当前日志", null, (_, _) => ClearDisplayedLogs());
@@ -814,10 +814,19 @@ namespace Server.WinForms
         private void CopySelectedLogs()
         {
             ListBox logList = GetActiveLogList();
-            IEnumerable<string> lines = logList.SelectedItems.Cast<object>().Select(x => x?.ToString()).Where(x => !string.IsNullOrEmpty(x));
+            IEnumerable<object> source = logList.SelectedItems.Count > 0
+                ? logList.SelectedItems.Cast<object>()
+                : logList.Items.Cast<object>();
+
+            IEnumerable<string> lines = source.Select(x => x?.ToString()).Where(x => !string.IsNullOrEmpty(x));
             string text = string.Join(Environment.NewLine, lines);
             if (!string.IsNullOrEmpty(text))
+            {
                 Clipboard.SetText(text);
+                return;
+            }
+
+            MessageBox.Show(this, "当前没有可复制的日志。", "复制日志", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void ExportDisplayedLogs()
