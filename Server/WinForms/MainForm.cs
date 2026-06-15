@@ -228,6 +228,9 @@ namespace Server.WinForms
 
             ToolStripMenuItem configMenu = new ToolStripMenuItem("配置");
             configMenu.DropDownItems.Add("打开配置编辑器", null, (_, _) => OpenConfigEditor());
+            configMenu.DropDownItems.Add("数据库加密设置", null, (_, _) => OpenDatabaseEncryptionSettings());
+            configMenu.DropDownItems.Add("数据库同步设置", null, (_, _) => OpenDatabaseSynchronizationSettings());
+            configMenu.DropDownItems.Add(new ToolStripSeparator());
             configMenu.DropDownItems.Add("保存配置", null, (_, _) => ConfigReader.Save(typeof(Config).Assembly));
 
             ToolStripMenuItem toolsMenu = new ToolStripMenuItem("工具");
@@ -390,7 +393,7 @@ namespace Server.WinForms
                 TreeNode operations = AddNavigationGroup("运维");
                 AddNavigationAction(operations, "系统日志", () => _logTabs.SelectedTab = _systemLogPage);
                 AddNavigationAction(operations, "聊天日志", () => _logTabs.SelectedTab = _chatLogPage);
-                AddNavigationAction(operations, "配置编辑器", OpenConfigEditor);
+                AddNavigationAction(operations, "配置编辑器", () => OpenConfigEditor());
                 AddNavigationAction(operations, "服务器诊断", OpenDiagnostics);
                 AddNavigationAction(operations, "地图查看器", () => OpenMapViewer());
 
@@ -720,17 +723,28 @@ namespace Server.WinForms
             }
         }
 
-        private void OpenConfigEditor()
+        private ConfigEditorForm OpenConfigEditor()
         {
             if (_configEditorForm == null || _configEditorForm.IsDisposed)
             {
                 _configEditorForm = new ConfigEditorForm();
                 _configEditorForm.FormClosed += (_, _) => _configEditorForm = null;
                 _configEditorForm.Show(this);
-                return;
+                return _configEditorForm;
             }
 
             ActivateForm(_configEditorForm);
+            return _configEditorForm;
+        }
+
+        private void OpenDatabaseEncryptionSettings()
+        {
+            OpenConfigEditor().FocusDatabaseEncryptionSettings();
+        }
+
+        private void OpenDatabaseSynchronizationSettings()
+        {
+            OpenConfigEditor().FocusDatabaseSynchronizationSettings();
         }
 
         private void OpenDiagnostics()

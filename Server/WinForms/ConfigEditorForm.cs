@@ -42,6 +42,28 @@ namespace Server.WinForms
             LoadSettings();
         }
 
+        public void FocusDatabaseEncryptionSettings()
+        {
+            FocusSetting("EncryptionKey", "数据库加密设置：可生成密钥、切换 EncryptionEnabled，并点击“应用数据库加密”。");
+        }
+
+        public void FocusDatabaseSynchronizationSettings()
+        {
+            FocusSetting("SyncRemotePreffix", "数据库同步设置：可配置 ClientPath、SyncRemotePreffix、SyncKey，并执行本地或远程同步。");
+        }
+
+        public bool FocusSetting(string propertyName, string statusText = null)
+        {
+            if (!_propertyRows.TryGetValue(propertyName, out DataGridViewRow row))
+                return false;
+
+            FocusRow(row);
+            if (!string.IsNullOrWhiteSpace(statusText))
+                _statusLabel.Text = statusText;
+
+            return true;
+        }
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             EndGridEdits();
@@ -575,7 +597,11 @@ namespace Server.WinForms
         private void FocusRow(DataGridViewRow row)
         {
             if (!row.Visible)
+            {
+                _modifiedOnlyButton.Checked = false;
                 _filterText.Text = string.Empty;
+                ApplyFilter();
+            }
 
             if (row.DataGridView?.Parent is TabPage page)
                 _tabs.SelectedTab = page;
