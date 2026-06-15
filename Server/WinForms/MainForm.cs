@@ -190,6 +190,7 @@ namespace Server.WinForms
             AddDatabaseShortcut(mapDataMenu, "矿点", "MineInfo");
             AddDatabaseShortcut(mapDataMenu, "钓鱼", "FishingInfo");
             AddDatabaseShortcut(mapDataMenu, "城堡", "CastleInfo");
+            mapDataMenu.DropDownItems.Add("事件总览", null, (_, _) => OpenEventEditor());
             AddDatabaseShortcut(mapDataMenu, "世界事件", "WorldEventInfo");
             AddDatabaseShortcut(mapDataMenu, "玩家事件", "PlayerEventInfo");
             AddDatabaseShortcut(mapDataMenu, "怪物事件", "MonsterEventInfo");
@@ -261,6 +262,7 @@ namespace Server.WinForms
             AddToolButton(toolStrip, "物品", (_, _) => OpenDatabaseEditor("ItemInfo"));
             AddToolButton(toolStrip, "怪物", (_, _) => OpenDatabaseEditor("MonsterInfo"));
             AddToolButton(toolStrip, "NPC", (_, _) => OpenDatabaseEditor("NPCInfo"));
+            AddToolButton(toolStrip, "事件", (_, _) => OpenEventEditor());
             AddToolButton(toolStrip, "配置", (_, _) => OpenConfigEditor());
             AddToolButton(toolStrip, "加密", (_, _) => OpenDatabaseEncryptionSettings());
             AddToolButton(toolStrip, "同步", (_, _) => OpenDatabaseSynchronizationSettings());
@@ -425,6 +427,7 @@ namespace Server.WinForms
                 AddDatabaseNavigation(map, "矿点", "MineInfo");
                 AddDatabaseNavigation(map, "钓鱼", "FishingInfo");
                 AddDatabaseNavigation(map, "城堡", "CastleInfo");
+                AddNavigationAction(map, "事件总览", OpenEventEditor);
                 AddDatabaseNavigation(map, "世界事件", "WorldEventInfo");
                 AddDatabaseNavigation(map, "玩家事件", "PlayerEventInfo");
                 AddDatabaseNavigation(map, "怪物事件", "MonsterEventInfo");
@@ -697,12 +700,17 @@ namespace Server.WinForms
 
         private void OpenDatabaseEditor(string initialTypeName = null)
         {
+            OpenDatabaseEditorCore(initialTypeName);
+        }
+
+        private DatabaseEditorForm OpenDatabaseEditorCore(string initialTypeName = null)
+        {
             if (SEnvir.EnvirThread != null)
             {
                 if (SEnvir.Session == null)
                 {
                     MessageBox.Show(this, "服务端数据库正在加载中，请稍后再打开数据库编辑器。", "数据库", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
+                    return null;
                 }
 
                 if (_onlineDatabaseEditorForm == null || _onlineDatabaseEditorForm.IsDisposed)
@@ -717,7 +725,7 @@ namespace Server.WinForms
                     ActivateForm(_onlineDatabaseEditorForm);
                 }
 
-                return;
+                return _onlineDatabaseEditorForm;
             }
 
             if (_databaseEditorForm == null || _databaseEditorForm.IsDisposed)
@@ -731,6 +739,14 @@ namespace Server.WinForms
                 _databaseEditorForm.TryNavigateToType(initialTypeName);
                 ActivateForm(_databaseEditorForm);
             }
+
+            return _databaseEditorForm;
+        }
+
+        private void OpenEventEditor()
+        {
+            DatabaseEditorForm editor = OpenDatabaseEditorCore("WorldEventInfo");
+            editor?.TryNavigateToFilteredType("Event", "WorldEventInfo");
         }
 
         private ConfigEditorForm OpenConfigEditor()

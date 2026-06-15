@@ -164,6 +164,12 @@ namespace Server.WinForms
             return true;
         }
 
+        public bool TryNavigateToFilteredType(string filter, string typeName)
+        {
+            _tableSearchText.Text = filter ?? string.Empty;
+            return TryNavigateToType(typeName);
+        }
+
         private void BuildLayout()
         {
             ToolStrip toolStrip = new ToolStrip();
