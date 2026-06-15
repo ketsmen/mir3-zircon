@@ -9,6 +9,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -41,6 +42,7 @@ namespace Server.WinForms
         private ToolStripButton _stopToolButton;
         private Session _pluginSession;
         private const int MaxLogLines = 2000;
+        private static readonly string UiCachePath = Path.Combine(Application.StartupPath, "Server.WinForms.cache.json");
 
         public MainForm()
         {
@@ -60,11 +62,13 @@ namespace Server.WinForms
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
+            LoadUiCache();
             LoadPlugins();
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            SaveUiCache();
             base.OnFormClosing(e);
 
             if (SEnvir.EnvirThread != null)
@@ -172,6 +176,8 @@ namespace Server.WinForms
             toolsMenu.DropDownItems.Add(new ToolStripSeparator());
             toolsMenu.DropDownItems.Add("导出当前日志", null, (_, _) => ExportDisplayedLogs());
             toolsMenu.DropDownItems.Add("清空当前日志", null, (_, _) => ClearDisplayedLogs());
+            toolsMenu.DropDownItems.Add(new ToolStripSeparator());
+            toolsMenu.DropDownItems.Add("重置界面布局", null, (_, _) => ResetUiLayout());
 
             _pluginsMenu = new ToolStripMenuItem("插件");
 
@@ -814,6 +820,125 @@ namespace Server.WinForms
                 return $"{(int)uptime.TotalDays}天 {uptime:hh\\:mm\\:ss}";
 
             return uptime.ToString("hh\\:mm\\:ss");
+        }
+
+        private void LoadUiCache()
+        {
+            try
+            {
+                if (!File.Exists(UiCachePath)) return;
+
+                MainFormUiCache cache = JsonSerializer.Deserialize<MainFormUiCache>(File.ReadAllText(UiCachePath));
+                if (cache == null) return;
+
+                if (cache.Width >= 900 && cache.Height >= 600)
+                    Size = new Size(cache.Width, cache.Height);
+
+                if (cache.Maximized)
+                    WindowState = FormWindowState.Maximized;
+
+                if (cache.SplitterDistance > 120)
+                    _workspaceSplit.SplitterDistance = Math.Min(cache.SplitterDistance, Math.Max(120, _workspaceSplit.Width - 160));
+
+                ApplyExpandedNavigation(cache.ExpandedNavigationPaths);
+            }
+            catch (Exception ex)
+            {
+                SEnvir.Log($"加载 WinForms 界面布局失败: {ex}");
+            }
+        }
+
+        private void SaveUiCache()
+        {
+            try
+            {
+                MainFormUiCache cache = new MainFormUiCache
+                {
+                    Width = RestoreBounds.Width > 0 ? RestoreBounds.Width : Width,
+                    Height = RestoreBounds.Height > 0 ? RestoreBounds.Height : Height,
+                    Maximized = WindowState == FormWindowState.Maximized,
+                    SplitterDistance = _workspaceSplit.SplitterDistance,
+                    ExpandedNavigationPaths = GetExpandedNavigationPaths().ToList()
+                };
+
+                File.WriteAllText(UiCachePath, JsonSerializer.Serialize(cache, new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                }));
+            }
+            catch (Exception ex)
+            {
+                SEnvir.Log($"保存 WinForms 界面布局失败: {ex}");
+            }
+        }
+
+        private void ResetUiLayout()
+        {
+            try
+            {
+                if (File.Exists(UiCachePath))
+                    File.Delete(UiCachePath);
+
+                WindowState = FormWindowState.Normal;
+                Size = new Size(1100, 720);
+                _workspaceSplit.SplitterDistance = 230;
+                _navigationTree.ExpandAll();
+                MessageBox.Show(this, "界面布局已重置。", "界面布局", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "重置界面布局失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private IEnumerable<string> GetExpandedNavigationPaths()
+        {
+            foreach (TreeNode node in GetExpandedNavigationNodes(_navigationTree.Nodes))
+                yield return node.FullPath;
+        }
+
+        private static IEnumerable<TreeNode> GetExpandedNavigationNodes(TreeNodeCollection nodes)
+        {
+            foreach (TreeNode node in nodes)
+            {
+                if (node.IsExpanded)
+                    yield return node;
+
+                foreach (TreeNode child in GetExpandedNavigationNodes(node.Nodes))
+                    yield return child;
+            }
+        }
+
+        private void ApplyExpandedNavigation(IReadOnlyCollection<string> expandedPaths)
+        {
+            if (expandedPaths == null || expandedPaths.Count == 0) return;
+
+            _navigationTree.CollapseAll();
+            foreach (TreeNode node in GetAllNavigationNodes(_navigationTree.Nodes))
+            {
+                if (expandedPaths.Contains(node.FullPath))
+                    node.Expand();
+            }
+        }
+
+        private static IEnumerable<TreeNode> GetAllNavigationNodes(TreeNodeCollection nodes)
+        {
+            foreach (TreeNode node in nodes)
+            {
+                yield return node;
+
+                foreach (TreeNode child in GetAllNavigationNodes(node.Nodes))
+                    yield return child;
+            }
+        }
+
+        private sealed class MainFormUiCache
+        {
+            public int Width { get; set; }
+            public int Height { get; set; }
+            public bool Maximized { get; set; }
+            public int SplitterDistance { get; set; }
+            public List<string> ExpandedNavigationPaths { get; set; } = new List<string>();
         }
     }
 }
