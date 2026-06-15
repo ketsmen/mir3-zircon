@@ -42,14 +42,18 @@ namespace Server.WinForms
 
             if (identities.Length == 0) return;
 
-            HashSet<string> keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, DBObject> keys = new Dictionary<string, DBObject>(StringComparer.OrdinalIgnoreCase);
             foreach (object item in _metadata.GetBinding(type))
             {
                 string key = string.Join("|", identities.Select(x => SafeGetText(x, item)));
                 if (string.IsNullOrWhiteSpace(key.Replace("|", string.Empty))) continue;
 
-                if (!keys.Add(key))
-                    messages.Add($"{type.Name} 存在重复身份字段: {key}");
+                if (item is not DBObject current) continue;
+
+                if (keys.TryGetValue(key, out DBObject first))
+                    messages.Add($"{type.Name} 存在重复身份字段: {key}，冲突对象为 {Describe(first)} 与 {Describe(current)}。");
+                else
+                    keys[key] = current;
             }
         }
 
