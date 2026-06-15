@@ -25,6 +25,7 @@ namespace Server.WinForms
         private readonly SplitContainer _rightSplit = new SplitContainer();
         private readonly Panel _gridHost = new Panel();
         private readonly TabControl _childTabs = new TabControl();
+        private readonly ToolStripTextBox _tableSearchText = new ToolStripTextBox();
         private readonly ToolStripTextBox _searchText = new ToolStripTextBox();
         private readonly ToolStripLabel _statusLabel = new ToolStripLabel();
         private ToolStripButton _mapRegionButton;
@@ -32,15 +33,27 @@ namespace Server.WinForms
         private MirDbGridControl _rootGrid;
         private MirDbGridControl _activeGrid;
         private Type _currentType;
+        private readonly string _initialTypeName;
 
         public DatabaseEditorForm()
-            : this(null, false)
+            : this(null, false, null)
+        {
+        }
+
+        public DatabaseEditorForm(string initialTypeName)
+            : this(null, false, initialTypeName)
         {
         }
 
         public DatabaseEditorForm(Session session, bool onlineMode)
+            : this(session, onlineMode, null)
+        {
+        }
+
+        public DatabaseEditorForm(Session session, bool onlineMode, string initialTypeName)
         {
             _onlineMode = onlineMode;
+            _initialTypeName = initialTypeName;
 
             Text = onlineMode ? "MirDB 数据库编辑器 - 在线模式" : "MirDB 数据库编辑器";
             Width = 1280;
@@ -64,6 +77,7 @@ namespace Server.WinForms
 
             BuildLayout();
             BuildTree();
+            SelectInitialType();
 
             if (_readOnly)
                 MessageBox.Show(this, lockReason, "只读模式", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -93,10 +107,21 @@ namespace Server.WinForms
             AddButton(toolStrip, "导出 NPC 文本", (_, _) => ExportTextNpcs());
             _mapRegionButton = AddButton(toolStrip, "编辑地图区域", (_, _) => OpenSelectedMapRegion());
             toolStrip.Items.Add(new ToolStripSeparator());
+            toolStrip.Items.Add(new ToolStripLabel("表"));
+            _tableSearchText.AutoSize = false;
+            _tableSearchText.Width = 170;
+            _tableSearchText.ToolTipText = "按表名过滤左侧导航，例如 Item、Monster、NPC。";
+            _tableSearchText.TextChanged += (_, _) => BuildTree();
+            toolStrip.Items.Add(_tableSearchText);
+            toolStrip.Items.Add(new ToolStripSeparator());
             toolStrip.Items.Add(new ToolStripLabel("搜索"));
             _searchText.AutoSize = false;
             _searchText.Width = 220;
-            _searchText.TextChanged += (_, _) => _activeGrid?.ApplySearch(_searchText.Text);
+            _searchText.TextChanged += (_, _) =>
+            {
+                _activeGrid?.ApplySearch(_searchText.Text);
+                UpdateGridStatus();
+            };
             toolStrip.Items.Add(_searchText);
             toolStrip.Items.Add(new ToolStripSeparator());
             _statusLabel.Text = GetModeText();
@@ -127,6 +152,116 @@ namespace Server.WinForms
             UpdateMapRegionCommand();
         }
 
+        private static TreeNode GetGroupNode(TreeNode root, Dictionary<string, TreeNode> groups, string groupName)
+        {
+            if (groups.TryGetValue(groupName, out TreeNode node))
+                return node;
+
+            node = new TreeNode(groupName);
+            groups[groupName] = node;
+            root.Nodes.Add(node);
+            return node;
+        }
+
+        private static bool MatchesTypeFilter(Type type, string filter)
+        {
+            return string.IsNullOrWhiteSpace(filter) ||
+                   type.Name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string GetTypeGroup(Type type)
+        {
+            string name = type.Name;
+
+            if (name.Contains("Item", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Bundle", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("LootBox", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Set", StringComparison.OrdinalIgnoreCase))
+                return "物品与装备";
+
+            if (name.Contains("Monster", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Respawn", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Drop", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Movement", StringComparison.OrdinalIgnoreCase))
+                return "怪物与掉落";
+
+            if (name.Contains("Map", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Region", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("SafeZone", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Castle", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Conquest", StringComparison.OrdinalIgnoreCase))
+                return "地图与区域";
+
+            if (name.Contains("NPC", StringComparison.OrdinalIgnoreCase))
+                return "NPC";
+
+            if (name.Contains("Quest", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Event", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Milestone", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Fame", StringComparison.OrdinalIgnoreCase))
+                return "任务与事件";
+
+            if (name.Contains("Store", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Payment", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Currency", StringComparison.OrdinalIgnoreCase))
+                return "商城与货币";
+
+            if (name.Contains("Account", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Character", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Mail", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Chat", StringComparison.OrdinalIgnoreCase))
+                return "账号与角色";
+
+            if (name.Contains("Magic", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Discipline", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Companion", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Fishing", StringComparison.OrdinalIgnoreCase))
+                return "技能与系统";
+
+            return "其他";
+        }
+
+        private void SelectInitialType()
+        {
+            if (string.IsNullOrWhiteSpace(_initialTypeName)) return;
+
+            Type type = _metadata.ObjectTypes.FirstOrDefault(x => x.Name.Equals(_initialTypeName, StringComparison.OrdinalIgnoreCase));
+            if (type == null) return;
+
+            SelectTypeNode(type);
+            ShowCollection(type);
+        }
+
+        private bool SelectTypeNode(Type type)
+        {
+            TreeNode node = FindNodeByType(_tree.Nodes, type);
+            if (node == null) return false;
+
+            TreeNode parent = node.Parent;
+            while (parent != null)
+            {
+                parent.Expand();
+                parent = parent.Parent;
+            }
+
+            _tree.SelectedNode = node;
+            node.EnsureVisible();
+            return true;
+        }
+
+        private static TreeNode FindNodeByType(TreeNodeCollection nodes, Type type)
+        {
+            foreach (TreeNode node in nodes)
+            {
+                if (ReferenceEquals(node.Tag, type)) return node;
+
+                TreeNode child = FindNodeByType(node.Nodes, type);
+                if (child != null) return child;
+            }
+
+            return null;
+        }
+
         private static ToolStripButton AddButton(ToolStrip toolStrip, string text, EventHandler click)
         {
             ToolStripButton button = new ToolStripButton(text);
@@ -137,25 +272,48 @@ namespace Server.WinForms
 
         private void BuildTree()
         {
+            Type selectedType = _tree.SelectedNode?.Tag as Type;
+            string filter = _tableSearchText.Text?.Trim();
+
+            _tree.BeginUpdate();
+            _tree.Nodes.Clear();
+
             TreeNode systemNode = new TreeNode("系统数据");
             TreeNode userNode = new TreeNode("用户数据");
+            Dictionary<string, TreeNode> systemGroups = new Dictionary<string, TreeNode>();
+            Dictionary<string, TreeNode> userGroups = new Dictionary<string, TreeNode>();
 
             foreach (Type type in _metadata.ObjectTypes)
             {
+                if (!MatchesTypeFilter(type, filter)) continue;
+
                 TreeNode node = new TreeNode($"{type.Name} ({_metadata.GetCount(type)})")
                 {
                     Tag = type
                 };
 
                 if (_metadata.IsUserObject(type))
-                    userNode.Nodes.Add(node);
+                    GetGroupNode(userNode, userGroups, GetTypeGroup(type)).Nodes.Add(node);
                 else
-                    systemNode.Nodes.Add(node);
+                    GetGroupNode(systemNode, systemGroups, GetTypeGroup(type)).Nodes.Add(node);
             }
 
             _tree.Nodes.Add(systemNode);
             _tree.Nodes.Add(userNode);
             systemNode.Expand();
+
+            foreach (TreeNode group in systemGroups.Values)
+                if (!string.IsNullOrWhiteSpace(filter))
+                    group.Expand();
+
+            foreach (TreeNode group in userGroups.Values)
+                if (!string.IsNullOrWhiteSpace(filter))
+                    group.Expand();
+
+            if (selectedType != null)
+                SelectTypeNode(selectedType);
+
+            _tree.EndUpdate();
         }
 
         private void Tree_AfterSelect(object sender, TreeViewEventArgs e)
@@ -188,9 +346,7 @@ namespace Server.WinForms
                 _gridHost.Controls.Add(_rootGrid);
                 SetActiveGrid(_rootGrid);
                 _searchText.Text = string.Empty;
-                _statusLabel.Text = $"{type.Name}: {source.Count} 行" + (_readOnly ? "，只读" : string.Empty);
-                if (_onlineMode)
-                    _statusLabel.Text += "，在线";
+                UpdateGridStatus();
 
                 ShowChildLists(_rootGrid.CurrentObject);
             }
@@ -233,7 +389,24 @@ namespace Server.WinForms
         private void SetActiveGrid(MirDbGridControl grid)
         {
             _activeGrid = grid;
+            UpdateGridStatus();
             UpdateMapRegionCommand();
+        }
+
+        private void UpdateGridStatus()
+        {
+            if (_activeGrid == null)
+            {
+                _statusLabel.Text = GetModeText();
+                return;
+            }
+
+            string suffix = _readOnly ? "，只读" : string.Empty;
+            if (_onlineMode)
+                suffix += "，在线";
+
+            string search = string.IsNullOrWhiteSpace(_searchText.Text) ? string.Empty : $"，过滤: {_searchText.Text}";
+            _statusLabel.Text = $"{_activeGrid.ItemTypeName}: {_activeGrid.VisibleCount}/{_activeGrid.TotalCount} 行{search}{suffix}";
         }
 
         private void UpdateMapRegionCommand()

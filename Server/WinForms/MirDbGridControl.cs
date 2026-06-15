@@ -20,6 +20,7 @@ namespace Server.WinForms
         private readonly object _rootCollection;
         private readonly bool _readOnly;
         private readonly DataGridView _grid = new DataGridView();
+        private readonly ContextMenuStrip _contextMenu = new ContextMenuStrip();
         private string _filterText = string.Empty;
 
         public event EventHandler CurrentObjectChanged;
@@ -44,12 +45,16 @@ namespace Server.WinForms
             _grid.MultiSelect = true;
             _grid.SelectionMode = DataGridViewSelectionMode.CellSelect;
             _grid.EditMode = DataGridViewEditMode.EditOnEnter;
+            _grid.ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableAlwaysIncludeHeaderText;
             _grid.ReadOnly = readOnly;
             _grid.DataError += Grid_DataError;
             _grid.CellFormatting += Grid_CellFormatting;
             _grid.CellParsing += Grid_CellParsing;
             _grid.SelectionChanged += (_, _) => CurrentObjectChanged?.Invoke(this, EventArgs.Empty);
             _grid.Enter += (_, _) => BecameActive?.Invoke(this, EventArgs.Empty);
+            _grid.CellMouseDown += Grid_CellMouseDown;
+
+            BuildContextMenu();
 
             Controls.Add(_grid);
             BuildColumns();
@@ -57,6 +62,12 @@ namespace Server.WinForms
         }
 
         public object CurrentObject => _grid.CurrentRow?.DataBoundItem;
+
+        public string ItemTypeName => _itemType.Name;
+
+        public int VisibleCount => _grid.Rows.Count;
+
+        public int TotalCount => _source.Count;
 
         public IEnumerable<object> SelectedObjects
         {
@@ -200,6 +211,76 @@ namespace Server.WinForms
             }
 
             return false;
+        }
+
+        private void BuildContextMenu()
+        {
+            _contextMenu.Items.Add("复制当前单元格", null, (_, _) => CopyCurrentCell());
+            _contextMenu.Items.Add("复制选中行", null, (_, _) => CopySelectedRows());
+            _contextMenu.Items.Add(new ToolStripSeparator());
+            _contextMenu.Items.Add("选择当前行", null, (_, _) => SelectCurrentRow());
+            _contextMenu.Items.Add(new ToolStripSeparator());
+            _contextMenu.Items.Add("刷新", null, (_, _) => RefreshBinding());
+            _grid.ContextMenuStrip = _contextMenu;
+        }
+
+        private void Grid_CellMouseDown(object sender, DataGridViewCellMouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Right || e.RowIndex < 0 || e.ColumnIndex < 0) return;
+
+            _grid.CurrentCell = _grid.Rows[e.RowIndex].Cells[e.ColumnIndex];
+            if (!_grid.Rows[e.RowIndex].Selected && !_grid[e.ColumnIndex, e.RowIndex].Selected)
+                _grid[e.ColumnIndex, e.RowIndex].Selected = true;
+        }
+
+        private void CopyCurrentCell()
+        {
+            if (_grid.CurrentCell == null) return;
+
+            string text = Convert.ToString(_grid.CurrentCell.FormattedValue, CultureInfo.CurrentCulture) ?? string.Empty;
+            if (!string.IsNullOrEmpty(text))
+                Clipboard.SetText(text);
+        }
+
+        private void CopySelectedRows()
+        {
+            List<DataGridViewRow> rows = _grid.SelectedCells
+                .Cast<DataGridViewCell>()
+                .Select(x => _grid.Rows[x.RowIndex])
+                .Distinct()
+                .OrderBy(x => x.Index)
+                .ToList();
+
+            if (rows.Count == 0 && _grid.CurrentRow != null)
+                rows.Add(_grid.CurrentRow);
+
+            if (rows.Count == 0) return;
+
+            List<DataGridViewColumn> columns = _grid.Columns.Cast<DataGridViewColumn>()
+                .Where(x => x.Visible)
+                .OrderBy(x => x.DisplayIndex)
+                .ToList();
+
+            List<string> lines = new List<string>
+            {
+                string.Join("\t", columns.Select(x => x.HeaderText))
+            };
+
+            foreach (DataGridViewRow row in rows)
+            {
+                lines.Add(string.Join("\t", columns.Select(column => Convert.ToString(row.Cells[column.Index].FormattedValue, CultureInfo.CurrentCulture)?.Replace("\t", " ") ?? string.Empty)));
+            }
+
+            Clipboard.SetText(string.Join(Environment.NewLine, lines));
+        }
+
+        private void SelectCurrentRow()
+        {
+            if (_grid.CurrentRow == null) return;
+
+            _grid.ClearSelection();
+            foreach (DataGridViewCell cell in _grid.CurrentRow.Cells)
+                cell.Selected = true;
         }
 
         private void BuildColumns()

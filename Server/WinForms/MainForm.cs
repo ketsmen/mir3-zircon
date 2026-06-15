@@ -84,6 +84,18 @@ namespace Server.WinForms
 
             ToolStripMenuItem databaseMenu = new ToolStripMenuItem("数据库");
             databaseMenu.DropDownItems.Add("打开数据库编辑器", null, (_, _) => OpenDatabaseEditor());
+            databaseMenu.DropDownItems.Add(new ToolStripSeparator());
+            AddDatabaseShortcut(databaseMenu, "物品", "ItemInfo");
+            AddDatabaseShortcut(databaseMenu, "怪物", "MonsterInfo");
+            AddDatabaseShortcut(databaseMenu, "地图", "MapInfo");
+            AddDatabaseShortcut(databaseMenu, "地图区域", "MapRegion");
+            AddDatabaseShortcut(databaseMenu, "NPC", "NPCInfo");
+            AddDatabaseShortcut(databaseMenu, "NPC页面", "NPCPage");
+            AddDatabaseShortcut(databaseMenu, "任务", "QuestInfo");
+            AddDatabaseShortcut(databaseMenu, "商城", "StoreInfo");
+            databaseMenu.DropDownItems.Add(new ToolStripSeparator());
+            AddDatabaseShortcut(databaseMenu, "账号", "AccountInfo");
+            AddDatabaseShortcut(databaseMenu, "角色", "CharacterInfo");
 
             ToolStripMenuItem configMenu = new ToolStripMenuItem("配置");
             configMenu.DropDownItems.Add("打开配置编辑器", null, (_, _) => OpenConfigEditor());
@@ -105,6 +117,9 @@ namespace Server.WinForms
             AddToolButton(toolStrip, "启动", (_, _) => StartServer());
             AddToolButton(toolStrip, "停止", (_, _) => StopServer());
             AddToolButton(toolStrip, "数据库", (_, _) => OpenDatabaseEditor());
+            AddToolButton(toolStrip, "物品", (_, _) => OpenDatabaseEditor("ItemInfo"));
+            AddToolButton(toolStrip, "怪物", (_, _) => OpenDatabaseEditor("MonsterInfo"));
+            AddToolButton(toolStrip, "NPC", (_, _) => OpenDatabaseEditor("NPCInfo"));
             AddToolButton(toolStrip, "配置", (_, _) => OpenConfigEditor());
             AddToolButton(toolStrip, "地图", (_, _) => new MapViewerForm().Show(this));
 
@@ -143,6 +158,11 @@ namespace Server.WinForms
             ToolStripButton button = new ToolStripButton(text);
             button.Click += click;
             toolStrip.Items.Add(button);
+        }
+
+        private void AddDatabaseShortcut(ToolStripMenuItem menu, string text, string typeName)
+        {
+            menu.DropDownItems.Add(text, null, (_, _) => OpenDatabaseEditor(typeName));
         }
 
         private void LoadPlugins()
@@ -188,7 +208,7 @@ namespace Server.WinForms
             UpdateInterface();
         }
 
-        private void OpenDatabaseEditor()
+        private void OpenDatabaseEditor(string initialTypeName = null)
         {
             if (SEnvir.EnvirThread != null)
             {
@@ -198,12 +218,12 @@ namespace Server.WinForms
                     return;
                 }
 
-                DatabaseEditorForm onlineForm = new DatabaseEditorForm(SEnvir.Session, true);
+                DatabaseEditorForm onlineForm = new DatabaseEditorForm(SEnvir.Session, true, initialTypeName);
                 onlineForm.Show(this);
                 return;
             }
 
-            DatabaseEditorForm form = new DatabaseEditorForm();
+            DatabaseEditorForm form = new DatabaseEditorForm(initialTypeName);
             form.Show(this);
         }
 
