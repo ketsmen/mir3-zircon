@@ -26,6 +26,7 @@ namespace Server.WinForms
         private readonly HScrollBar _hScroll = new HScrollBar();
         private readonly VScrollBar _vScroll = new VScrollBar();
         private readonly StatusStrip _status = new StatusStrip();
+        private readonly ToolStripStatusLabel _mapFileLabel = new ToolStripStatusLabel("地图: 未加载") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
         private readonly ToolStripStatusLabel _mapSizeLabel = new ToolStripStatusLabel("地图大小: 0,0");
         private readonly ToolStripStatusLabel _positionLabel = new ToolStripStatusLabel("坐标: 0,0");
         private readonly ToolStripStatusLabel _selectedCellsLabel = new ToolStripStatusLabel("已选格子: 0");
@@ -232,6 +233,7 @@ namespace Server.WinForms
             host.Controls.Add(_vScroll);
             host.Controls.Add(_hScroll);
 
+            _status.Items.Add(_mapFileLabel);
             _status.Items.Add(_mapSizeLabel);
             _status.Items.Add(_positionLabel);
             _status.Items.Add(_selectedCellsLabel);
@@ -368,9 +370,27 @@ namespace Server.WinForms
 
         private void UpdateStatus()
         {
+            string mapName = GetMapDisplayName();
+            Text = string.IsNullOrWhiteSpace(mapName) ? "地图查看器" : $"地图查看器 - {mapName}";
+            _mapFileLabel.Text = string.IsNullOrWhiteSpace(mapName) ? "地图: 未加载" : $"地图: {mapName}";
+            _mapFileLabel.ToolTipText = _mapPath ?? string.Empty;
             _mapSizeLabel.Text = $"地图大小: {_map.Width},{_map.Height}";
             _positionLabel.Text = $"坐标: {_mouseLocation.X},{_mouseLocation.Y} 半径: {_radius} 缩放: {_zoom:0.###}x";
             _selectedCellsLabel.Text = IsSelectionDirty() ? $"已选格子: {_selection.Count}（未保存）" : $"已选格子: {_selection.Count}";
+        }
+
+        private string GetMapDisplayName()
+        {
+            if (MapRegion?.Map != null)
+            {
+                string mapName = MapRegion.Map.ServerDescription;
+                if (!string.IsNullOrWhiteSpace(MapRegion.Description))
+                    return $"{mapName} / {MapRegion.Description}";
+
+                return mapName;
+            }
+
+            return string.IsNullOrWhiteSpace(_mapPath) ? null : Path.GetFileName(_mapPath);
         }
 
         private bool IsSelectionDirty()
