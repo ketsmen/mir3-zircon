@@ -14,9 +14,12 @@ namespace Server.WinForms
     public sealed class DiagnosticsForm : Form
     {
         private readonly Session _session;
+        private readonly TabControl _tabs = new TabControl();
         private readonly TextBox _reportText = new TextBox();
+        private readonly DataGridView _orphanGrid = new DataGridView();
         private readonly DataGridView _networkGrid = new DataGridView();
         private readonly ToolStripButton _networkMonitorButton = new ToolStripButton("网络诊断");
+        private readonly BindingList<OrphanDiagnostic.OrphanTypeResult> _orphanResults = new BindingList<OrphanDiagnostic.OrphanTypeResult>();
         private readonly BindingList<DiagnosticValue> _networkDiagnostics = new BindingList<DiagnosticValue>();
 
         public DiagnosticsForm(Session session = null)
@@ -46,7 +49,7 @@ namespace Server.WinForms
             toolStrip.Items.Add(_networkMonitorButton);
             AddButton(toolStrip, "重置网络统计", (_, _) => ResetNetworkDiagnostics());
 
-            TabControl tabs = new TabControl { Dock = DockStyle.Fill };
+            _tabs.Dock = DockStyle.Fill;
 
             _reportText.Dock = DockStyle.Fill;
             _reportText.Multiline = true;
@@ -56,7 +59,19 @@ namespace Server.WinForms
 
             TabPage reportPage = new TabPage("报告");
             reportPage.Controls.Add(_reportText);
-            tabs.TabPages.Add(reportPage);
+            _tabs.TabPages.Add(reportPage);
+
+            _orphanGrid.Dock = DockStyle.Fill;
+            _orphanGrid.AutoGenerateColumns = true;
+            _orphanGrid.ReadOnly = true;
+            _orphanGrid.AllowUserToAddRows = false;
+            _orphanGrid.AllowUserToDeleteRows = false;
+            _orphanGrid.SelectionMode = DataGridViewSelectionMode.CellSelect;
+            _orphanGrid.DataSource = _orphanResults;
+
+            TabPage orphanPage = new TabPage("孤立数据");
+            orphanPage.Controls.Add(_orphanGrid);
+            _tabs.TabPages.Add(orphanPage);
 
             _networkGrid.Dock = DockStyle.Fill;
             _networkGrid.AutoGenerateColumns = true;
@@ -68,9 +83,9 @@ namespace Server.WinForms
 
             TabPage networkPage = new TabPage("网络诊断");
             networkPage.Controls.Add(_networkGrid);
-            tabs.TabPages.Add(networkPage);
+            _tabs.TabPages.Add(networkPage);
 
-            Controls.Add(tabs);
+            Controls.Add(_tabs);
             Controls.Add(toolStrip);
             toolStrip.Dock = DockStyle.Top;
         }
@@ -152,7 +167,9 @@ namespace Server.WinForms
                     ? OrphanDiagnostic.MarkTemporaryOnCleanableOrphans()
                     : OrphanDiagnostic.Scan());
 
+                LoadOrphanResults(result);
                 _reportText.Text = OrphanDiagnostic.FormatLog(result, cleanRun);
+                _tabs.SelectedIndex = 1;
             }
             catch (Exception ex)
             {
@@ -164,6 +181,17 @@ namespace Server.WinForms
             {
                 UseWaitCursor = false;
             }
+        }
+
+        private void LoadOrphanResults(OrphanDiagnostic.ScanResult result)
+        {
+            _orphanResults.Clear();
+
+            foreach (OrphanDiagnostic.OrphanTypeResult row in result.Results)
+                _orphanResults.Add(row);
+
+            if (_orphanGrid.Columns.Count > 0)
+                _orphanGrid.AutoResizeColumns(DataGridViewAutoSizeColumnsMode.DisplayedCells);
         }
 
         private void ResetNetworkDiagnostics()
