@@ -1,5 +1,6 @@
 using Library.SystemModels;
 using MirDB;
+using Server.DBModels;
 using Server.Envir;
 using System;
 using System.Collections;
@@ -758,6 +759,14 @@ namespace Server.WinForms
                     map.StatsChanged();
 
                 refreshed.Add("已刷新地图 BuffStats 统计。");
+            }
+
+            if (itemType == typeof(UserDrop) || itemType == typeof(AccountInfo))
+            {
+                foreach (AccountInfo account in SEnvir.AccountInfoList?.Binding ?? Enumerable.Empty<AccountInfo>())
+                    account.RebuildUserDropCache();
+
+                refreshed.Add("已刷新用户掉落缓存。");
             }
 
             if (refreshed.Count == 0) return string.Empty;
