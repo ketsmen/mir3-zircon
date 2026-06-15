@@ -428,6 +428,11 @@ namespace Server.Envir
                 case "CHECKITEM":
                     ParseItemCheck(line, checks, report);
                     break;
+                case "HASBAGSPACE":
+                case "CHECKBAGSPACE":
+                case "CANGAINITEM":
+                    ParseItemCheck(line, checks, report, CompiledNpcCheckType.CanGainItem);
+                    break;
                 case "CHECKCLASS":
                     if (parts.Count >= 2 && TryParseRequiredClass(parts[1], out RequiredClass requiredClass))
                         checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Class, Class = requiredClass }, line));
@@ -558,7 +563,7 @@ namespace Server.Envir
             return action;
         }
 
-        private void ParseItemCheck(TextNpcScriptLine line, List<CompiledNpcCheck> checks, TextNpcLoadReport report)
+        private void ParseItemCheck(TextNpcScriptLine line, List<CompiledNpcCheck> checks, TextNpcLoadReport report, CompiledNpcCheckType checkType = CompiledNpcCheckType.Item)
         {
             List<string> parts = TokenizeLine(line.Text);
             if (parts.Count < 2)
@@ -583,7 +588,7 @@ namespace Server.Envir
                 return;
             }
 
-            checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Item, Operator = Operator.GreaterThanOrEqual, ItemParameter1 = item, IntParameter1 = count }, line));
+            checks.Add(WithSource(new CompiledNpcCheck { CheckType = checkType, Operator = Operator.GreaterThanOrEqual, ItemParameter1 = item, IntParameter1 = count }, line));
         }
 
         private void ParseCurrencyCheck(TextNpcScriptLine line, List<CompiledNpcCheck> checks, TextNpcLoadReport report)
@@ -1454,6 +1459,7 @@ namespace Server.Envir
         Level,
         Gold,
         Item,
+        CanGainItem,
         Class,
         Gender,
         Fame,

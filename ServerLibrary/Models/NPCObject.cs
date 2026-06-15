@@ -507,6 +507,11 @@ namespace Server.Models
                         if (check.ItemParameter1 == null) continue;
                         if (!Compare(check.Operator, ob.GetItemCount(check.ItemParameter1), check.IntParameter1)) return false;
                         break;
+                    case CompiledNpcCheckType.CanGainItem:
+                        if (check.ItemParameter1 == null) continue;
+                        ItemCheck itemCheck = new(check.ItemParameter1, check.IntParameter1, UserItemFlags.None, TimeSpan.Zero);
+                        if (!ob.CanGainItems(false, itemCheck)) return false;
+                        break;
                     case CompiledNpcCheckType.Class:
                         if (!HasRequiredClass(check.Class, ob.Class)) return false;
                         break;

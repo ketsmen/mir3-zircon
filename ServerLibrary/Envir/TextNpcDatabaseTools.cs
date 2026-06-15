@@ -424,6 +424,9 @@ namespace Server.Envir
                 case CompiledNpcCheckType.Item:
                     check.CheckType = NPCCheckType.HasItem;
                     break;
+                case CompiledNpcCheckType.CanGainItem:
+                    check.CheckType = NPCCheckType.CanGainItem;
+                    break;
                 case CompiledNpcCheckType.Class:
                     check.CheckType = NPCCheckType.Class;
                     check.Operator = Operator.Equal;
@@ -868,6 +871,17 @@ namespace Server.Envir
                     else
                     {
                         AddTodo(script, report, npc, page, $"手动迁移条件: {check.CheckType} {check.Operator}");
+                    }
+                    break;
+                case NPCCheckType.CanGainItem:
+                    if (check.ItemParameter1 != null)
+                    {
+                        script.AppendLine($"HASBAGSPACE {Quote(check.ItemParameter1.ItemName)} {check.IntParameter1}");
+                        report.ChecksExported++;
+                    }
+                    else
+                    {
+                        AddTodo(script, report, npc, page, "手动迁移背包空间条件: 缺少 ItemParameter1");
                     }
                     break;
                 case NPCCheckType.Class:
