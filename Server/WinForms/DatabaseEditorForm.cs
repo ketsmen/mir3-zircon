@@ -1312,6 +1312,8 @@ namespace Server.WinForms
                 if (cache.RightSplitterDistance > 240)
                     _rightSplit.SplitterDistance = Math.Min(cache.RightSplitterDistance, Math.Max(240, _rightSplit.Height - 180));
 
+                ApplyExpandedTreePaths(cache.ExpandedTreePaths);
+
                 if (string.IsNullOrWhiteSpace(_initialTypeName) && _currentType == null && !string.IsNullOrWhiteSpace(cache.LastTypeName))
                 {
                     Type type = _metadata.ObjectTypes.FirstOrDefault(x => x.Name.Equals(cache.LastTypeName, StringComparison.OrdinalIgnoreCase));
@@ -1339,7 +1341,8 @@ namespace Server.WinForms
                     Maximized = WindowState == FormWindowState.Maximized,
                     LeftSplitterDistance = _split.SplitterDistance,
                     RightSplitterDistance = _rightSplit.SplitterDistance,
-                    LastTypeName = _currentType?.Name
+                    LastTypeName = _currentType?.Name,
+                    ExpandedTreePaths = GetExpandedTreePaths().ToList()
                 };
 
                 File.WriteAllText(UiCachePath, JsonSerializer.Serialize(cache, new JsonSerializerOptions
@@ -1361,6 +1364,50 @@ namespace Server.WinForms
             public int LeftSplitterDistance { get; set; }
             public int RightSplitterDistance { get; set; }
             public string LastTypeName { get; set; }
+            public List<string> ExpandedTreePaths { get; set; } = new List<string>();
+        }
+
+        private IEnumerable<string> GetExpandedTreePaths()
+        {
+            foreach (TreeNode node in GetExpandedTreeNodes(_tree.Nodes))
+                yield return node.FullPath;
+        }
+
+        private static IEnumerable<TreeNode> GetExpandedTreeNodes(TreeNodeCollection nodes)
+        {
+            foreach (TreeNode node in nodes)
+            {
+                if (node.IsExpanded)
+                    yield return node;
+
+                foreach (TreeNode child in GetExpandedTreeNodes(node.Nodes))
+                    yield return child;
+            }
+        }
+
+        private void ApplyExpandedTreePaths(IReadOnlyCollection<string> expandedPaths)
+        {
+            if (expandedPaths == null) return;
+
+            HashSet<string> expanded = new HashSet<string>(expandedPaths, StringComparer.OrdinalIgnoreCase);
+            _tree.CollapseAll();
+
+            foreach (TreeNode node in GetAllTreeNodes(_tree.Nodes))
+            {
+                if (expanded.Contains(node.FullPath))
+                    node.Expand();
+            }
+        }
+
+        private static IEnumerable<TreeNode> GetAllTreeNodes(TreeNodeCollection nodes)
+        {
+            foreach (TreeNode node in nodes)
+            {
+                yield return node;
+
+                foreach (TreeNode child in GetAllTreeNodes(node.Nodes))
+                    yield return child;
+            }
         }
     }
 }
