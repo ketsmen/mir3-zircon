@@ -54,63 +54,7 @@ namespace LibraryEditor
 
         private void Form1_DragDrop(object sender, DragEventArgs e)
         {
-            return; //Not added yet
-
-            string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
-
-            if (Path.GetExtension(files[0]).ToUpper() == ".WIL" ||
-                Path.GetExtension(files[0]).ToUpper() == ".WZL" ||
-                Path.GetExtension(files[0]).ToUpper() == ".MIZ")
-            {
-                try
-                {
-                    ParallelOptions options = new ParallelOptions { MaxDegreeOfParallelism = 8 };
-                    Parallel.For(0, files.Length, options, i =>
-                    {
-                        if (Path.GetExtension(files[i]).ToUpper() == ".WTL")
-                        {
-                            WTLLibrary WTLlib = new WTLLibrary(files[i]);
-                            WTLlib.ToMLibrary();
-                        }
-                        else
-                        {
-                            WeMadeLibrary WILlib = new WeMadeLibrary(files[i]);
-                            WILlib.ToMLibrary();
-                        }
-                        toolStripProgressBar.Value++;
-                    });
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(ex.ToString());
-                }
-
-                toolStripProgressBar.Value = 0;
-
-                MessageBox.Show(
-                    string.Format("Successfully converted {0} {1}",
-                    (OpenWeMadeDialog.FileNames.Length).ToString(),
-                    (OpenWeMadeDialog.FileNames.Length > 1) ? "libraries" : "library"));
-            }
-            else if (Path.GetExtension(files[0]).ToUpper() == ".LIB")
-            {
-                ClearInterface();
-                ImageList.Images.Clear();
-                PreviewListView.Items.Clear();
-                _indexList.Clear();
-
-                if (_library != null) _library.Close();
-                //_library = new MLibraryV2(files[0]);
-                //PreviewListView.VirtualListSize = _library.Images.Count;
-                PreviewListView.RedrawItems(0, PreviewListView.Items.Count - 1, true);
-
-                // Show .Lib path in application title.
-                this.Text = files[0].ToString();
-            }
-            else
-            {
-                return;
-            }
+            // 拖拽导入暂未启用。
         }
 
         private void Form1_DragEnter(object sender, DragEventArgs e)
@@ -124,9 +68,9 @@ namespace LibraryEditor
             ImageBox.Image = null;
             ZoomTrackBar.Value = 1;
 
-            WidthLabel.Text = "<No Image>";
-            HeightLabel.Text = "<No Image>";
-            ShadowTypeLabel.Text = "<No Image>";
+            WidthLabel.Text = "无图片";
+            HeightLabel.Text = "无图片";
+            ShadowTypeLabel.Text = "无图片";
             OffSetXTextBox.Text = string.Empty;
             OffSetYTextBox.Text = string.Empty;
             OffSetXTextBox.BackColor = SystemColors.Window;
@@ -190,12 +134,12 @@ namespace LibraryEditor
             if (PreviewListView.SelectedIndices.Count > 1)
             {
                 toolStripStatusLabel.ForeColor = Color.Red;
-                toolStripStatusLabel.Text = "Multiple images selected.";
+                toolStripStatusLabel.Text = "已选择多张图片。";
             }
             else
             {
                 toolStripStatusLabel.ForeColor = SystemColors.ControlText;
-                toolStripStatusLabel.Text = "Selected Image: " + string.Format("{0} / {1}",
+                toolStripStatusLabel.Text = "当前图片: " + string.Format("{0} / {1}",
                 PreviewListView.SelectedIndices[0].ToString(),
                 (PreviewListView.Items.Count - 1).ToString());
             }
@@ -288,7 +232,6 @@ namespace LibraryEditor
         private void openToolStripMenuItem_Click(object sender, EventArgs e)
         {
             if (OpenLibraryDialog.ShowDialog() != DialogResult.OK) return;
-            MessageBox.Show(OpenLibraryDialog.FileName);
             ClearInterface();
             ImageList.Images.Clear();
             PreviewListView.Items.Clear();
@@ -337,8 +280,8 @@ namespace LibraryEditor
             if (_library.FileName == null) return;
             if (PreviewListView.SelectedIndices.Count == 0) return;
 
-            if (MessageBox.Show("Are you sure you want to delete the selected Image?",
-                "Delete Selected.",
+            if (MessageBox.Show("确定要删除选中的图片吗？",
+                "删除选中图片",
                 MessageBoxButtons.YesNoCancel) != DialogResult.Yes) return;
 
             var removeList = PreviewListView.SelectedIndices.Cast<int>().ToList();
@@ -404,9 +347,8 @@ namespace LibraryEditor
 
             toolStripProgressBar.Value = 0;
 
-            MessageBox.Show(string.Format("Successfully converted {0} {1}",
-                (OpenWeMadeDialog.FileNames.Length).ToString(),
-                (OpenWeMadeDialog.FileNames.Length > 1) ? "libraries" : "library"));
+            MessageBox.Show(string.Format("已成功转换 {0} 个图库。",
+                (OpenWeMadeDialog.FileNames.Length).ToString()));
         }
 
         private void copyToToolStripMenuItem_Click(object sender, EventArgs e)
@@ -434,8 +376,8 @@ namespace LibraryEditor
 
         private void removeBlanksToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (MessageBox.Show("Are you sure you want to remove the blank images?",
-                "Remove Blanks",
+            if (MessageBox.Show("确定要移除空白图片吗？",
+                "移除空白图片",
                 MessageBoxButtons.YesNo) != DialogResult.Yes) return;
 
             _library.RemoveBlanks();
@@ -584,8 +526,8 @@ namespace LibraryEditor
 
         private void safeToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (MessageBox.Show("Are you sure you want to remove the blank images?",
-                "Remove Blanks", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
+            if (MessageBox.Show("确定要移除空白图片吗？",
+                "移除空白图片", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
 
             _library.RemoveBlanks(true);
             ImageList.Images.Clear();
@@ -699,7 +641,7 @@ namespace LibraryEditor
             }
 
             toolStripProgressBar.Value = 0;
-            MessageBox.Show("Saving to " + _folder + "...", "Image Saved", MessageBoxButtons.OK);
+            MessageBox.Show("已导出到 " + _folder, "图片已导出", MessageBoxButtons.OK);
         }
 
         // Don't let the splitter go out of sight on resizing.
@@ -753,7 +695,7 @@ namespace LibraryEditor
                     ImageBox.Image = _newBMP;
 
                     toolStripStatusLabel.ForeColor = SystemColors.ControlText;
-                    toolStripStatusLabel.Text = "Selected Image: " + string.Format("{0} / {1}",
+                    toolStripStatusLabel.Text = "当前图片: " + string.Format("{0} / {1}",
                         PreviewListView.SelectedIndices[0].ToString(),
                         (PreviewListView.Items.Count - 1).ToString());
                 }
@@ -785,7 +727,7 @@ namespace LibraryEditor
             if (_col.Count > 1)
             {
                 toolStripStatusLabel.ForeColor = Color.Red;
-                toolStripStatusLabel.Text = "Multiple images selected.";
+                toolStripStatusLabel.Text = "已选择多张图片。";
             }
         }
 
@@ -1039,24 +981,24 @@ namespace LibraryEditor
             label.Text = promptText;
             textBox.Text = value;
 
-            buttonOk.Text = "OK";
-            buttonCancel.Text = "Cancel";
+            buttonOk.Text = "确定";
+            buttonCancel.Text = "取消";
             buttonOk.DialogResult = DialogResult.OK;
             buttonCancel.DialogResult = DialogResult.Cancel;
 
-            label.SetBounds(9, 20, 372, 13);
-            textBox.SetBounds(12, 36, 372, 20);
-            buttonOk.SetBounds(228, 72, 75, 23);
-            buttonCancel.SetBounds(309, 72, 75, 23);
+            label.SetBounds(12, 18, 416, 18);
+            textBox.SetBounds(12, 42, 416, 23);
+            buttonOk.SetBounds(260, 78, 80, 26);
+            buttonCancel.SetBounds(348, 78, 80, 26);
 
             label.AutoSize = true;
             textBox.Anchor = textBox.Anchor | AnchorStyles.Right;
             buttonOk.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             buttonCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
 
-            form.ClientSize = new Size(396, 107);
+            form.ClientSize = new Size(440, 116);
             form.Controls.AddRange(new Control[] { label, textBox, buttonOk, buttonCancel });
-            form.ClientSize = new Size(Math.Max(300, label.Right + 10), form.ClientSize.Height);
+            form.ClientSize = new Size(Math.Max(440, label.Right + 12), form.ClientSize.Height);
             form.FormBorderStyle = FormBorderStyle.FixedDialog;
             form.StartPosition = FormStartPosition.CenterScreen;
             form.MinimizeBox = false;
@@ -1079,16 +1021,16 @@ namespace LibraryEditor
 
             string value = "0";
             int temp = 0;
-            if (InputBox("Add Blanks To End Of Library", "How Many Blank Images To Add:", ref value) == DialogResult.OK)
+            if (InputBox("添加空白图片", "要在图库末尾添加多少张空白图片：", ref value) == DialogResult.OK)
             {
                 if (!int.TryParse(value, out temp))
                 {
-                    MessageBox.Show("Should be a numeric value");
+                    MessageBox.Show("请输入数字。");
                     return;
                 }
                 if (temp <= 0)
                 {
-                    MessageBox.Show("Must be atleast 1");
+                    MessageBox.Show("数量必须至少为 1。");
                     return;
                 }
                 newImages = temp;
@@ -1108,16 +1050,16 @@ namespace LibraryEditor
 
             string value = "0";
             int temp = 0;
-            if (InputBox("Insert Blank Images At Current Selected Position", "How Many Blank Images To Insert:", ref value) == DialogResult.OK)
+            if (InputBox("插入空白图片", "要在当前选中位置插入多少张空白图片：", ref value) == DialogResult.OK)
             {
                 if (!int.TryParse(value, out temp))
                 {
-                    MessageBox.Show("Should be a numeric value");
+                    MessageBox.Show("请输入数字。");
                     return;
                 }
                 if (temp <= 0)
                 {
-                    MessageBox.Show("Must be atleast 1");
+                    MessageBox.Show("数量必须至少为 1。");
                     return;
                 }
                 newImages = temp;
@@ -1140,16 +1082,16 @@ namespace LibraryEditor
 
             string value = "1000";
             int temp = 0;
-            if (InputBox("Merge Blanks", "How Many Images Per Object:", ref value) == DialogResult.OK)
+            if (InputBox("合并图库", "每个对象预留多少张图片：", ref value) == DialogResult.OK)
             {
                 if (!int.TryParse(value, out temp))
                 {
-                    MessageBox.Show("Should be a numeric value");
+                    MessageBox.Show("请输入数字。");
                     return;
                 }
                 if (temp <= 0)
                 {
-                    MessageBox.Show("Must be atleast 1");
+                    MessageBox.Show("数量必须至少为 1。");
                     return;
                 }
                 newImages = temp;
@@ -1222,9 +1164,8 @@ namespace LibraryEditor
 
             toolStripProgressBar.Value = 0;
 
-            MessageBox.Show(string.Format("Successfully merged {0} {1}",
-                (OpenMergeDialog.FileNames.Length).ToString(),
-                (OpenMergeDialog.FileNames.Length > 1) ? "libraries" : "library"));
+            MessageBox.Show(string.Format("已成功合并 {0} 个图库。",
+                (OpenMergeDialog.FileNames.Length).ToString()));
 
             ImageList.Images.Clear();
             _indexList.Clear();

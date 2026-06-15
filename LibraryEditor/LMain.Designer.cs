@@ -124,62 +124,62 @@
             fileToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { newToolStripMenuItem, openToolStripMenuItem, toolStripMenuItem1, saveToolStripMenuItem, saveAsToolStripMenuItem, toolStripMenuItem2, closeToolStripMenuItem });
             fileToolStripMenuItem.Image = (System.Drawing.Image)resources.GetObject("fileToolStripMenuItem.Image");
             fileToolStripMenuItem.Name = "fileToolStripMenuItem";
-            fileToolStripMenuItem.Size = new System.Drawing.Size(53, 20);
-            fileToolStripMenuItem.Text = "File";
+            fileToolStripMenuItem.Size = new System.Drawing.Size(58, 20);
+            fileToolStripMenuItem.Text = "文件";
             // 
             // newToolStripMenuItem
             // 
             newToolStripMenuItem.Image = (System.Drawing.Image)resources.GetObject("newToolStripMenuItem.Image");
             newToolStripMenuItem.Name = "newToolStripMenuItem";
-            newToolStripMenuItem.Size = new System.Drawing.Size(114, 22);
-            newToolStripMenuItem.Text = "New";
-            newToolStripMenuItem.ToolTipText = "New .Lib";
+            newToolStripMenuItem.Size = new System.Drawing.Size(136, 22);
+            newToolStripMenuItem.Text = "新建";
+            newToolStripMenuItem.ToolTipText = "新建 .Zl 图库";
             newToolStripMenuItem.Click += newToolStripMenuItem_Click;
             // 
             // openToolStripMenuItem
             // 
             openToolStripMenuItem.Image = (System.Drawing.Image)resources.GetObject("openToolStripMenuItem.Image");
             openToolStripMenuItem.Name = "openToolStripMenuItem";
-            openToolStripMenuItem.Size = new System.Drawing.Size(114, 22);
-            openToolStripMenuItem.Text = "Open";
-            openToolStripMenuItem.ToolTipText = "Open Shanda or Wemade files.";
+            openToolStripMenuItem.Size = new System.Drawing.Size(136, 22);
+            openToolStripMenuItem.Text = "打开";
+            openToolStripMenuItem.ToolTipText = "打开 Zircon、盛大或 Wemade 图库文件。";
             openToolStripMenuItem.Click += openToolStripMenuItem_Click;
             // 
             // toolStripMenuItem1
             // 
             toolStripMenuItem1.Name = "toolStripMenuItem1";
-            toolStripMenuItem1.Size = new System.Drawing.Size(111, 6);
+            toolStripMenuItem1.Size = new System.Drawing.Size(133, 6);
             // 
             // saveToolStripMenuItem
             // 
             saveToolStripMenuItem.Image = (System.Drawing.Image)resources.GetObject("saveToolStripMenuItem.Image");
             saveToolStripMenuItem.Name = "saveToolStripMenuItem";
-            saveToolStripMenuItem.Size = new System.Drawing.Size(114, 22);
-            saveToolStripMenuItem.Text = "Save";
-            saveToolStripMenuItem.ToolTipText = "Saves currently open .Lib";
+            saveToolStripMenuItem.Size = new System.Drawing.Size(136, 22);
+            saveToolStripMenuItem.Text = "保存";
+            saveToolStripMenuItem.ToolTipText = "保存当前打开的 .Zl 图库";
             saveToolStripMenuItem.Click += saveToolStripMenuItem_Click;
             // 
             // saveAsToolStripMenuItem
             // 
             saveAsToolStripMenuItem.Image = (System.Drawing.Image)resources.GetObject("saveAsToolStripMenuItem.Image");
             saveAsToolStripMenuItem.Name = "saveAsToolStripMenuItem";
-            saveAsToolStripMenuItem.Size = new System.Drawing.Size(114, 22);
-            saveAsToolStripMenuItem.Text = "Save As";
-            saveAsToolStripMenuItem.ToolTipText = ".Lib Only.";
+            saveAsToolStripMenuItem.Size = new System.Drawing.Size(136, 22);
+            saveAsToolStripMenuItem.Text = "另存为";
+            saveAsToolStripMenuItem.ToolTipText = "另存为 .Zl 图库。";
             saveAsToolStripMenuItem.Click += saveAsToolStripMenuItem_Click;
             // 
             // toolStripMenuItem2
             // 
             toolStripMenuItem2.Name = "toolStripMenuItem2";
-            toolStripMenuItem2.Size = new System.Drawing.Size(111, 6);
+            toolStripMenuItem2.Size = new System.Drawing.Size(133, 6);
             // 
             // closeToolStripMenuItem
             // 
             closeToolStripMenuItem.Image = (System.Drawing.Image)resources.GetObject("closeToolStripMenuItem.Image");
             closeToolStripMenuItem.Name = "closeToolStripMenuItem";
-            closeToolStripMenuItem.Size = new System.Drawing.Size(114, 22);
-            closeToolStripMenuItem.Text = "Close";
-            closeToolStripMenuItem.ToolTipText = "Exit Application.";
+            closeToolStripMenuItem.Size = new System.Drawing.Size(136, 22);
+            closeToolStripMenuItem.Text = "关闭";
+            closeToolStripMenuItem.ToolTipText = "关闭图库编辑器。";
             closeToolStripMenuItem.Click += closeToolStripMenuItem_Click;
             // 
             // functionsToolStripMenuItem
@@ -187,16 +187,16 @@
             functionsToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { copyToToolStripMenuItem, countBlanksToolStripMenuItem, removeBlanksToolStripMenuItem, convertToolStripMenuItem });
             functionsToolStripMenuItem.Image = (System.Drawing.Image)resources.GetObject("functionsToolStripMenuItem.Image");
             functionsToolStripMenuItem.Name = "functionsToolStripMenuItem";
-            functionsToolStripMenuItem.Size = new System.Drawing.Size(87, 20);
-            functionsToolStripMenuItem.Text = "Functions";
+            functionsToolStripMenuItem.Size = new System.Drawing.Size(58, 20);
+            functionsToolStripMenuItem.Text = "工具";
             // 
             // copyToToolStripMenuItem
             // 
             copyToToolStripMenuItem.Image = (System.Drawing.Image)resources.GetObject("copyToToolStripMenuItem.Image");
             copyToToolStripMenuItem.Name = "copyToToolStripMenuItem";
             copyToToolStripMenuItem.Size = new System.Drawing.Size(154, 22);
-            copyToToolStripMenuItem.Text = "Copy To..";
-            copyToToolStripMenuItem.ToolTipText = "Copy to a new .Lib or to the end of an exsisting one.";
+            copyToToolStripMenuItem.Text = "复制到...";
+            copyToToolStripMenuItem.ToolTipText = "复制到新的 .Zl 图库，或追加到已有图库末尾。";
             copyToToolStripMenuItem.Visible = false;
             copyToToolStripMenuItem.Click += copyToToolStripMenuItem_Click;
             // 
@@ -205,8 +205,8 @@
             countBlanksToolStripMenuItem.Image = (System.Drawing.Image)resources.GetObject("countBlanksToolStripMenuItem.Image");
             countBlanksToolStripMenuItem.Name = "countBlanksToolStripMenuItem";
             countBlanksToolStripMenuItem.Size = new System.Drawing.Size(154, 22);
-            countBlanksToolStripMenuItem.Text = "Count Blanks";
-            countBlanksToolStripMenuItem.ToolTipText = "Counts the blank images in the .Lib";
+            countBlanksToolStripMenuItem.Text = "统计空白";
+            countBlanksToolStripMenuItem.ToolTipText = "统计图库中的空白图片。";
             countBlanksToolStripMenuItem.Visible = false;
             countBlanksToolStripMenuItem.Click += countBlanksToolStripMenuItem_Click;
             // 
@@ -216,17 +216,17 @@
             removeBlanksToolStripMenuItem.Image = (System.Drawing.Image)resources.GetObject("removeBlanksToolStripMenuItem.Image");
             removeBlanksToolStripMenuItem.Name = "removeBlanksToolStripMenuItem";
             removeBlanksToolStripMenuItem.Size = new System.Drawing.Size(154, 22);
-            removeBlanksToolStripMenuItem.Text = "Remove Blanks";
-            removeBlanksToolStripMenuItem.ToolTipText = "Quick removal of blanks.";
+            removeBlanksToolStripMenuItem.Text = "移除空白";
+            removeBlanksToolStripMenuItem.ToolTipText = "快速移除空白图片。";
             removeBlanksToolStripMenuItem.Click += removeBlanksToolStripMenuItem_Click;
             // 
             // safeToolStripMenuItem
             // 
             safeToolStripMenuItem.Image = (System.Drawing.Image)resources.GetObject("safeToolStripMenuItem.Image");
             safeToolStripMenuItem.Name = "safeToolStripMenuItem";
-            safeToolStripMenuItem.Size = new System.Drawing.Size(96, 22);
-            safeToolStripMenuItem.Text = "Safe";
-            safeToolStripMenuItem.ToolTipText = "Use the safe method of removing blanks.";
+            safeToolStripMenuItem.Size = new System.Drawing.Size(108, 22);
+            safeToolStripMenuItem.Text = "安全模式";
+            safeToolStripMenuItem.ToolTipText = "使用安全方式移除空白图片。";
             safeToolStripMenuItem.Click += safeToolStripMenuItem_Click;
             // 
             // convertToolStripMenuItem
@@ -234,8 +234,8 @@
             convertToolStripMenuItem.Image = (System.Drawing.Image)resources.GetObject("convertToolStripMenuItem.Image");
             convertToolStripMenuItem.Name = "convertToolStripMenuItem";
             convertToolStripMenuItem.Size = new System.Drawing.Size(154, 22);
-            convertToolStripMenuItem.Text = "Converter";
-            convertToolStripMenuItem.ToolTipText = "Convert Wil/Wzl/Miz to .Lib";
+            convertToolStripMenuItem.Text = "格式转换";
+            convertToolStripMenuItem.ToolTipText = "将 Wil/Wtl/Wzl/Miz/Lib 转换为 .Zl。";
             convertToolStripMenuItem.Click += convertToolStripMenuItem_Click;
             // 
             // skinToolStripMenuItem
@@ -243,8 +243,8 @@
             skinToolStripMenuItem.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
             skinToolStripMenuItem.Image = (System.Drawing.Image)resources.GetObject("skinToolStripMenuItem.Image");
             skinToolStripMenuItem.Name = "skinToolStripMenuItem";
-            skinToolStripMenuItem.Size = new System.Drawing.Size(57, 20);
-            skinToolStripMenuItem.Text = "Skin";
+            skinToolStripMenuItem.Size = new System.Drawing.Size(58, 20);
+            skinToolStripMenuItem.Text = "皮肤";
             skinToolStripMenuItem.Visible = false;
             // 
             // splitContainer1
@@ -324,9 +324,9 @@
             ShadowTypeLabel.Location = new System.Drawing.Point(144, 119);
             ShadowTypeLabel.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             ShadowTypeLabel.Name = "ShadowTypeLabel";
-            ShadowTypeLabel.Size = new System.Drawing.Size(75, 15);
+            ShadowTypeLabel.Size = new System.Drawing.Size(85, 15);
             ShadowTypeLabel.TabIndex = 25;
-            ShadowTypeLabel.Text = "<No Image>";
+            ShadowTypeLabel.Text = "无图片";
             // 
             // InsertBlankButton
             // 
@@ -339,7 +339,7 @@
             InsertBlankButton.Size = new System.Drawing.Size(122, 30);
             InsertBlankButton.TabIndex = 24;
             InsertBlankButton.Tag = "";
-            InsertBlankButton.Text = "Insert Blanks";
+            InsertBlankButton.Text = "插入空白";
             InsertBlankButton.TextImageRelation = System.Windows.Forms.TextImageRelation.TextBeforeImage;
             InsertBlankButton.UseVisualStyleBackColor = true;
             InsertBlankButton.Click += InsertBlanksButton_Click;
@@ -355,7 +355,7 @@
             AddBlankButton.Size = new System.Drawing.Size(122, 30);
             AddBlankButton.TabIndex = 23;
             AddBlankButton.Tag = "";
-            AddBlankButton.Text = "Add Blanks";
+            AddBlankButton.Text = "添加空白";
             AddBlankButton.TextImageRelation = System.Windows.Forms.TextImageRelation.TextBeforeImage;
             AddBlankButton.UseVisualStyleBackColor = true;
             AddBlankButton.Click += AddBlanksButton_Click;
@@ -374,12 +374,12 @@
             // checkBoxPreventAntiAliasing
             // 
             checkBoxPreventAntiAliasing.AutoSize = true;
-            checkBoxPreventAntiAliasing.Location = new System.Drawing.Point(110, 440);
+            checkBoxPreventAntiAliasing.Location = new System.Drawing.Point(124, 440);
             checkBoxPreventAntiAliasing.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             checkBoxPreventAntiAliasing.Name = "checkBoxPreventAntiAliasing";
-            checkBoxPreventAntiAliasing.Size = new System.Drawing.Size(112, 19);
+            checkBoxPreventAntiAliasing.Size = new System.Drawing.Size(74, 19);
             checkBoxPreventAntiAliasing.TabIndex = 20;
-            checkBoxPreventAntiAliasing.Text = "No Anti-aliasing";
+            checkBoxPreventAntiAliasing.Text = "抗锯齿";
             checkBoxPreventAntiAliasing.UseVisualStyleBackColor = true;
             checkBoxPreventAntiAliasing.CheckedChanged += checkBoxPreventAntiAliasing_CheckedChanged;
             // 
@@ -389,9 +389,9 @@
             checkBoxQuality.Location = new System.Drawing.Point(12, 440);
             checkBoxQuality.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             checkBoxQuality.Name = "checkBoxQuality";
-            checkBoxQuality.Size = new System.Drawing.Size(87, 19);
+            checkBoxQuality.Size = new System.Drawing.Size(86, 19);
             checkBoxQuality.TabIndex = 19;
-            checkBoxQuality.Text = "No Blurring";
+            checkBoxQuality.Text = "像素清晰";
             checkBoxQuality.UseVisualStyleBackColor = true;
             checkBoxQuality.CheckedChanged += checkBoxQuality_CheckedChanged;
             // 
@@ -434,7 +434,7 @@
             buttonReplace.Size = new System.Drawing.Size(122, 30);
             buttonReplace.TabIndex = 15;
             buttonReplace.Tag = "";
-            buttonReplace.Text = "Replace Image";
+            buttonReplace.Text = "替换图片";
             buttonReplace.TextImageRelation = System.Windows.Forms.TextImageRelation.TextBeforeImage;
             buttonReplace.UseVisualStyleBackColor = true;
             buttonReplace.Click += buttonReplace_Click;
@@ -449,7 +449,7 @@
             pictureBox.SizeMode = System.Windows.Forms.PictureBoxSizeMode.AutoSize;
             pictureBox.TabIndex = 14;
             pictureBox.TabStop = false;
-            toolTip.SetToolTip(pictureBox, "Switch from Black to White background.");
+            toolTip.SetToolTip(pictureBox, "切换黑色/白色预览背景。");
             pictureBox.Click += pictureBox_Click;
             // 
             // ZoomTrackBar
@@ -476,7 +476,7 @@
             ExportButton.Size = new System.Drawing.Size(122, 30);
             ExportButton.TabIndex = 3;
             ExportButton.Tag = "";
-            ExportButton.Text = "Export Images";
+            ExportButton.Text = "导出图片";
             ExportButton.TextImageRelation = System.Windows.Forms.TextImageRelation.TextBeforeImage;
             ExportButton.UseVisualStyleBackColor = true;
             ExportButton.Click += ExportButton_Click;
@@ -492,7 +492,7 @@
             mergeBtn.Size = new System.Drawing.Size(122, 30);
             mergeBtn.TabIndex = 22;
             mergeBtn.Tag = "";
-            mergeBtn.Text = "Merge Libraries";
+            mergeBtn.Text = "合并图库";
             mergeBtn.TextImageRelation = System.Windows.Forms.TextImageRelation.TextBeforeImage;
             mergeBtn.UseVisualStyleBackColor = true;
             mergeBtn.Click += MergeButton_Click;
@@ -508,7 +508,7 @@
             InsertImageButton.Size = new System.Drawing.Size(122, 30);
             InsertImageButton.TabIndex = 1;
             InsertImageButton.Tag = "";
-            InsertImageButton.Text = "Insert Images";
+            InsertImageButton.Text = "插入图片";
             InsertImageButton.TextImageRelation = System.Windows.Forms.TextImageRelation.TextBeforeImage;
             InsertImageButton.UseVisualStyleBackColor = true;
             InsertImageButton.Click += InsertImageButton_Click;
@@ -542,7 +542,7 @@
             DeleteButton.Size = new System.Drawing.Size(122, 30);
             DeleteButton.TabIndex = 2;
             DeleteButton.Tag = "";
-            DeleteButton.Text = "Delete Images";
+            DeleteButton.Text = "删除图片";
             DeleteButton.TextImageRelation = System.Windows.Forms.TextImageRelation.TextBeforeImage;
             DeleteButton.UseVisualStyleBackColor = true;
             DeleteButton.Click += DeleteButton_Click;
@@ -558,32 +558,34 @@
             AddButton.Size = new System.Drawing.Size(122, 30);
             AddButton.TabIndex = 0;
             AddButton.Tag = "";
-            AddButton.Text = "Add Images";
+            AddButton.Text = "添加图片";
             AddButton.TextImageRelation = System.Windows.Forms.TextImageRelation.TextBeforeImage;
             AddButton.UseVisualStyleBackColor = true;
             AddButton.Click += AddButton_Click;
             // 
             // label10
             // 
-            label10.AutoSize = true;
+            label10.AutoSize = false;
             label10.ForeColor = System.Drawing.SystemColors.ControlText;
-            label10.Location = new System.Drawing.Point(78, 91);
+            label10.Location = new System.Drawing.Point(42, 91);
             label10.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             label10.Name = "label10";
-            label10.Size = new System.Drawing.Size(53, 15);
+            label10.Size = new System.Drawing.Size(92, 15);
             label10.TabIndex = 12;
-            label10.Text = "OffSet Y:";
+            label10.Text = "偏移 Y:";
+            label10.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
             // 
             // label8
             // 
-            label8.AutoSize = true;
+            label8.AutoSize = false;
             label8.ForeColor = System.Drawing.SystemColors.ControlText;
-            label8.Location = new System.Drawing.Point(78, 61);
+            label8.Location = new System.Drawing.Point(42, 61);
             label8.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             label8.Name = "label8";
-            label8.Size = new System.Drawing.Size(53, 15);
+            label8.Size = new System.Drawing.Size(92, 15);
             label8.TabIndex = 11;
-            label8.Text = "OffSet X:";
+            label8.Text = "偏移 X:";
+            label8.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
             // 
             // HeightLabel
             // 
@@ -592,20 +594,21 @@
             HeightLabel.Location = new System.Drawing.Point(144, 35);
             HeightLabel.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             HeightLabel.Name = "HeightLabel";
-            HeightLabel.Size = new System.Drawing.Size(75, 15);
+            HeightLabel.Size = new System.Drawing.Size(85, 15);
             HeightLabel.TabIndex = 10;
-            HeightLabel.Text = "<No Image>";
+            HeightLabel.Text = "无图片";
             // 
             // label6
             // 
-            label6.AutoSize = true;
+            label6.AutoSize = false;
             label6.ForeColor = System.Drawing.SystemColors.ControlText;
-            label6.Location = new System.Drawing.Point(89, 35);
+            label6.Location = new System.Drawing.Point(42, 35);
             label6.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             label6.Name = "label6";
-            label6.Size = new System.Drawing.Size(46, 15);
+            label6.Size = new System.Drawing.Size(92, 15);
             label6.TabIndex = 9;
-            label6.Text = "Height:";
+            label6.Text = "高度:";
+            label6.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
             // 
             // WidthLabel
             // 
@@ -614,20 +617,21 @@
             WidthLabel.Location = new System.Drawing.Point(144, 14);
             WidthLabel.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             WidthLabel.Name = "WidthLabel";
-            WidthLabel.Size = new System.Drawing.Size(75, 15);
+            WidthLabel.Size = new System.Drawing.Size(85, 15);
             WidthLabel.TabIndex = 8;
-            WidthLabel.Text = "<No Image>";
+            WidthLabel.Text = "无图片";
             // 
             // label1
             // 
-            label1.AutoSize = true;
+            label1.AutoSize = false;
             label1.ForeColor = System.Drawing.SystemColors.ControlText;
-            label1.Location = new System.Drawing.Point(92, 14);
+            label1.Location = new System.Drawing.Point(42, 14);
             label1.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             label1.Name = "label1";
-            label1.Size = new System.Drawing.Size(42, 15);
+            label1.Size = new System.Drawing.Size(92, 15);
             label1.TabIndex = 7;
-            label1.Text = "Width:";
+            label1.Text = "宽度:";
+            label1.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
             // 
             // panel
             // 
@@ -679,26 +683,26 @@
             // 
             // OpenLibraryDialog
             // 
-            OpenLibraryDialog.Filter = "Zircon Library|*.Zl";
+            OpenLibraryDialog.Filter = "Zircon 图库 (*.Zl)|*.Zl";
             OpenLibraryDialog.FileOk += OpenLibraryDialog_FileOk;
             // 
             // SaveLibraryDialog
             // 
-            SaveLibraryDialog.Filter = "Zircon Library|*.Zl";
+            SaveLibraryDialog.Filter = "Zircon 图库 (*.Zl)|*.Zl";
             // 
             // ImportImageDialog
             // 
-            ImportImageDialog.Filter = "Images (*.BMP;*.JPG;*.GIF;*.PNG)|*.BMP;*.JPG;*.GIF;*.PNG|All files (*.*)|*.*";
+            ImportImageDialog.Filter = "图片文件 (*.BMP;*.JPG;*.GIF;*.PNG)|*.BMP;*.JPG;*.GIF;*.PNG|所有文件 (*.*)|*.*";
             ImportImageDialog.Multiselect = true;
             // 
             // OpenWeMadeDialog
             // 
-            OpenWeMadeDialog.Filter = "WeMade|*.Wil;*.Wtl|Shanda|*.Wzl;*.Miz|Lib|*.Lib";
+            OpenWeMadeDialog.Filter = "Wemade 图库|*.Wil;*.Wtl|盛大图库|*.Wzl;*.Miz|Lib 图库|*.Lib";
             OpenWeMadeDialog.Multiselect = true;
             // 
             // OpenMergeDialog
             // 
-            OpenMergeDialog.Filter = "Zircon Library|*.Zl|WeMade|*.Wil;*.Wtl|Shanda|*.Wzl;*.Miz|Lib|*.Lib";
+            OpenMergeDialog.Filter = "Zircon 图库|*.Zl|Wemade 图库|*.Wil;*.Wtl|盛大图库|*.Wzl;*.Miz|Lib 图库|*.Lib";
             OpenMergeDialog.Multiselect = true;
             // 
             // statusStrip
@@ -715,8 +719,8 @@
             // toolStripStatusLabel
             // 
             toolStripStatusLabel.Name = "toolStripStatusLabel";
-            toolStripStatusLabel.Size = new System.Drawing.Size(90, 19);
-            toolStripStatusLabel.Text = "Selected Image:";
+            toolStripStatusLabel.Size = new System.Drawing.Size(68, 19);
+            toolStripStatusLabel.Text = "当前图片:";
             // 
             // toolStripProgressBar
             // 
@@ -742,12 +746,12 @@
             // 
             radioButtonOverlay.AutoSize = true;
             radioButtonOverlay.Enabled = false;
-            radioButtonOverlay.Location = new System.Drawing.Point(166, 6);
+            radioButtonOverlay.Location = new System.Drawing.Point(154, 6);
             radioButtonOverlay.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             radioButtonOverlay.Name = "radioButtonOverlay";
-            radioButtonOverlay.Size = new System.Drawing.Size(65, 19);
+            radioButtonOverlay.Size = new System.Drawing.Size(50, 19);
             radioButtonOverlay.TabIndex = 2;
-            radioButtonOverlay.Text = "Overlay";
+            radioButtonOverlay.Text = "覆盖";
             radioButtonOverlay.UseVisualStyleBackColor = true;
             radioButtonOverlay.CheckedChanged += radioButtonOverlay_CheckedChanged;
             // 
@@ -758,9 +762,9 @@
             radioButtonShadow.Location = new System.Drawing.Point(84, 6);
             radioButtonShadow.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             radioButtonShadow.Name = "radioButtonShadow";
-            radioButtonShadow.Size = new System.Drawing.Size(67, 19);
+            radioButtonShadow.Size = new System.Drawing.Size(50, 19);
             radioButtonShadow.TabIndex = 1;
-            radioButtonShadow.Text = "Shadow";
+            radioButtonShadow.Text = "阴影";
             radioButtonShadow.UseVisualStyleBackColor = true;
             radioButtonShadow.CheckedChanged += radioButtonShadow_CheckedChanged;
             // 
@@ -772,23 +776,24 @@
             radioButtonImage.Location = new System.Drawing.Point(15, 6);
             radioButtonImage.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             radioButtonImage.Name = "radioButtonImage";
-            radioButtonImage.Size = new System.Drawing.Size(58, 19);
+            radioButtonImage.Size = new System.Drawing.Size(50, 19);
             radioButtonImage.TabIndex = 0;
             radioButtonImage.TabStop = true;
-            radioButtonImage.Text = "Image";
+            radioButtonImage.Text = "图像";
             radioButtonImage.UseVisualStyleBackColor = true;
             radioButtonImage.CheckedChanged += radioButtonImage_CheckedChanged;
             // 
             // label2
             // 
-            label2.AutoSize = true;
+            label2.AutoSize = false;
             label2.ForeColor = System.Drawing.SystemColors.ControlText;
-            label2.Location = new System.Drawing.Point(51, 119);
+            label2.Location = new System.Drawing.Point(42, 119);
             label2.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             label2.Name = "label2";
-            label2.Size = new System.Drawing.Size(80, 15);
+            label2.Size = new System.Drawing.Size(92, 15);
             label2.TabIndex = 26;
-            label2.Text = "Shadow Type:";
+            label2.Text = "阴影类型:";
+            label2.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
             // 
             // LMain
             // 
@@ -806,7 +811,7 @@
             MinimumSize = new System.Drawing.Size(756, 513);
             Name = "LMain";
             StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
-            Text = "Zircon Library Editor";
+            Text = "Zircon 图库编辑器";
             Resize += LMain_Resize;
             MainMenu.ResumeLayout(false);
             MainMenu.PerformLayout();
