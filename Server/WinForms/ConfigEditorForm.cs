@@ -119,6 +119,8 @@ namespace Server.WinForms
             toolStrip.Items.Add(_modifiedOnlyButton);
             AddButton(toolStrip, "定位修改", (_, _) => FocusNextModifiedSetting());
             AddButton(toolStrip, "还原当前项", (_, _) => ResetCurrentSetting());
+            AddButton(toolStrip, "还原全部修改", (_, _) => ResetAllModifiedSettings());
+            AddButton(toolStrip, "复制当前项", (_, _) => CopyCurrentSetting());
             toolStrip.Items.Add(new ToolStripSeparator());
             AddButton(toolStrip, "选择版本文件", (_, _) => SelectFileProperty("VersionPath", "选择客户端版本文件"));
             AddButton(toolStrip, "选择地图目录", (_, _) => SelectFolderProperty("MapPath", "选择地图目录"));
@@ -209,6 +211,20 @@ namespace Server.WinForms
             if (e.Control && e.Shift && e.KeyCode == Keys.M)
             {
                 FocusNextModifiedSetting();
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.Control && e.Shift && e.KeyCode == Keys.R)
+            {
+                ResetAllModifiedSettings();
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.Control && e.Shift && e.KeyCode == Keys.C)
+            {
+                CopyCurrentSetting();
                 SuppressKey(e);
                 return;
             }
@@ -602,13 +618,89 @@ namespace Server.WinForms
 
         private void ResetCurrentSetting()
         {
-            DataGridView grid = _tabs.SelectedTab?.Controls.OfType<DataGridView>().FirstOrDefault();
-            DataGridViewRow row = grid?.CurrentRow;
-            if (row?.Tag is not ConfigSetting setting) return;
+            if (!TryGetCurrentSettingRow(out DataGridViewRow row, out ConfigSetting setting)) return;
 
             SetRowValue(row, setting.Property.PropertyType, setting.OriginalValue);
             FocusRow(row);
             ApplyFilter();
+        }
+
+        private void ResetAllModifiedSettings()
+        {
+            EndGridEdits();
+
+            List<ConfigSetting> modified = _settings
+                .Where(setting => _propertyRows.TryGetValue(setting.Property.Name, out DataGridViewRow row) && IsModified(setting, row))
+                .ToList();
+
+            if (modified.Count == 0)
+            {
+                MessageBox.Show(this, "当前没有未保存的配置修改。", "还原全部修改", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (MessageBox.Show(
+                    this,
+                    $"确定还原全部 {modified.Count:#,##0} 个未保存的配置修改吗？",
+                    "还原全部修改",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            foreach (ConfigSetting setting in modified)
+            {
+                DataGridViewRow row = _propertyRows[setting.Property.Name];
+                SetRowValue(row, setting.Property.PropertyType, setting.OriginalValue);
+            }
+
+            ApplyFilter();
+            _statusLabel.Text = $"已还原 {modified.Count:#,##0} 个配置修改。{GetConfigPathText()}";
+        }
+
+        private void CopyCurrentSetting()
+        {
+            if (!TryGetCurrentSettingRow(out DataGridViewRow row, out ConfigSetting setting))
+            {
+                MessageBox.Show(this, "当前没有可复制的配置项。", "复制当前项", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            string currentValue = GetRowValueText(setting, row);
+            string originalValue = setting.OriginalText;
+            string modified = IsModified(setting, row) ? "是" : "否";
+            string[] headers = { "分组", "配置项", "类型", "当前值", "原始值", "已修改" };
+            string[] values =
+            {
+                setting.Section,
+                setting.Property.Name,
+                GetTypeText(setting.Property.PropertyType),
+                currentValue,
+                originalValue,
+                modified
+            };
+
+            Clipboard.SetText(
+                string.Join("\t", headers.Select(EscapeClipboardCell)) +
+                Environment.NewLine +
+                string.Join("\t", values.Select(EscapeClipboardCell)));
+
+            _statusLabel.Text = $"已复制配置项 {setting.Property.Name}。{GetConfigPathText()}";
+        }
+
+        private bool TryGetCurrentSettingRow(out DataGridViewRow row, out ConfigSetting setting)
+        {
+            DataGridView grid = _tabs.SelectedTab?.Controls.OfType<DataGridView>().FirstOrDefault();
+            row = grid?.CurrentRow;
+            setting = row?.Tag as ConfigSetting;
+            return row != null && setting != null;
+        }
+
+        private static string EscapeClipboardCell(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\t", " ")
+                .Replace("\r", " ")
+                .Replace("\n", " ");
         }
 
         private void UpdateOriginalValues()
