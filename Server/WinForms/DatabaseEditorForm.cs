@@ -144,6 +144,7 @@ namespace Server.WinForms
             ToolStrip toolStrip = new ToolStrip();
             AddButton(toolStrip, "保存", (_, _) => SaveDatabase());
             AddButton(toolStrip, "验证", (_, _) => ValidateDatabase());
+            AddButton(toolStrip, "诊断", (_, _) => OpenDiagnostics());
             AddButton(toolStrip, "新增", (_, _) => _activeGrid?.AddNew());
             AddButton(toolStrip, "插入到当前行后", (_, _) => _activeGrid?.InsertAfterCurrent());
             AddButton(toolStrip, "复制当前", (_, _) => _activeGrid?.DuplicateCurrent());
@@ -823,6 +824,13 @@ namespace Server.WinForms
             {
                 UseWaitCursor = false;
             }
+        }
+
+        private void OpenDiagnostics()
+        {
+            DiagnosticsForm form = new DiagnosticsForm(_session);
+            form.DatabaseChanged += (_, _) => MarkDirty();
+            form.Show(this);
         }
 
         private List<string> ValidateDatabaseCore()

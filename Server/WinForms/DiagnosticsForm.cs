@@ -25,6 +25,8 @@ namespace Server.WinForms
         private readonly BindingList<OrphanDiagnostic.OrphanTypeResult> _orphanResults = new BindingList<OrphanDiagnostic.OrphanTypeResult>();
         private readonly BindingList<DiagnosticValue> _networkDiagnostics = new BindingList<DiagnosticValue>();
 
+        public event EventHandler DatabaseChanged;
+
         public DiagnosticsForm(Session session = null)
         {
             _session = session;
@@ -174,9 +176,10 @@ namespace Server.WinForms
 
         private async Task RunOrphanScan(bool cleanRun)
         {
-            if (SEnvir.Session == null)
+            Session session = _session ?? SEnvir.Session;
+            if (session == null)
             {
-                MessageBox.Show(this, "孤立数据扫描依赖已加载的在线服务器数据库。请先启动服务端，或在服务端加载完成后再运行。", "孤立数据", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(this, "孤立数据扫描依赖已加载的数据库会话。请先启动服务端，或从数据库编辑器打开诊断窗口。", "孤立数据", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
@@ -195,11 +198,14 @@ namespace Server.WinForms
                 _reportText.Text = cleanRun ? "正在清理孤立数据..." : "正在扫描孤立数据...";
 
                 OrphanDiagnostic.ScanResult result = await Task.Run(() => cleanRun
-                    ? OrphanDiagnostic.MarkTemporaryOnCleanableOrphans()
-                    : OrphanDiagnostic.Scan());
+                    ? OrphanDiagnostic.MarkTemporaryOnCleanableOrphans(session)
+                    : OrphanDiagnostic.Scan(session));
 
                 LoadOrphanResults(result);
                 _reportText.Text = OrphanDiagnostic.FormatLog(result, cleanRun);
+                if (cleanRun && result.TotalMarkedTemporary > 0)
+                    DatabaseChanged?.Invoke(this, EventArgs.Empty);
+
                 _tabs.SelectedIndex = 1;
             }
             catch (Exception ex)

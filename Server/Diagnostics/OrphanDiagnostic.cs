@@ -61,12 +61,22 @@ namespace Server.Diagnostics
 
         public static ScanResult Scan(int maxSamplesPerType = 40)
         {
-            return ScanInternal(markTemporary: false, maxSamplesPerType);
+            return ScanInternal(session: null, markTemporary: false, maxSamplesPerType);
+        }
+
+        public static ScanResult Scan(Session session, int maxSamplesPerType = 40)
+        {
+            return ScanInternal(session, markTemporary: false, maxSamplesPerType);
         }
 
         public static ScanResult MarkTemporaryOnCleanableOrphans(int maxSamplesPerType = 40)
         {
-            return ScanInternal(markTemporary: true, maxSamplesPerType);
+            return ScanInternal(session: null, markTemporary: true, maxSamplesPerType);
+        }
+
+        public static ScanResult MarkTemporaryOnCleanableOrphans(Session session, int maxSamplesPerType = 40)
+        {
+            return ScanInternal(session, markTemporary: true, maxSamplesPerType);
         }
 
         public static string FormatLog(ScanResult result, bool cleanRun)
@@ -74,7 +84,7 @@ namespace Server.Diagnostics
             StringBuilder builder = new StringBuilder();
 
             builder.AppendLine(cleanRun ? "=== MirDB orphan clean ===" : "=== MirDB orphan scan ===");
-            builder.AppendLine("Scope: configured dependent user-data tables from currently loaded SEnvir DB collections.");
+            builder.AppendLine("Scope: configured dependent user-data tables from selected MirDB collections.");
             builder.AppendLine($"Total dependent rows scanned: {result.TotalRowsScanned:N0}");
             builder.AppendLine($"Total cleanable orphan rows: {result.TotalCleanableOrphans:N0}");
 
@@ -105,9 +115,9 @@ namespace Server.Diagnostics
             return builder.ToString();
         }
 
-        private static ScanResult ScanInternal(bool markTemporary, int maxSamplesPerType)
+        private static ScanResult ScanInternal(Session session, bool markTemporary, int maxSamplesPerType)
         {
-            Dictionary<Type, CollectionEntry> collections = GetLoadedCollections();
+            Dictionary<Type, CollectionEntry> collections = session == null ? GetLoadedCollections() : GetLoadedCollections(session);
             List<OwnedAssociation> associations = GetOwnedAssociations(collections);
             ScanResult scan = new ScanResult();
 
@@ -166,6 +176,28 @@ namespace Server.Diagnostics
             }
 
             return scan;
+        }
+
+        private static Dictionary<Type, CollectionEntry> GetLoadedCollections(Session session)
+        {
+            Dictionary<Type, CollectionEntry> result = new Dictionary<Type, CollectionEntry>();
+
+            if (session?.Assemblies == null) return result;
+
+            foreach (Type objectType in session.Assemblies.SelectMany(x => x.GetTypes()).Where(x => x.IsSubclassOf(typeof(DBObject))))
+            {
+                if (result.ContainsKey(objectType)) continue;
+
+                object collection = session.GetCollection(objectType);
+                FieldInfo bindingField = collection.GetType().GetField("Binding");
+                IEnumerable binding = bindingField?.GetValue(collection) as IEnumerable;
+
+                if (binding == null) continue;
+
+                result[objectType] = new CollectionEntry { ObjectType = objectType, Binding = binding };
+            }
+
+            return result;
         }
 
         private static Dictionary<Type, CollectionEntry> GetLoadedCollections()
