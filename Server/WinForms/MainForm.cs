@@ -580,6 +580,8 @@ namespace Server.WinForms
 
         private void StartServer()
         {
+            if (!ConfirmOfflineEditorBeforeStart()) return;
+
             try
             {
                 SEnvir.StartServer();
@@ -589,6 +591,21 @@ namespace Server.WinForms
             {
                 SEnvir.Log(ex.ToString(), true);
             }
+        }
+
+        private bool ConfirmOfflineEditorBeforeStart()
+        {
+            if (_databaseEditorForm == null || _databaseEditorForm.IsDisposed) return true;
+
+            string message = _databaseEditorForm.HasUnsavedChanges
+                ? "离线数据库编辑器仍有未保存修改。直接启动服务端会加载磁盘上的旧数据库，当前编辑器修改不会生效。\r\n\r\n是否仍然启动服务端？"
+                : "离线数据库编辑器仍然打开，可能占用数据库文件并影响服务端加载。\r\n\r\n是否仍然启动服务端？";
+
+            if (MessageBox.Show(this, message, "启动服务端", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+                return true;
+
+            ActivateForm(_databaseEditorForm);
+            return false;
         }
 
         private void StopServer()

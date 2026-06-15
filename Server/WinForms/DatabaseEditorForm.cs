@@ -92,6 +92,8 @@ namespace Server.WinForms
                 MessageBox.Show(this, lockReason, "只读模式", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
+        public bool HasUnsavedChanges => _dirty;
+
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
