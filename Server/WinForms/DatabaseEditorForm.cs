@@ -195,6 +195,14 @@ namespace Server.WinForms
             _tableSearchText.Width = 170;
             _tableSearchText.ToolTipText = "按表名过滤左侧导航，例如 Item、Monster、NPC。";
             _tableSearchText.TextChanged += (_, _) => BuildTree();
+            _tableSearchText.KeyDown += (_, e) =>
+            {
+                if (e.KeyCode != Keys.Enter) return;
+
+                SelectFirstVisibleTypeNode();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            };
             toolStrip.Items.Add(_tableSearchText);
             toolStrip.Items.Add(new ToolStripSeparator());
             toolStrip.Items.Add(new ToolStripLabel("搜索"));
@@ -458,6 +466,15 @@ namespace Server.WinForms
             return true;
         }
 
+        private void SelectFirstVisibleTypeNode()
+        {
+            TreeNode node = FindFirstTypeNode(_tree.Nodes);
+            if (node?.Tag is not Type type) return;
+
+            SelectTypeNode(type);
+            ShowCollection(type);
+        }
+
         private static TreeNode FindNodeByType(TreeNodeCollection nodes, Type type)
         {
             foreach (TreeNode node in nodes)
@@ -465,6 +482,19 @@ namespace Server.WinForms
                 if (ReferenceEquals(node.Tag, type)) return node;
 
                 TreeNode child = FindNodeByType(node.Nodes, type);
+                if (child != null) return child;
+            }
+
+            return null;
+        }
+
+        private static TreeNode FindFirstTypeNode(TreeNodeCollection nodes)
+        {
+            foreach (TreeNode node in nodes)
+            {
+                if (node.Tag is Type) return node;
+
+                TreeNode child = FindFirstTypeNode(node.Nodes);
                 if (child != null) return child;
             }
 
