@@ -184,6 +184,7 @@ namespace Server.WinForms
             AddButton(toolStrip, "导入", (_, _) => ImportCurrent());
             AddButton(toolStrip, "导出选中", (_, _) => ExportCurrent());
             AddButton(toolStrip, "导出全部", (_, _) => ExportAllCurrent());
+            AddButton(toolStrip, "复制当前视图", (_, _) => _activeGrid?.CopyVisibleRows(this));
             AddButton(toolStrip, "导出当前视图", (_, _) => _activeGrid?.ExportVisibleRows(this));
             toolStrip.Items.Add(new ToolStripSeparator());
             AddButton(toolStrip, "导入 Mir2 掉落", (_, _) => ImportMir2Drops());

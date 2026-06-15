@@ -147,17 +147,20 @@ namespace Server.WinForms
 
             if (dialog.ShowDialog(owner) != DialogResult.OK) return;
 
-            List<DataGridViewColumn> columns = GetVisibleColumns();
-            List<string> lines = new List<string>
-            {
-                string.Join("\t", columns.Select(x => EscapeTsv(x.HeaderText)))
-            };
-
-            foreach (DataGridViewRow row in _grid.Rows)
-                lines.Add(string.Join("\t", columns.Select(column => EscapeTsv(Convert.ToString(row.Cells[column.Index].FormattedValue, CultureInfo.CurrentCulture)))));
-
-            File.WriteAllLines(dialog.FileName, lines);
+            File.WriteAllText(dialog.FileName, BuildRowsTsv(_grid.Rows.Cast<DataGridViewRow>()));
             MessageBox.Show(owner, $"已导出 {_grid.Rows.Count:#,##0} 行到：\r\n{dialog.FileName}", "导出当前视图", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        public void CopyVisibleRows(IWin32Window owner)
+        {
+            if (_grid.Rows.Count == 0)
+            {
+                MessageBox.Show(owner, "当前视图没有可复制的行。", "复制当前视图", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            Clipboard.SetText(BuildRowsTsv(_grid.Rows.Cast<DataGridViewRow>()));
+            MessageBox.Show(owner, $"已复制当前视图 {_grid.Rows.Count:#,##0} 行。", "复制当前视图", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         public bool SelectByIndex(int index)
@@ -343,6 +346,7 @@ namespace Server.WinForms
             _contextMenu.Items.Add("复制选中行", null, (_, _) => CopySelectedRows());
             ToolStripItem pasteItem = _contextMenu.Items.Add("粘贴表格", null, (_, _) => PasteClipboardTable());
             pasteItem.Enabled = !_readOnly;
+            _contextMenu.Items.Add("复制当前视图", null, (_, _) => CopyVisibleRows(this));
             _contextMenu.Items.Add("导出当前视图", null, (_, _) => ExportVisibleRows(this));
             _contextMenu.Items.Add(new ToolStripSeparator());
             ToolStripItem duplicateItem = _contextMenu.Items.Add("复制当前对象为新行", null, (_, _) => DuplicateCurrent());
@@ -393,19 +397,24 @@ namespace Server.WinForms
 
             if (rows.Count == 0) return;
 
+            Clipboard.SetText(BuildRowsTsv(rows));
+        }
+
+        private string BuildRowsTsv(IEnumerable<DataGridViewRow> rows)
+        {
             List<DataGridViewColumn> columns = GetVisibleColumns();
 
             List<string> lines = new List<string>
             {
-                string.Join("\t", columns.Select(x => x.HeaderText))
+                string.Join("\t", columns.Select(x => EscapeTsv(x.HeaderText)))
             };
 
             foreach (DataGridViewRow row in rows)
             {
-                lines.Add(string.Join("\t", columns.Select(column => Convert.ToString(row.Cells[column.Index].FormattedValue, CultureInfo.CurrentCulture)?.Replace("\t", " ") ?? string.Empty)));
+                lines.Add(string.Join("\t", columns.Select(column => EscapeTsv(Convert.ToString(row.Cells[column.Index].FormattedValue, CultureInfo.CurrentCulture)))));
             }
 
-            Clipboard.SetText(string.Join(Environment.NewLine, lines));
+            return string.Join(Environment.NewLine, lines);
         }
 
         private List<DataGridViewColumn> GetVisibleColumns()
