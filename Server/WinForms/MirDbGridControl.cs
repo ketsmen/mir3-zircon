@@ -23,6 +23,7 @@ namespace Server.WinForms
         private readonly DataGridView _grid = new DataGridView();
         private readonly ContextMenuStrip _contextMenu = new ContextMenuStrip();
         private string _filterText = string.Empty;
+        private bool _loadingColumnLayout;
 
         public event EventHandler CurrentObjectChanged;
         public event EventHandler BecameActive;
@@ -62,6 +63,10 @@ namespace Server.WinForms
 
             Controls.Add(_grid);
             BuildColumns();
+            LoadColumnLayout();
+            _grid.ColumnWidthChanged += (_, _) => SaveColumnLayout();
+            _grid.ColumnDisplayIndexChanged += (_, _) => SaveColumnLayout();
+            _grid.ColumnStateChanged += Grid_ColumnStateChanged;
             RefreshBinding();
         }
 
@@ -307,6 +312,7 @@ namespace Server.WinForms
             _contextMenu.Items.Add("最佳列宽", null, (_, _) => _grid.AutoResizeColumns(DataGridViewAutoSizeColumnsMode.DisplayedCells));
             _contextMenu.Items.Add("隐藏当前列", null, (_, _) => HideCurrentColumn());
             _contextMenu.Items.Add("显示所有列", null, (_, _) => ShowAllColumns());
+            _contextMenu.Items.Add("重置列布局", null, (_, _) => ResetColumnLayout());
             _contextMenu.Items.Add(new ToolStripSeparator());
             _contextMenu.Items.Add("刷新", null, (_, _) => RefreshBinding());
             _grid.ContextMenuStrip = _contextMenu;
@@ -442,6 +448,154 @@ namespace Server.WinForms
         {
             foreach (DataGridViewColumn column in _grid.Columns)
                 column.Visible = true;
+
+            SaveColumnLayout();
+        }
+
+        private void Grid_ColumnStateChanged(object sender, DataGridViewColumnStateChangedEventArgs e)
+        {
+            if ((e.StateChanged & DataGridViewElementStates.Visible) == 0) return;
+
+            SaveColumnLayout();
+        }
+
+        private void LoadColumnLayout()
+        {
+            _loadingColumnLayout = true;
+
+            try
+            {
+                string path = GetColumnLayoutPath();
+                if (!File.Exists(path)) return;
+
+                Dictionary<string, (int DisplayIndex, int Width, bool Visible)> layout =
+                    new Dictionary<string, (int DisplayIndex, int Width, bool Visible)>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (string line in File.ReadAllLines(path).Skip(1))
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+
+                    string[] parts = line.Split('\t');
+                    if (parts.Length < 4) continue;
+                    if (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int displayIndex)) continue;
+                    if (!int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int width)) continue;
+                    if (!bool.TryParse(parts[3], out bool visible)) continue;
+
+                    layout[parts[0]] = (displayIndex, Math.Max(32, width), visible);
+                }
+
+                foreach (DataGridViewColumn column in _grid.Columns)
+                {
+                    if (!layout.TryGetValue(column.Name, out var state)) continue;
+
+                    column.Width = state.Width;
+                }
+
+                int nextDisplayIndex = 0;
+                HashSet<string> applied = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (KeyValuePair<string, (int DisplayIndex, int Width, bool Visible)> entry in layout.OrderBy(x => x.Value.DisplayIndex))
+                {
+                    if (!_grid.Columns.Contains(entry.Key)) continue;
+
+                    _grid.Columns[entry.Key].DisplayIndex = nextDisplayIndex++;
+                    applied.Add(entry.Key);
+                }
+
+                foreach (DataGridViewColumn column in _grid.Columns.Cast<DataGridViewColumn>().OrderBy(x => x.Index))
+                {
+                    if (applied.Contains(column.Name)) continue;
+
+                    column.DisplayIndex = nextDisplayIndex++;
+                }
+
+                foreach (DataGridViewColumn column in _grid.Columns)
+                {
+                    if (!layout.TryGetValue(column.Name, out var state)) continue;
+
+                    column.Visible = state.Visible;
+                }
+
+                if (_grid.Columns.Cast<DataGridViewColumn>().All(x => !x.Visible) && _grid.Columns.Count > 0)
+                    _grid.Columns[0].Visible = true;
+            }
+            catch
+            {
+                // 布局文件只影响编辑器显示，损坏时忽略并回到默认列布局。
+            }
+            finally
+            {
+                _loadingColumnLayout = false;
+            }
+        }
+
+        private void SaveColumnLayout()
+        {
+            if (_loadingColumnLayout || _grid.Columns.Count == 0) return;
+
+            try
+            {
+                string path = GetColumnLayoutPath();
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+
+                List<string> lines = new List<string>
+                {
+                    "Column\tDisplayIndex\tWidth\tVisible"
+                };
+
+                foreach (DataGridViewColumn column in _grid.Columns.Cast<DataGridViewColumn>().OrderBy(x => x.DisplayIndex))
+                {
+                    lines.Add(string.Join("\t",
+                        EscapeTsv(column.Name),
+                        column.DisplayIndex.ToString(CultureInfo.InvariantCulture),
+                        column.Width.ToString(CultureInfo.InvariantCulture),
+                        column.Visible.ToString(CultureInfo.InvariantCulture)));
+                }
+
+                File.WriteAllLines(path, lines);
+            }
+            catch
+            {
+                // 列布局保存失败不应影响数据库编辑。
+            }
+        }
+
+        private void ResetColumnLayout()
+        {
+            _loadingColumnLayout = true;
+
+            try
+            {
+                foreach (DataGridViewColumn column in _grid.Columns.Cast<DataGridViewColumn>().OrderBy(x => x.Index))
+                {
+                    column.Visible = true;
+                    column.DisplayIndex = column.Index;
+                }
+
+                _grid.AutoResizeColumns(DataGridViewAutoSizeColumnsMode.DisplayedCells);
+
+                string path = GetColumnLayoutPath();
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch
+            {
+                MessageBox.Show(this, "重置列布局失败，请确认编辑器目录可写。", "列布局", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                _loadingColumnLayout = false;
+            }
+        }
+
+        private string GetColumnLayoutPath()
+        {
+            string root = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WinFormsLayouts");
+            string fileName = _itemType.FullName ?? _itemType.Name;
+
+            foreach (char invalid in Path.GetInvalidFileNameChars())
+                fileName = fileName.Replace(invalid, '_');
+
+            return Path.Combine(root, fileName + ".columns.tsv");
         }
 
         private void Grid_KeyDown(object sender, KeyEventArgs e)

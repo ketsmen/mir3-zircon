@@ -23,6 +23,7 @@ namespace Server.WinForms
         private readonly TabControl _tabs = new TabControl();
         private readonly StatusStrip _statusStrip = new StatusStrip();
         private readonly ToolStripTextBox _filterText = new ToolStripTextBox();
+        private readonly ToolStripButton _modifiedOnlyButton = new ToolStripButton("只看修改");
         private readonly ToolStripStatusLabel _statusLabel = new ToolStripStatusLabel();
         private readonly Dictionary<string, DataGridView> _sectionGrids = new Dictionary<string, DataGridView>();
         private readonly Dictionary<string, DataGridViewRow> _propertyRows = new Dictionary<string, DataGridViewRow>(StringComparer.OrdinalIgnoreCase);
@@ -54,6 +55,11 @@ namespace Server.WinForms
             _filterText.ToolTipText = "按配置项、分组、类型或当前值过滤。";
             _filterText.TextChanged += (_, _) => ApplyFilter();
             toolStrip.Items.Add(_filterText);
+            _modifiedOnlyButton.CheckOnClick = true;
+            _modifiedOnlyButton.ToolTipText = "只显示当前窗口中已修改但尚未保存的配置项。";
+            _modifiedOnlyButton.CheckedChanged += (_, _) => ApplyFilter();
+            toolStrip.Items.Add(_modifiedOnlyButton);
+            AddButton(toolStrip, "还原当前项", (_, _) => ResetCurrentSetting());
             toolStrip.Items.Add(new ToolStripSeparator());
             AddButton(toolStrip, "选择版本文件", (_, _) => SelectFileProperty("VersionPath", "选择客户端版本文件"));
             AddButton(toolStrip, "选择地图目录", (_, _) => SelectFolderProperty("MapPath", "选择地图目录"));
@@ -138,6 +144,13 @@ namespace Server.WinForms
             {
                 ReloadSettings();
                 SuppressKey(e);
+                return;
+            }
+
+            if (e.Control && e.KeyCode == Keys.M)
+            {
+                _modifiedOnlyButton.Checked = !_modifiedOnlyButton.Checked;
+                SuppressKey(e);
             }
         }
 
@@ -168,6 +181,12 @@ namespace Server.WinForms
             };
             grid.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
             grid.DataError += (_, e) => e.ThrowException = false;
+            grid.CurrentCellDirtyStateChanged += (_, _) =>
+            {
+                if (grid.IsCurrentCellDirty)
+                    grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            };
+            grid.CellValueChanged += (_, _) => ApplyFilter();
 
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
@@ -293,6 +312,7 @@ namespace Server.WinForms
                 if (SEnvir.Started)
                     SEnvir.ServerBuffChanged = true;
 
+                UpdateOriginalValues();
                 _statusLabel.Text = $"配置已保存。{GetConfigPathText()}";
             }
             else
@@ -300,6 +320,7 @@ namespace Server.WinForms
                 _statusLabel.Text = "配置已应用到当前管理端内存，尚未写入 Server.ini。";
             }
 
+            ApplyFilter();
             return true;
         }
 
@@ -421,8 +442,10 @@ namespace Server.WinForms
             EndGridEdits();
 
             string filter = _filterText.Text?.Trim();
+            bool modifiedOnly = _modifiedOnlyButton.Checked;
             int visible = 0;
             int total = 0;
+            int modifiedCount = 0;
 
             foreach (KeyValuePair<string, DataGridView> pair in _sectionGrids)
             {
@@ -435,7 +458,11 @@ namespace Server.WinForms
                     if (row.Tag is not ConfigSetting setting) continue;
 
                     total++;
-                    bool match = MatchesFilter(setting, row, filter);
+                    bool modified = IsModified(setting, row);
+                    ApplyModifiedStyle(row, modified);
+                    if (modified) modifiedCount++;
+
+                    bool match = (!modifiedOnly || modified) && MatchesFilter(setting, row, filter);
                     row.Visible = match;
                     if (!match) continue;
 
@@ -444,11 +471,13 @@ namespace Server.WinForms
                 }
 
                 if (grid.Parent is TabPage page)
-                    page.Text = string.IsNullOrWhiteSpace(filter) ? pair.Key : $"{pair.Key} ({sectionVisible})";
+                    page.Text = string.IsNullOrWhiteSpace(filter) && !modifiedOnly ? pair.Key : $"{pair.Key} ({sectionVisible})";
             }
 
-            string suffix = string.IsNullOrWhiteSpace(filter) ? string.Empty : $"，过滤: {filter}";
-            _statusLabel.Text = $"配置项: {visible}/{total}{suffix}。{GetConfigPathText()}";
+            string filterSuffix = string.IsNullOrWhiteSpace(filter) ? string.Empty : $"，过滤: {filter}";
+            string modifiedSuffix = modifiedOnly ? $"，只看修改: {modifiedCount}" :
+                modifiedCount > 0 ? $"，已修改: {modifiedCount}" : string.Empty;
+            _statusLabel.Text = $"配置项: {visible}/{total}{filterSuffix}{modifiedSuffix}。{GetConfigPathText()}";
         }
 
         private static bool MatchesFilter(ConfigSetting setting, DataGridViewRow row, string filter)
@@ -460,6 +489,46 @@ namespace Server.WinForms
                    setting.Property.Name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0 ||
                    GetTypeText(setting.Property.PropertyType).IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0 ||
                    value.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsModified(ConfigSetting setting, DataGridViewRow row)
+        {
+            return !string.Equals(GetRowValueText(setting, row), setting.OriginalText, StringComparison.Ordinal);
+        }
+
+        private static string GetRowValueText(ConfigSetting setting, DataGridViewRow row)
+        {
+            object value = row.Cells[2].Value;
+
+            if (value == null) return string.Empty;
+            if (value.GetType() == setting.Property.PropertyType)
+                return FormatValue(setting.Property.PropertyType, value);
+
+            return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+        }
+
+        private static void ApplyModifiedStyle(DataGridViewRow row, bool modified)
+        {
+            DataGridViewCell cell = row.Cells[2];
+            cell.Style.BackColor = modified ? Color.FromArgb(255, 248, 205) : Color.Empty;
+            cell.Style.ForeColor = modified ? Color.DarkBlue : Color.Empty;
+        }
+
+        private void ResetCurrentSetting()
+        {
+            DataGridView grid = _tabs.SelectedTab?.Controls.OfType<DataGridView>().FirstOrDefault();
+            DataGridViewRow row = grid?.CurrentRow;
+            if (row?.Tag is not ConfigSetting setting) return;
+
+            SetRowValue(row, setting.Property.PropertyType, setting.OriginalValue);
+            FocusRow(row);
+            ApplyFilter();
+        }
+
+        private void UpdateOriginalValues()
+        {
+            foreach (ConfigSetting setting in _settings)
+                setting.UpdateOriginalValue(setting.Property.GetValue(null));
         }
 
         private void FocusRow(DataGridViewRow row)
@@ -815,10 +884,19 @@ namespace Server.WinForms
             {
                 Section = section;
                 Property = property;
+                UpdateOriginalValue(property.GetValue(null));
             }
 
             public string Section { get; }
             public PropertyInfo Property { get; }
+            public object OriginalValue { get; private set; }
+            public string OriginalText { get; private set; }
+
+            public void UpdateOriginalValue(object value)
+            {
+                OriginalValue = value;
+                OriginalText = FormatValue(Property.PropertyType, value);
+            }
         }
 
         private sealed class ConfigValue

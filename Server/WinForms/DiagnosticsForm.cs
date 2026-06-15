@@ -5,6 +5,8 @@ using Server.Envir;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -62,6 +64,9 @@ namespace Server.WinForms
             toolStrip.Items.Add(_networkMonitorButton);
             AddButton(toolStrip, "刷新网络统计", (_, _) => RefreshNetworkDiagnostics());
             AddButton(toolStrip, "重置网络统计", (_, _) => ResetNetworkDiagnostics());
+            toolStrip.Items.Add(new ToolStripSeparator());
+            AddButton(toolStrip, "导出报告", (_, _) => ExportReport());
+            AddButton(toolStrip, "导出当前页", (_, _) => ExportCurrentPage());
 
             _tabs.Dock = DockStyle.Fill;
 
@@ -234,6 +239,89 @@ namespace Server.WinForms
             _networkGrid.Refresh();
             RefreshNetworkDiagnostics();
             _reportText.Text = "网络诊断统计已重置。";
+        }
+
+        private void ExportReport()
+        {
+            string text = _reportText.Text;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                MessageBox.Show(this, "当前没有可导出的诊断报告。", "导出报告", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using SaveFileDialog dialog = new SaveFileDialog
+            {
+                Title = "导出诊断报告",
+                Filter = "文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
+                FileName = $"Diagnostics_{DateTime.Now:yyyyMMdd_HHmmss}.txt",
+                RestoreDirectory = true
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+            File.WriteAllText(dialog.FileName, text);
+            MessageBox.Show(this, $"诊断报告已导出到：\r\n{dialog.FileName}", "导出报告", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void ExportCurrentPage()
+        {
+            DataGridView grid = _tabs.SelectedTab?.Controls.OfType<DataGridView>().FirstOrDefault();
+            if (grid == null)
+            {
+                ExportReport();
+                return;
+            }
+
+            ExportGrid(grid, _tabs.SelectedTab.Text);
+        }
+
+        private void ExportGrid(DataGridView grid, string title)
+        {
+            List<DataGridViewColumn> columns = grid.Columns.Cast<DataGridViewColumn>()
+                .Where(x => x.Visible)
+                .OrderBy(x => x.DisplayIndex)
+                .ToList();
+
+            if (columns.Count == 0 || grid.Rows.Count == 0)
+            {
+                MessageBox.Show(this, "当前页没有可导出的行。", "导出当前页", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using SaveFileDialog dialog = new SaveFileDialog
+            {
+                Title = $"导出{title}",
+                Filter = "TSV 文件 (*.tsv)|*.tsv|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
+                FileName = $"{title}_{DateTime.Now:yyyyMMdd_HHmmss}.tsv",
+                RestoreDirectory = true
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+            List<string> lines = new List<string>
+            {
+                string.Join("\t", columns.Select(x => EscapeTsv(x.HeaderText)))
+            };
+
+            foreach (DataGridViewRow row in grid.Rows)
+            {
+                if (row.IsNewRow) continue;
+
+                lines.Add(string.Join("\t", columns.Select(column =>
+                    EscapeTsv(Convert.ToString(row.Cells[column.Index].FormattedValue, CultureInfo.CurrentCulture)))));
+            }
+
+            File.WriteAllLines(dialog.FileName, lines);
+            MessageBox.Show(this, $"当前页已导出到：\r\n{dialog.FileName}", "导出当前页", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private static string EscapeTsv(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\t", " ")
+                .Replace("\r", " ")
+                .Replace("\n", " ");
         }
     }
 }
