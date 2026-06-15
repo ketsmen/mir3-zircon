@@ -254,7 +254,11 @@ namespace Server.WinForms
             if (string.IsNullOrWhiteSpace(_initialTypeName)) return;
 
             Type type = _metadata.ObjectTypes.FirstOrDefault(x => x.Name.Equals(_initialTypeName, StringComparison.OrdinalIgnoreCase));
-            if (type == null) return;
+            if (type == null)
+            {
+                MessageBox.Show(this, $"数据库表 `{_initialTypeName}` 不存在，已打开完整数据库编辑器。", "数据库", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
 
             SelectTypeNode(type);
             ShowCollection(type);
