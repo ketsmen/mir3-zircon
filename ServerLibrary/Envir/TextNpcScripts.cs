@@ -468,6 +468,9 @@ namespace Server.Envir
                 case "NOWEDDINGRING":
                     checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.WeddingRing, Operator = Operator.NotEqual }, line));
                     break;
+                case "CHECKHORSE":
+                    ParseHorseCheck(line, parts, checks, report);
+                    break;
                 case "CHECKCLASS":
                     if (parts.Count >= 2 && TryParseRequiredClass(parts[1], out RequiredClass requiredClass))
                         checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Class, Class = requiredClass }, line));
@@ -555,6 +558,10 @@ namespace Server.Envir
                 case "TAKEITEM":
                     ParseItemAction(line, parts, actions, CompiledNpcActionType.TakeItem, report);
                     break;
+                case "GIVEITEMEXP":
+                case "GIVEITEMEXPERIENCE":
+                    ParseItemExperienceAction(line, parts, actions, report);
+                    break;
                 case "MOVE":
                     ParseMoveAction(line, parts, actions, report);
                     break;
@@ -597,6 +604,9 @@ namespace Server.Envir
                     break;
                 case "REBIRTH":
                     actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.Rebirth }, line));
+                    break;
+                case "CHANGEHORSE":
+                    ParseHorseAction(line, parts, actions, report);
                     break;
                 default:
                     report.Failures.Add($"{line.Source}: 未知 NPC 动作 `{parts[0]}`。");
@@ -745,6 +755,25 @@ namespace Server.Envir
             actions.Add(WithSource(new CompiledNpcAction { ActionType = type, ItemParameter1 = item, IntParameter1 = count }, line));
         }
 
+        private void ParseItemExperienceAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, TextNpcLoadReport report)
+        {
+            if (parts.Count < 4 || !int.TryParse(parts[^2], out int count) || !int.TryParse(parts[^1], out int experience))
+            {
+                report.Failures.Add($"{line.Source}: {parts[0]} 格式应为 {parts[0]} 物品名 数量 经验值。");
+                return;
+            }
+
+            string itemName = string.Join(" ", parts.Skip(1).Take(parts.Count - 3));
+            if (!_items.TryGetValue(NormalizeName(itemName), out ItemInfo item))
+            {
+                report.MissingItems.Add(itemName);
+                report.Failures.Add($"{line.Source}: 找不到物品 `{itemName}`。");
+                return;
+            }
+
+            actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.GiveItemExperience, ItemParameter1 = item, IntParameter1 = count, IntParameter2 = experience }, line));
+        }
+
         private void ParseCurrencyAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, CompiledNpcActionType type, TextNpcLoadReport report)
         {
             if (parts.Count < 3 || !int.TryParse(parts[^1], out int amount))
@@ -803,6 +832,39 @@ namespace Server.Envir
             }
 
             actions.Add(WithSource(new CompiledNpcAction { ActionType = type, StringParameter1 = parts[1], IntParameter1 = value, DataType = ParseDataType(parts, 3) }, line));
+        }
+
+        private void ParseHorseCheck(TextNpcScriptLine line, List<string> parts, List<CompiledNpcCheck> checks, TextNpcLoadReport report)
+        {
+            if (parts.Count < 2)
+            {
+                report.Failures.Add($"{line.Source}: CHECKHORSE 需要 HorseType。");
+                return;
+            }
+
+            Operator op = Operator.Equal;
+            string horseText = parts[1];
+            if (parts.Count >= 3 && TryParseOperator(parts[1], out op))
+                horseText = parts[2];
+
+            if (!TryParseHorseType(horseText, out HorseType horseType))
+            {
+                report.Failures.Add($"{line.Source}: CHECKHORSE 未知 HorseType `{horseText}`。");
+                return;
+            }
+
+            checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Horse, Operator = op, IntParameter1 = (int)horseType }, line));
+        }
+
+        private void ParseHorseAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, TextNpcLoadReport report)
+        {
+            if (parts.Count < 2 || !TryParseHorseType(parts[1], out HorseType horseType))
+            {
+                report.Failures.Add($"{line.Source}: CHANGEHORSE 需要有效 HorseType。");
+                return;
+            }
+
+            actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.ChangeHorse, IntParameter1 = (int)horseType }, line));
         }
 
         private void ParseGood(TextNpcScriptLine line, CompiledNpcPage page, TextNpcLoadReport report)
@@ -1003,6 +1065,21 @@ namespace Server.Envir
                 default:
                     return false;
             }
+        }
+
+        private static bool TryParseHorseType(string value, out HorseType horseType)
+        {
+            if (Enum.TryParse(value, true, out horseType) && Enum.IsDefined(typeof(HorseType), horseType))
+                return true;
+
+            if (byte.TryParse(value, out byte raw) && Enum.IsDefined(typeof(HorseType), raw))
+            {
+                horseType = (HorseType)raw;
+                return true;
+            }
+
+            horseType = HorseType.None;
+            return false;
         }
 
         private static NPCDataType ParseDataType(List<string> parts, int index)
@@ -1519,6 +1596,7 @@ namespace Server.Envir
         WeaponCanReset,
         Marriage,
         WeddingRing,
+        Horse,
         Class,
         Gender,
         Fame,
@@ -1553,7 +1631,9 @@ namespace Server.Envir
         Divorce,
         RemoveWeddingRing,
         ResetWeapon,
-        Rebirth
+        Rebirth,
+        ChangeHorse,
+        GiveItemExperience
     }
 
     internal enum TextNpcParseMode

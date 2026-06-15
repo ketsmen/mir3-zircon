@@ -453,6 +453,29 @@ namespace Server.Models
                         if (action.ItemParameter1 != null)
                             ob.TakeItem(action.ItemParameter1, action.IntParameter1);
                         break;
+                    case CompiledNpcActionType.GiveItemExperience:
+                        {
+                            if (action.ItemParameter1 == null) continue;
+
+                            ItemCheck check = new(action.ItemParameter1, action.IntParameter1, UserItemFlags.None, TimeSpan.Zero);
+                            if (!ob.CanGainItems(false, check)) continue;
+
+                            while (check.Count > 0)
+                            {
+                                UserItem item = SEnvir.CreateFreshItem(check);
+                                item.Experience = action.IntParameter2;
+
+                                if (item.Experience >= Globals.AccessoryExperienceList[item.Level])
+                                {
+                                    item.Experience -= Globals.AccessoryExperienceList[item.Level];
+                                    item.Level++;
+                                    item.Flags |= UserItemFlags.Refinable;
+                                }
+
+                                ob.GainItem(item);
+                            }
+                        }
+                        break;
                     case CompiledNpcActionType.Move:
                         {
                             Map map = SEnvir.GetMap(action.MapParameter1, ob.CurrentMap.Instance, ob.CurrentMap.InstanceSequence);
@@ -497,6 +520,12 @@ namespace Server.Models
                     case CompiledNpcActionType.Rebirth:
                         if (ob.Level >= 86 + ob.Character.Rebirth)
                             ob.NPCRebirth();
+                        break;
+                    case CompiledNpcActionType.ChangeHorse:
+                        ob.Character.Account.Horse = (HorseType)action.IntParameter1;
+                        ob.RemoveMount();
+                        ob.RefreshStats();
+                        if (ob.Character.Account.Horse != HorseType.None) ob.Mount();
                         break;
                 }
             }
@@ -551,6 +580,9 @@ namespace Server.Models
                         UserItem ring = ob.Equipment[(int)EquipmentSlot.RingL];
                         bool hasWeddingRing = ring != null && (ring.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage;
                         if (hasWeddingRing != (check.Operator == Operator.Equal)) return false;
+                        break;
+                    case CompiledNpcCheckType.Horse:
+                        if (!Compare(check.Operator, (int)ob.Character.Account.Horse, check.IntParameter1)) return false;
                         break;
                     case CompiledNpcCheckType.Class:
                         if (!HasRequiredClass(check.Class, ob.Class)) return false;

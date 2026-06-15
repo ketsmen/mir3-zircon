@@ -442,6 +442,9 @@ namespace Server.Envir
                 case CompiledNpcCheckType.WeddingRing:
                     check.CheckType = NPCCheckType.WeddingRing;
                     break;
+                case CompiledNpcCheckType.Horse:
+                    check.CheckType = NPCCheckType.Horse;
+                    break;
                 case CompiledNpcCheckType.Class:
                     check.CheckType = NPCCheckType.Class;
                     check.Operator = Operator.Equal;
@@ -515,6 +518,12 @@ namespace Server.Envir
                     break;
                 case CompiledNpcActionType.Rebirth:
                     action.ActionType = NPCActionType.Rebirth;
+                    break;
+                case CompiledNpcActionType.ChangeHorse:
+                    action.ActionType = NPCActionType.ChangeHorse;
+                    break;
+                case CompiledNpcActionType.GiveItemExperience:
+                    action.ActionType = NPCActionType.GiveItemExperience;
                     break;
                 case CompiledNpcActionType.GiveItem:
                     action.ActionType = NPCActionType.GiveItem;
@@ -937,6 +946,10 @@ namespace Server.Envir
                     script.AppendLine(check.Operator == Operator.Equal ? "CHECKWEDDINGRING" : "NOWEDDINGRING");
                     report.ChecksExported++;
                     break;
+                case NPCCheckType.Horse:
+                    script.AppendLine($"CHECKHORSE {OperatorText(check.Operator)} {FormatHorseType(check.IntParameter1)}");
+                    report.ChecksExported++;
+                    break;
                 case NPCCheckType.Class:
                     if (check.Operator == Operator.Equal && Enum.IsDefined(typeof(MirClass), check.IntParameter1))
                     {
@@ -1046,6 +1059,10 @@ namespace Server.Envir
                     script.AppendLine("REBIRTH");
                     report.ActionsExported++;
                     break;
+                case NPCActionType.ChangeHorse:
+                    script.AppendLine($"CHANGEHORSE {FormatHorseType(action.IntParameter1)}");
+                    report.ActionsExported++;
+                    break;
                 case NPCActionType.GiveItem:
                     if (action.ItemParameter1 != null)
                     {
@@ -1055,6 +1072,17 @@ namespace Server.Envir
                     else
                     {
                         AddTodo(script, report, npc, page, "手动迁移给物品动作: 缺少 ItemParameter1");
+                    }
+                    break;
+                case NPCActionType.GiveItemExperience:
+                    if (action.ItemParameter1 != null)
+                    {
+                        script.AppendLine($"GIVEITEMEXP {Quote(action.ItemParameter1.ItemName)} {action.IntParameter1} {action.IntParameter2}");
+                        report.ActionsExported++;
+                    }
+                    else
+                    {
+                        AddTodo(script, report, npc, page, "手动迁移给经验物品动作: 缺少 ItemParameter1");
                     }
                     break;
                 case NPCActionType.TakeItem:
@@ -1202,6 +1230,14 @@ namespace Server.Envir
                 Operator.GreaterThanOrEqual => ">=",
                 _ => "=="
             };
+        }
+
+        private static string FormatHorseType(int value)
+        {
+            if (value >= byte.MinValue && value <= byte.MaxValue && Enum.IsDefined(typeof(HorseType), (byte)value))
+                return ((HorseType)(byte)value).ToString();
+
+            return value.ToString();
         }
 
         private static string Quote(string value)
