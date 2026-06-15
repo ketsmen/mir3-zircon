@@ -9,6 +9,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -48,12 +49,16 @@ namespace Server.WinForms
         private ConfigEditorForm _configEditorForm;
         private DiagnosticsForm _diagnosticsForm;
         private MapViewerForm _mapViewerForm;
+        private const int WmSetRedraw = 0x000B;
         private const int MaxLogLines = 2000;
         private static readonly Size PreferredWindowSize = new Size(1440, 900);
         private static readonly Size MinimumWindowSize = new Size(1200, 760);
         private static readonly string UiCachePath = Path.Combine(Application.StartupPath, "Server.WinForms.cache.json");
         private bool _pluginEventsAttached;
         private bool _buildingNavigationTree;
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
         public MainForm()
         {
@@ -1189,43 +1194,44 @@ namespace Server.WinForms
         {
             if (queue.IsEmpty) return;
 
-            list.BeginUpdate();
-            try
-            {
-                while (queue.TryDequeue(out string log))
-                    AppendLog(source, list, log);
-            }
-            finally
-            {
-                list.EndUpdate();
-            }
+            List<string> logs = new List<string>();
+            while (queue.TryDequeue(out string log))
+                logs.Add(log);
+
+            if (logs.Count == 0) return;
+
+            AppendLogs(source, list, logs);
 
             UpdateLogStatus();
         }
 
-        private void AppendLog(List<string> source, ListBox list, string log)
+        private void AppendLogs(List<string> source, ListBox list, List<string> logs)
         {
-            source.Add(log);
-            bool trimmed = false;
+            source.AddRange(logs);
             if (source.Count > MaxLogLines)
             {
                 source.RemoveRange(0, source.Count - MaxLogLines);
-                trimmed = true;
-            }
-
-            if (trimmed)
-            {
                 ApplyLogFilter(source, list);
                 return;
             }
 
-            if (!MatchesLogFilter(log)) return;
+            List<string> visibleLogs = logs.Where(MatchesLogFilter).ToList();
+            if (visibleLogs.Count == 0) return;
 
-            list.Items.Add(log);
-            if (list.Items.Count > MaxLogLines)
-                list.Items.RemoveAt(0);
+            BeginLogListUpdate(list);
+            try
+            {
+                list.Items.AddRange(visibleLogs.Cast<object>().ToArray());
 
-            list.TopIndex = Math.Max(0, list.Items.Count - 1);
+                while (list.Items.Count > MaxLogLines)
+                    list.Items.RemoveAt(0);
+
+                ScrollLogToBottom(list);
+            }
+            finally
+            {
+                EndLogListUpdate(list);
+            }
         }
 
         private void ApplyLogFilters()
@@ -1237,19 +1243,49 @@ namespace Server.WinForms
 
         private void ApplyLogFilter(List<string> source, ListBox list)
         {
-            list.BeginUpdate();
+            BeginLogListUpdate(list);
             try
             {
                 list.Items.Clear();
-                foreach (string log in source.Where(MatchesLogFilter))
-                    list.Items.Add(log);
-
-                if (list.Items.Count > 0)
-                    list.TopIndex = Math.Max(0, list.Items.Count - 1);
+                list.Items.AddRange(source.Where(MatchesLogFilter).Cast<object>().ToArray());
+                ScrollLogToBottom(list);
             }
             finally
             {
+                EndLogListUpdate(list);
+            }
+        }
+
+        private static void ScrollLogToBottom(ListBox list)
+        {
+            if (list.Items.Count == 0) return;
+
+            int lastIndex = list.Items.Count - 1;
+            if (list.TopIndex != lastIndex)
+                list.TopIndex = lastIndex;
+        }
+
+        private static void BeginLogListUpdate(ListBox list)
+        {
+            if (list.IsHandleCreated)
+                SendMessage(list.Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
+
+            list.BeginUpdate();
+        }
+
+        private static void EndLogListUpdate(ListBox list)
+        {
+            try
+            {
                 list.EndUpdate();
+            }
+            finally
+            {
+                if (list.IsHandleCreated)
+                {
+                    SendMessage(list.Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
+                    list.Invalidate();
+                }
             }
         }
 
@@ -1261,13 +1297,27 @@ namespace Server.WinForms
 
         private void UpdateLogStatus()
         {
-            _systemLogPage.Text = $"系统日志 ({_systemLogList.Items.Count}/{_systemLogs.Count})";
-            _chatLogPage.Text = $"聊天日志 ({_chatLogList.Items.Count}/{_chatLogs.Count})";
+            SetTabText(_systemLogPage, $"系统日志 ({_systemLogList.Items.Count}/{_systemLogs.Count})");
+            SetTabText(_chatLogPage, $"聊天日志 ({_chatLogList.Items.Count}/{_chatLogs.Count})");
 
             ListBox activeList = GetActiveLogList();
             int total = GetActiveLogSource().Count;
             string filter = string.IsNullOrWhiteSpace(_logFilterText.Text) ? string.Empty : $"，过滤: {_logFilterText.Text.Trim()}";
-            _logStatusLabel.Text = $"{GetActiveLogName()}: {activeList.Items.Count}/{total} 行{filter}";
+            SetToolStripText(_logStatusLabel, $"{GetActiveLogName()}: {activeList.Items.Count}/{total} 行{filter}");
+        }
+
+        private static void SetTabText(TabPage page, string text)
+        {
+            if (page.Text == text) return;
+
+            page.Text = text;
+        }
+
+        private static void SetToolStripText(ToolStripItem item, string text)
+        {
+            if (item.Text == text) return;
+
+            item.Text = text;
         }
 
         private ListBox GetActiveLogList()
