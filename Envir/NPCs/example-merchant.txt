@@ -1,0 +1,40 @@
+[@MAIN]
+#SAY
+你好，我可以出售和修理物品。
+<购买/@BUY>
+<修理/@REPAIR>
+<传送测试/@MOVE_TEST>
+<离开/@EXIT>
+
+[@BUY]
+#SAY
+选择需要购买或出售的物品。
+[TRADE]
+; Replace these item names with items that exist in your database.
+;"回城卷" 1.0
+[TYPES]
+Consumable Scroll Weapon Armour Helmet Necklace Bracelet Ring Shoes
+
+[@REPAIR]
+#SAY
+把需要修理的装备放到修理窗口。
+[TYPES]
+Weapon Armour Helmet Necklace Bracelet Ring Shoes
+
+[@MOVE_TEST]
+#IF
+CHECKGOLD 100
+#SAY
+花费 100 金币传送？
+<确认/@MOVE_ACT>
+<返回/@MAIN>
+#ELSESAY
+你的金币不够。
+<返回/@MAIN>
+
+[@MOVE_ACT]
+#ACT
+TAKEGOLD 100
+; Adjust map and coordinates before using.
+MOVE 0 330 330
+LOCALMESSAGE 已传送。

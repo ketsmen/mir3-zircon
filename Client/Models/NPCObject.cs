@@ -22,6 +22,7 @@ namespace Client.Models
         public MirEffect QuestEffect;
 
         public NPCInfo NPCInfo;
+        public S.ClientTextNPCInfo TextInfo;
 
         public MirLibrary BodyLibrary;
         public int BodyOffSet = 100;
@@ -33,11 +34,15 @@ namespace Client.Models
         {
             ObjectID = info.ObjectID;
 
-            NPCInfo = Globals.NPCInfoList.Binding.First(x => x.Index == info.NPCIndex);
+            TextInfo = info.TextNPC;
+            NPCInfo = info.NPCIndex > 0 ? Globals.NPCInfoList.Binding.FirstOrDefault(x => x.Index == info.NPCIndex) : null;
 
             Light = 10;
 
-            var splitName = NPCInfo.NPCName.Split('_');
+            string npcName = TextInfo?.NPCName ?? NPCInfo.NPCName;
+            int npcImage = TextInfo?.Image ?? NPCInfo.Image;
+
+            var splitName = npcName.Split('_');
 
             if (splitName.Length > 1)
             {
@@ -50,16 +55,17 @@ namespace Client.Models
             }
 
             NameColour = Color.Lime;
-            BodyShape = NPCInfo.Image;
+            BodyShape = npcImage;
 
             CurrentLocation = info.CurrentLocation;
 
             Direction = info.Direction;
 
-            NPCs[NPCInfo] = this;
+            if (NPCInfo != null)
+                NPCs[NPCInfo] = this;
 
             CEnvir.LibraryList.TryGetValue(LibraryFile.NPC, out BodyLibrary);
-            Frames = NPCInfo.Image switch
+            Frames = npcImage switch
             {
                 64 or 65 or 91 or 92 or 93 or 157 or 158 or 160 or 165 or 166 or 168 or 208 or 209 or 210 or 211 or 212 or 213 or 214 or 231 or 234 => new Dictionary<MirAnimation, Frame>
                 {
@@ -207,6 +213,12 @@ namespace Client.Models
 
         public override void UpdateQuests()
         {
+            if (NPCInfo == null)
+            {
+                RemoveQuestEffect();
+                return;
+            }
+
             if (NPCInfo.CurrentQuest == null)
             {
                 RemoveQuestEffect();

@@ -126,6 +126,11 @@ namespace Server.Envir
         public static bool DropTextOverrideEnabled { get; set; } = true;
         public static string DropTextOverridePath { get; set; } = @".\Envir\Drops\";
 
+        [ConfigSection("NPCs")]
+        public static bool NpcTextOverrideEnabled { get; set; } = true;
+        public static string NpcTextPath { get; set; } = @".\Envir\NPCs\";
+        public static bool NpcTextStrictMode { get; set; } = true;
+
         [ConfigSection("Items")]
         public static TimeSpan DropDuration { get; set; } = TimeSpan.FromMinutes(60);
         public static int DropDistance { get; set; } = 5;

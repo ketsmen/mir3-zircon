@@ -124,6 +124,8 @@ namespace Server.Models
 
         public NPCObject NPC;
         public NPCPage NPCPage;
+        public CompiledNpcPage NPCTextPage;
+        public CompiledNpcBlock NPCTextBlock;
         public Dictionary<string, object> NPCVals = new Dictionary<string, object>();
 
         public HorseType Horse;
@@ -1212,6 +1214,8 @@ namespace Server.Models
 
             if (NPCPage != null)
                 con.Enqueue(new S.NPCResponse { ObjectID = NPC.ObjectID, Index = NPCPage.Index });
+            else if (NPCTextPage != null && NPCTextBlock != null)
+                con.Enqueue(new S.NPCResponse { ObjectID = NPC.ObjectID, TextPage = NPCTextPage.ToClientPage(NPCTextBlock), Values = [] });
 
 
             UpdateReviveTimers(con);
@@ -1463,6 +1467,8 @@ namespace Server.Models
 
             NPC = null;
             NPCPage = null;
+            NPCTextPage = null;
+            NPCTextBlock = null;
 
             MagicObjects?.Clear();
 
@@ -2633,6 +2639,8 @@ namespace Server.Models
             {
                 NPC = null;
                 NPCPage = null;
+                NPCTextPage = null;
+                NPCTextBlock = null;
             }
 
             if (ob.Race == ObjectType.Spell)
@@ -3590,9 +3598,9 @@ namespace Server.Models
             S.CompanionAdopt result = new S.CompanionAdopt();
             Enqueue(result);
 
-            if (Dead || NPC == null || NPCPage == null) return;
+            if (Dead || NPC == null || !HasCurrentNPCPage()) return;
 
-            if (NPCPage.DialogType != NPCDialogType.CompanionManage) return;
+            if (!HasCurrentNPCDialogType(NPCDialogType.CompanionManage)) return;
 
             CompanionInfo info = SEnvir.CompanionInfoList.Binding.FirstOrDefault(x => x.Index == p.Index);
 
@@ -3650,9 +3658,9 @@ namespace Server.Models
 
         public void CompanionRetrieve(int index)
         {
-            if (Dead || NPC == null || NPCPage == null) return;
+            if (Dead || NPC == null || !HasCurrentNPCPage()) return;
 
-            if (NPCPage.DialogType != NPCDialogType.CompanionManage) return;
+            if (!HasCurrentNPCDialogType(NPCDialogType.CompanionManage)) return;
 
             UserCompanion info = Character.Account.Companions.FirstOrDefault(x => x.Index == index);
 
@@ -3675,9 +3683,9 @@ namespace Server.Models
         }
         public void CompanionRelease(int index)
         {
-            if (Dead || NPC == null || NPCPage == null) return;
+            if (Dead || NPC == null || !HasCurrentNPCPage()) return;
 
-            if (NPCPage.DialogType != NPCDialogType.CompanionManage) return;
+            if (!HasCurrentNPCDialogType(NPCDialogType.CompanionManage)) return;
 
             UserCompanion info = Character.Account.Companions.FirstOrDefault(x => x.Index == index);
 
@@ -3706,9 +3714,9 @@ namespace Server.Models
 
         public void CompanionStore(int index)
         {
-            if (Dead || NPC == null || NPCPage == null) return;
+            if (Dead || NPC == null || !HasCurrentNPCPage()) return;
 
-            if (NPCPage.DialogType != NPCDialogType.CompanionManage) return;
+            if (!HasCurrentNPCDialogType(NPCDialogType.CompanionManage)) return;
 
             if (Character.Companion == null) return;
 
@@ -10449,27 +10457,67 @@ namespace Server.Models
         #endregion
 
         #region NPCs
+
+        private bool HasCurrentNPCPage()
+        {
+            return NPCPage != null || NPCTextPage != null;
+        }
+
+        private bool HasCurrentNPCDialogType(NPCDialogType dialogType)
+        {
+            return NPCTextPage?.DialogType == dialogType || NPCPage?.DialogType == dialogType;
+        }
+
+        private CurrencyInfo GetCurrentNPCCurrency()
+        {
+            return NPCTextPage?.Currency ?? NPCPage?.Currency ?? SEnvir.CurrencyInfoList.Binding.First(x => x.Type == CurrencyType.Gold);
+        }
+
+        private List<ItemType> GetCurrentNPCTypes()
+        {
+            if (NPCTextPage != null)
+                return NPCTextPage.Types;
+
+            return NPCPage?.Types.Select(x => x.ItemType).ToList() ?? [];
+        }
+
         public void NPCCall(uint objectID)
         {
             if (Dead) return;
 
             NPC = null;
             NPCPage = null;
+            NPCTextPage = null;
+            NPCTextBlock = null;
 
             foreach (NPCObject ob in CurrentMap.NPCs)
             {
                 if (ob.ObjectID != objectID) continue;
                 if (!Functions.InRange(ob.CurrentLocation, CurrentLocation, Config.MaxViewRange)) return;
 
-                ob.NPCCall(this, ob.NPCInfo.EntryPage);
+                ob.NPCCall(this);
                 return;
             }
         }
 
         public void NPCButton(int buttonID)
         {
-            if (Dead || NPC == null || NPCPage == null) return;
+            if (Dead || NPC == null) return;
 
+            if (NPCTextPage != null && NPCTextBlock != null)
+            {
+                foreach (CompiledNpcButton button in NPCTextBlock.Buttons)
+                {
+                    if (button.ButtonID != buttonID) continue;
+
+                    NPC.NPCCall(this, button.DestinationKey);
+                    return;
+                }
+
+                return;
+            }
+
+            if (NPCPage == null) return;
 
             foreach (Library.SystemModels.NPCButton button in NPCPage.Buttons)
             {
@@ -10482,7 +10530,10 @@ namespace Server.Models
 
         public void NPCRoll(int type)
         {
-            if (Dead || NPC == null || NPCPage == null || NPCPage.SuccessPage == null) return;
+            if (Dead || NPC == null) return;
+
+            if (NPCTextPage == null && (NPCPage == null || NPCPage.SuccessPage == null)) return;
+            if (NPCTextPage != null && string.IsNullOrWhiteSpace(NPCTextPage.SuccessKey)) return;
 
             var roll = SEnvir.Random.Next(1, 7);
 
@@ -10493,14 +10544,30 @@ namespace Server.Models
 
         public void NPCRollResult()
         {
-            if (Dead || NPC == null || NPCPage == null || NPCPage.SuccessPage == null) return;
+            if (Dead || NPC == null) return;
+
+            if (NPCTextPage != null)
+            {
+                if (string.IsNullOrWhiteSpace(NPCTextPage.SuccessKey)) return;
+
+                NPC.NPCCall(this, NPCTextPage.SuccessKey);
+                return;
+            }
+
+            if (NPCPage == null || NPCPage.SuccessPage == null) return;
 
             NPC.NPCCall(this, NPCPage.SuccessPage);
         }
 
         public void NPCBuy(C.NPCBuy p)
         {
-            if (Dead || NPC == null || NPCPage == null || p.Amount <= 0) return;
+            if (Dead || NPC == null || !HasCurrentNPCPage() || p.Amount <= 0) return;
+
+            if (NPCTextPage != null)
+            {
+                NPCTextBuy(p);
+                return;
+            }
 
             var currency = NPCPage.Currency ?? SEnvir.CurrencyInfoList.Binding.First(x => x.Type == CurrencyType.Gold);
 
@@ -10604,14 +10671,112 @@ namespace Server.Models
             }
         }
 
+        private void NPCTextBuy(C.NPCBuy p)
+        {
+            if (NPCTextPage.DialogType != NPCDialogType.BuySell) return;
+
+            var currency = GetCurrentNPCCurrency();
+            var userCurrency = GetCurrency(currency);
+            var amount = userCurrency.Amount;
+
+            foreach (CompiledTextNpcGood good in NPCTextPage.Goods)
+            {
+                if (good.Index != p.Index || good.Item == null) continue;
+
+                if (p.Amount > good.Item.StackSize) return;
+
+                var price = (int)Math.Max(1, good.Cost * currency.ExchangeRate);
+                long cost = (long)(price * p.Amount);
+
+                if (p.GuildFunds && currency.Type != CurrencyType.Gold)
+                {
+                    Connection.ReceiveChatWithObservers(con => con.Language.NPCFundsCurrency, MessageType.System);
+                    return;
+                }
+
+                if (p.GuildFunds)
+                {
+                    if (Character.Account.GuildMember == null)
+                    {
+                        Connection.ReceiveChatWithObservers(con => con.Language.NPCFundsGuild, MessageType.System);
+                        return;
+                    }
+
+                    if ((Character.Account.GuildMember.Permission & GuildPermission.FundsMerchant) != GuildPermission.FundsMerchant)
+                    {
+                        Connection.ReceiveChatWithObservers(con => con.Language.NPCFundsPermission, MessageType.System);
+                        return;
+                    }
+
+                    if (cost > Character.Account.GuildMember.Guild.GuildFunds)
+                    {
+                        Connection.ReceiveChatWithObservers(con => string.Format(con.Language.NPCFundsCost, cost - Character.Account.GuildMember.Guild.GuildFunds), MessageType.System);
+                        return;
+                    }
+                }
+                else if (cost > amount)
+                {
+                    Connection.ReceiveChatWithObservers(con => string.Format(con.Language.NPCCost, amount - cost), MessageType.System);
+                    return;
+                }
+
+                UserItemFlags flags = UserItemFlags.Locked;
+
+                switch (good.Item.ItemType)
+                {
+                    case ItemType.Weapon:
+                    case ItemType.Armour:
+                    case ItemType.Helmet:
+                    case ItemType.Necklace:
+                    case ItemType.Bracelet:
+                    case ItemType.Ring:
+                    case ItemType.Shoes:
+                    case ItemType.Book:
+                        flags |= UserItemFlags.NonRefinable;
+                        break;
+                }
+
+                ItemCheck check = new(good.Item, p.Amount, flags, TimeSpan.Zero);
+                if (!CanGainItems(true, check))
+                {
+                    Connection.ReceiveChatWithObservers(con => con.Language.NPCNoRoom, MessageType.System);
+                    return;
+                }
+
+                UserItem item = SEnvir.CreateFreshItem(check);
+
+                if (p.GuildFunds)
+                {
+                    Character.Account.GuildMember.Guild.GuildFunds -= cost;
+                    Character.Account.GuildMember.Guild.DailyGrowth -= cost;
+
+                    foreach (GuildMemberInfo member in Character.Account.GuildMember.Guild.Members)
+                    {
+                        member.Account.Connection?.Player?.Enqueue(new S.GuildFundsChanged { Change = -cost, ObserverPacket = false });
+                        member.Account.Connection?.ReceiveChat(string.Format(member.Account.Connection.Language.NPCFundsBuy, Name, cost, item.Info.ItemName, item.Count), MessageType.System);
+                    }
+                }
+                else
+                {
+                    userCurrency.Amount -= cost;
+                    CurrencyChanged(userCurrency);
+                }
+
+                LogMilestone(MilestoneType.ShopPurchase, item.Count, item: item.Info);
+                GainItem(item);
+            }
+        }
+
         public void NPCSell(List<CellLinkInfo> links)
         {
             S.ItemsChanged p = new S.ItemsChanged { Links = links };
             Enqueue(p);
 
-            if (Dead || NPC == null || NPCPage == null || NPCPage.DialogType != NPCDialogType.BuySell || NPCPage.Types.Count == 0) return;
+            List<ItemType> npcTypes = GetCurrentNPCTypes();
 
-            var currency = NPCPage.Currency ?? SEnvir.CurrencyInfoList.Binding.First(x => x.Type == CurrencyType.Gold);
+            if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.BuySell) || npcTypes.Count == 0) return;
+
+            var currency = GetCurrentNPCCurrency();
 
             var userCurrency = GetCurrency(currency);
 
@@ -10645,7 +10810,7 @@ namespace Server.Models
                 if ((item.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage) return;
                 if ((item.Flags & UserItemFlags.Worthless) == UserItemFlags.Worthless) return;
 
-                if (!NPCPage.Types.Any(x => x.ItemType == item.Info.ItemType)) return;
+                if (!npcTypes.Contains(item.Info.ItemType)) return;
 
                 var price = (long)(item.Price(link.Count) * currency.ExchangeRate);
 
@@ -10713,7 +10878,7 @@ namespace Server.Models
             S.ItemsChanged p = new S.ItemsChanged { Links = links };
             Enqueue(p);
 
-            if (Dead || NPC == null || NPCPage == null || NPCPage.DialogType != NPCDialogType.ItemFragment) return;
+            if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.ItemFragment)) return;
 
             if (!ParseLinks(p.Links, 0, 100)) return;
 
@@ -10834,7 +10999,7 @@ namespace Server.Models
         {
             Enqueue(new S.NPCAccessoryLevelUp { Target = p.Target, Links = p.Links });
 
-            if (Dead || NPC == null || NPCPage == null || NPCPage.DialogType != NPCDialogType.AccessoryRefineLevel) return;
+            if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.AccessoryRefineLevel)) return;
 
             if (!ParseLinks(p.Links, 0, 100) || !ParseLinks(p.Target)) return;
 
@@ -10986,7 +11151,7 @@ namespace Server.Models
         {
             Enqueue(new S.ItemChanged { Link = p.Target }); //Unlock Item
 
-            if (Dead || NPC == null || NPCPage == null || NPCPage.DialogType != NPCDialogType.AccessoryRefineUpgrade) return;
+            if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.AccessoryRefineUpgrade)) return;
 
             if (!ParseLinks(p.Target)) return;
 
@@ -11176,7 +11341,7 @@ namespace Server.Models
         {
             Enqueue(new S.ItemChanged { Link = p.Cell }); //Unlock Item
 
-            if (Dead || NPC == null || NPCPage == null || NPCPage.DialogType != NPCDialogType.AccessoryReset) return;
+            if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.AccessoryReset)) return;
 
             if (!ParseLinks(p.Cell)) return;
 
@@ -11276,7 +11441,7 @@ namespace Server.Models
         {
             Enqueue(new S.NPCAccessoryRefine { Target = p.Target, OreTarget = p.OreTarget, Links = p.Links });
 
-            if (Dead || NPC == null || NPCPage == null || NPCPage.DialogType != NPCDialogType.AccessoryRefine) return;
+            if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.AccessoryRefine)) return;
 
             if (!ParseLinks(p.Target)) return;
 
@@ -11607,7 +11772,9 @@ namespace Server.Models
             S.NPCRepair result = new S.NPCRepair { Links = p.Links, Special = p.Special, SpecialRepairDelay = Config.SpecialRepairDelay };
             Enqueue(result);
 
-            if (Dead || NPC == null || NPCPage == null || NPCPage.DialogType != NPCDialogType.Repair) return;
+            if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.Repair)) return;
+
+            List<ItemType> npcTypes = GetCurrentNPCTypes();
 
             if (!ParseLinks(result.Links, 0, 100)) return;
 
@@ -11675,7 +11842,7 @@ namespace Server.Models
                     Connection.ReceiveChatWithObservers(con => string.Format(con.Language.RepairFailRepaired, item.Info.ItemName), MessageType.System);
                     return;
                 }
-                if (NPCPage.Types.FirstOrDefault(x => x.ItemType == item.Info.ItemType) == null)
+                if (!npcTypes.Contains(item.Info.ItemType))
                 {
                     Connection.ReceiveChatWithObservers(con => string.Format(con.Language.RepairFailLocation, item.Info.ItemName), MessageType.System);
                     return;
@@ -11816,7 +11983,7 @@ namespace Server.Models
             if (p.GoldOres != null) result.Links.AddRange(p.GoldOres);
             if (p.Crystal != null) result.Links.AddRange(p.Crystal);
 
-            if (Dead || NPC == null || NPCPage == null || NPCPage.DialogType != NPCDialogType.RefinementStone) return;
+            if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.RefinementStone)) return;
 
             if (SEnvir.RefinementStoneInfo == null) return;
 
@@ -12196,7 +12363,7 @@ namespace Server.Models
 
 
 
-            if (Dead || NPC == null || NPCPage == null || NPCPage.DialogType != NPCDialogType.Refine) return;
+            if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.Refine)) return;
 
             if (!ParseLinks(p.Ores, 0, 5)) return;
             if (!ParseLinks(p.Items, 0, 3)) return;
@@ -12484,7 +12651,7 @@ namespace Server.Models
         }
         public void NPCRefineRetrieve(int index)
         {
-            if (Dead || NPC == null || NPCPage == null || NPCPage.DialogType != NPCDialogType.RefineRetrieve) return;
+            if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.RefineRetrieve)) return;
 
             RefineInfo info = Character.Refines.FirstOrDefault(x => x.Index == index);
 
@@ -12778,7 +12945,7 @@ namespace Server.Models
                     return;
             }
 
-            if (Dead || NPC == null || NPCPage == null || NPCPage.DialogType != NPCDialogType.MasterRefine) return;
+            if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.MasterRefine)) return;
 
             if (!ParseLinks(p.Fragment1s, 1, 1)) return;
             if (!ParseLinks(p.Fragment2s, 1, 1)) return;
@@ -13271,7 +13438,7 @@ namespace Server.Models
                     return;
             }
 
-            if (Dead || NPC == null || NPCPage == null || NPCPage.DialogType != NPCDialogType.MasterRefine) return;
+            if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.MasterRefine)) return;
 
             if (!ParseLinks(p.Fragment1s, 1, 1)) return;
             if (!ParseLinks(p.Fragment2s, 1, 1)) return;

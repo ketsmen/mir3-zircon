@@ -347,6 +347,61 @@ namespace Library.Network.ServerPackets
 
         public ClientCompanionObject CompanionObject { get; set; }
     }
+
+    public sealed class ClientTextNPCInfo
+    {
+        public int Index { get; set; }
+        public string NPCName { get; set; }
+        public int Image { get; set; }
+        public int FaceImage { get; set; }
+        public MapIcon MapIcon { get; set; }
+    }
+
+    public sealed class ClientTextNPCButton
+    {
+        public int ButtonID { get; set; }
+        public string Text { get; set; }
+        public string DestinationKey { get; set; }
+    }
+
+    public sealed class ClientTextNPCGood
+    {
+        public int Index { get; set; }
+        public int ItemIndex { get; set; }
+        public decimal Rate { get; set; }
+
+        [IgnorePropertyPacket]
+        public ItemInfo Item { get; set; }
+
+        [IgnorePropertyPacket]
+        public int Cost => Item == null ? 0 : (int)Math.Round(Item.Price * Rate);
+
+        [CompleteObject]
+        public void Complete()
+        {
+            Item = Globals.ItemInfoList?.Binding.FirstOrDefault(x => x.Index == ItemIndex);
+        }
+    }
+
+    public sealed class ClientTextNPCPage
+    {
+        public string Key { get; set; }
+        public string Say { get; set; }
+        public NPCDialogType DialogType { get; set; }
+        public int CurrencyIndex { get; set; }
+        public List<ClientTextNPCButton> Buttons { get; set; } = [];
+        public List<ClientTextNPCGood> Goods { get; set; } = [];
+        public List<ItemType> Types { get; set; } = [];
+
+        [IgnorePropertyPacket]
+        public CurrencyInfo Currency { get; set; }
+
+        [CompleteObject]
+        public void Complete()
+        {
+            Currency = CurrencyIndex > 0 ? Globals.CurrencyInfoList?.Binding.FirstOrDefault(x => x.Index == CurrencyIndex) : null;
+        }
+    }
     public sealed class ObjectHero : Packet
     {
         public int Index { get; set; }
@@ -390,6 +445,7 @@ namespace Library.Network.ServerPackets
         public uint ObjectID { get; set; }
 
         public int NPCIndex { get; set; }
+        public ClientTextNPCInfo TextNPC { get; set; }
         public Point CurrentLocation { get; set; }
 
         public MirDirection Direction { get; set; }
@@ -668,6 +724,7 @@ namespace Library.Network.ServerPackets
     {
         public uint ObjectID { get; set; }
         public int Index { get; set; }
+        public ClientTextNPCPage TextPage { get; set; }
         public List<ClientNPCValues> Values { get; set; }
 
         public NPCPage Page;
@@ -675,6 +732,8 @@ namespace Library.Network.ServerPackets
         [CompleteObject]
         public void Complete()
         {
+            if (TextPage != null) return;
+
             Page = Globals.NPCPageList.Binding.FirstOrDefault(x => x.Index == Index);
         }
     }

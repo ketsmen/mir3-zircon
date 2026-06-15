@@ -317,6 +317,8 @@ namespace Server.Envir
 
         public static CompiledMonsterDropTable MonsterDropTable;
         private static IReadOnlyDictionary<MonsterInfo, CompiledMonsterDrop> DropTextOverrides;
+        public static IReadOnlyList<CompiledTextNpcInfo> TextNpcs = [];
+        private static IReadOnlyDictionary<NPCInfo, CompiledTextNpcInfo> TextNpcOverrides = new Dictionary<NPCInfo, CompiledTextNpcInfo>();
 
         #endregion
 
@@ -591,6 +593,7 @@ namespace Server.Envir
 
             DropTextOverrides = LoadDropTextOverrides();
             RebuildMonsterDropTable();
+            LoadTextNpcs();
 
             foreach (MonsterInfo monster in MonsterInfoList.Binding)
             {
@@ -645,6 +648,52 @@ namespace Server.Envir
                 Log("[DropTextOverride] 加载失败，继续使用数据库掉落。");
                 Log(ex.ToString());
                 return null;
+            }
+        }
+
+        private static void LoadTextNpcs()
+        {
+            TextNpcs = [];
+            TextNpcOverrides = new Dictionary<NPCInfo, CompiledTextNpcInfo>();
+
+            if (!Config.NpcTextOverrideEnabled) return;
+
+            string path = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Config.NpcTextPath));
+            if (!Directory.Exists(path))
+            {
+                Log($"[NpcText] 跳过，目录不存在: {path}");
+                return;
+            }
+
+            try
+            {
+                TextNpcImporter importer = new(Session);
+                TextNpcLoadResult result = importer.Build(path, Config.NpcTextStrictMode);
+
+                TextNpcs = result.NPCs;
+                TextNpcOverrides = result.Overrides;
+
+                Log($"[NpcText] 已从 {Config.NpcTextPath} 加载文本 NPC，覆盖只在本次运行内存中生效。");
+                Log(result.Report.ToDisplayText());
+
+                foreach (string failure in result.Report.Failures.Take(200))
+                    Log($"[NpcText][Failure] {failure}");
+
+                foreach (string command in result.Report.UnknownCommands.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
+                    Log($"[NpcText][Unknown] {command}");
+
+                foreach (string map in result.Report.MissingMaps.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
+                    Log($"[NpcText][MissingMap] {map}");
+
+                foreach (string item in result.Report.MissingItems.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
+                    Log($"[NpcText][MissingItem] {item}");
+            }
+            catch (Exception ex)
+            {
+                Log("[NpcText] 加载失败，继续使用数据库 NPC。");
+                Log(ex.ToString());
+                TextNpcs = [];
+                TextNpcOverrides = new Dictionary<NPCInfo, CompiledTextNpcInfo>();
             }
         }
 
@@ -1015,8 +1064,35 @@ namespace Server.Envir
                     NPCInfo = info,
                 };
 
+                if (TextNpcOverrides.TryGetValue(info, out CompiledTextNpcInfo textOverride))
+                    ob.TextInfo = textOverride;
+
                 if (!ob.Spawn(info.Region, instance, instanceSequence))
                     Log($"[NPC] Failed to spawn NPC, Region: {info.Region.ServerDescription}, NPC: {info.NPCName}");
+            }
+
+            foreach (CompiledTextNpcInfo textInfo in TextNpcs)
+            {
+                if (textInfo.OverrideNPC != null) continue;
+                if (targetMap != null && textInfo.Map != targetMap) continue;
+
+                Map map = GetMap(textInfo.Map, instance, instanceSequence);
+                if (map == null)
+                {
+                    if (instance == null)
+                        Log($"[NpcText] Bad Map, NPC: {textInfo.NPCName}, Map: {textInfo.Map?.ServerDescription}");
+
+                    continue;
+                }
+
+                NPCObject ob = new NPCObject
+                {
+                    TextInfo = textInfo,
+                    Direction = textInfo.Direction,
+                };
+
+                if (!ob.Spawn(map, textInfo.Location))
+                    Log($"[NpcText] Failed to spawn NPC, Map: {textInfo.Map.ServerDescription}, X:{textInfo.Location.X}, Y:{textInfo.Location.Y}, NPC: {textInfo.NPCName}");
             }
         }
 

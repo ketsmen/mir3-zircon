@@ -1425,7 +1425,7 @@ namespace Client.Controls
             {
                 case GridType.Repair:
                     if ((Item.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage) return false;
-                    if (GameScene.Game.NPCBox.Page.Types.All(x => x.ItemType != Item.Info.ItemType) || !Item.Info.CanRepair || Item.CurrentDurability >= Item.MaxDurability || (GameScene.Game.NPCRepairBox.SpecialCheckBox.Checked && CEnvir.Now < Item.NextSpecialRepair))
+                    if (!GameScene.Game.NPCBox.CurrentTypes().Contains(Item.Info.ItemType) || !Item.Info.CanRepair || Item.CurrentDurability >= Item.MaxDurability || (GameScene.Game.NPCRepairBox.SpecialCheckBox.Checked && CEnvir.Now < Item.NextSpecialRepair))
                         return false;
                     break;
 

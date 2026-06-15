@@ -1,0 +1,6 @@
+; Text NPC definitions.
+; Format:
+; MapFile X Y NPCName Image FaceImage ScriptFile [MapIcon=None] [Direction=Down] [MinLevel=0] [MaxLevel=0] [Class=All] [Days=All] [OverrideIndex=0]
+;
+; Example, adjust map and item names to match your database before enabling:
+; 0 330 330 "测试商人" 1 0 example-merchant.txt MapIcon=Building Direction=Down Class=All Days=All

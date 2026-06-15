@@ -26,6 +26,7 @@ namespace Client.Scenes.Views
         private readonly Regex V = DrawTextExtensions.ValueRegex();
 
         public NPCPage Page;
+        public S.ClientTextNPCPage TextPage;
         private readonly DXControl PageTextContainer;
         private DXLabel PageText;
 
@@ -259,20 +260,44 @@ namespace Client.Scenes.Views
             ScrollBar.MaxValue = PageText.Size.Height - PageTextContainer.Size.Height + 14;
         }
 
+        public List<ItemType> CurrentTypes()
+        {
+            if (TextPage != null)
+                return TextPage.Types;
+
+            return Page?.Types.Select(x => x.ItemType).ToList() ?? new List<ItemType>();
+        }
+
+        private string CurrentSay()
+        {
+            return TextPage?.Say ?? Page?.Say ?? string.Empty;
+        }
+
+        private NPCDialogType CurrentDialogType()
+        {
+            return TextPage?.DialogType ?? Page?.DialogType ?? NPCDialogType.None;
+        }
+
+        private CurrencyInfo CurrentCurrency()
+        {
+            return TextPage?.Currency ?? Page?.Currency;
+        }
+
         public void Response(S.NPCResponse info)
         {
             GameScene.Game.NPCID = info.ObjectID;
             GameScene.Game.NPCBox.Visible = true;
 
             Page = info.Page;
+            TextPage = info.TextPage;
 
-            CurrentPageSay = Page.Say;
+            CurrentPageSay = CurrentSay();
 
             var text = CurrentPageSay = V.Replace(CurrentPageSay, match =>
             {
                 string text = match.Groups["Text"].Value;
                 string defaultText = match.Groups["Default"].Value;
-                ClientNPCValues valueItem = info.Values.Find(item => item.ID.ToString() == text);
+                ClientNPCValues valueItem = info.Values?.Find(item => item.ID.ToString() == text);
                 return valueItem != null ? valueItem.Value : defaultText;
             });
 
@@ -309,26 +334,32 @@ namespace Client.Scenes.Views
 
             GameScene.Game.InventoryBox.NormalMode();
 
-            switch (info.Page.DialogType)
+            switch (CurrentDialogType())
             {
                 case NPCDialogType.None:
                     {
-                        ShowQuestList();
+                        if (TextPage == null)
+                            ShowQuestList();
                     }
                     break;
                 case NPCDialogType.BuySell:
                     GameScene.Game.NPCGoodsBox.Location = new Point(0, Size.Height);
-                    GameScene.Game.NPCGoodsBox.Visible = Page.Goods.Count > 0;
-                    GameScene.Game.NPCGoodsBox.NewGoods(Page.Goods, Page.Currency);
+                    GameScene.Game.NPCGoodsBox.Visible = TextPage != null ? TextPage.Goods.Count > 0 : Page.Goods.Count > 0;
 
-                    if (Page.Types.Count > 0)
+                    if (TextPage != null)
+                        GameScene.Game.NPCGoodsBox.NewTextGoods(TextPage.Goods, TextPage.Currency);
+                    else
+                        GameScene.Game.NPCGoodsBox.NewGoods(Page.Goods, Page.Currency);
+
+                    List<ItemType> types = CurrentTypes();
+                    if (types.Count > 0)
                     {
-                        GameScene.Game.InventoryBox.SellMode(Page.Currency, Page.Types.Select(x => x.ItemType).ToList());
+                        GameScene.Game.InventoryBox.SellMode(CurrentCurrency(), types);
                         GameScene.Game.InventoryBox.Visible = true;
                     }
 
                     //exclusion to show quest list for sellmode as no dialog beneath
-                    if (!GameScene.Game.NPCGoodsBox.Visible)
+                    if (!GameScene.Game.NPCGoodsBox.Visible && TextPage == null)
                     {
                         ShowQuestList();
                     }
@@ -410,6 +441,7 @@ namespace Client.Scenes.Views
                 if (ob.Race != ObjectType.NPC || ob.ObjectID != GameScene.Game.NPCID) continue;
 
                 GameScene.Game.NPCQuestListBox.NPCInfo = ((NPCObject)ob).NPCInfo;
+                if (GameScene.Game.NPCQuestListBox.NPCInfo == null) return;
 
                 break;
             }
@@ -552,6 +584,7 @@ namespace Client.Scenes.Views
             if (disposing)
             {
                 Page = null;
+                TextPage = null;
 
                 if (PageTextContainer != null)
                 {
@@ -763,6 +796,7 @@ namespace Client.Scenes.Views
                 {
                     Parent = ClientPanel,
                     Good = good,
+                    TextGood = null,
                     Currency = Currency
                 });
                 cell.MouseClick += (o, e) => SelectedCell = cell;
@@ -771,6 +805,47 @@ namespace Client.Scenes.Views
             }
 
             ScrollBar.MaxValue = goods.Count * 43 - 2;
+            SetClientSize(new Size(ClientArea.Width, Math.Min(ScrollBar.MaxValue, 7 * 43 - 3) + 1));
+            ScrollBar.VisibleSize = ClientArea.Height;
+            ScrollBar.Size = new Size(ScrollBar.Size.Width, ClientArea.Height - 2);
+
+            BuyButton.Location = new Point(30, Size.Height - 43);
+
+            GuildCheckBox.Checked = false;
+            GuildCheckBox.Location = new Point(120, BuyButton.Location.Y + (BuyButton.Size.Height - GuildCheckBox.Size.Height) / 2);
+            GuildCheckBox.Visible = Currency.Type == CurrencyType.Gold;
+
+            ScrollBar.Value = 0;
+            UpdateLocations();
+        }
+
+        public void NewTextGoods(IList<S.ClientTextNPCGood> goods, CurrencyInfo currency)
+        {
+            Currency = currency ?? Globals.CurrencyInfoList.Binding.First(x => x.Type == CurrencyType.Gold);
+
+            foreach (NPCGoodsCell cell in Cells)
+                cell.Dispose();
+
+            Cells.Clear();
+
+            foreach (S.ClientTextNPCGood good in goods)
+            {
+                if (good.Item == null) continue;
+
+                NPCGoodsCell cell;
+                Cells.Add(cell = new NPCGoodsCell
+                {
+                    Parent = ClientPanel,
+                    Good = null,
+                    TextGood = good,
+                    Currency = Currency
+                });
+                cell.MouseClick += (o, e) => SelectedCell = cell;
+                cell.MouseWheel += ScrollBar.DoMouseWheel;
+                cell.MouseDoubleClick += (o, e) => Buy();
+            }
+
+            ScrollBar.MaxValue = Cells.Count * 43 - 2;
             SetClientSize(new Size(ClientArea.Width, Math.Min(ScrollBar.MaxValue, 7 * 43 - 3) + 1));
             ScrollBar.VisibleSize = ClientArea.Height;
             ScrollBar.Size = new Size(ScrollBar.Size.Width, ClientArea.Height - 2);
@@ -802,6 +877,9 @@ namespace Client.Scenes.Views
 
             if (SelectedCell == null) return;
 
+            ItemInfo goodItem = SelectedCell.GoodItem;
+            if (goodItem == null) return;
+
             var userCurrency = GameScene.Game.User.GetCurrency(Currency);
 
             long gold = userCurrency.Amount;
@@ -809,61 +887,61 @@ namespace Client.Scenes.Views
             if (GuildCheckBox.Checked && GameScene.Game.GuildBox.GuildInfo != null)
                 gold = GameScene.Game.GuildBox.GuildInfo.GuildFunds;
 
-            var cost = (int)Math.Max(1, SelectedCell.Good.Cost * Currency.ExchangeRate);
+            var cost = (int)Math.Max(1, SelectedCell.GoodCost * Currency.ExchangeRate);
 
-            if (SelectedCell.Good.Item.StackSize > 1)
+            if (goodItem.StackSize > 1)
             {
-                long maxCount = SelectedCell.Good.Item.StackSize;
+                long maxCount = goodItem.StackSize;
 
                 maxCount = Math.Min(maxCount, gold / cost);
-                if (SelectedCell.Good.Item.Weight > 0)
+                if (goodItem.Weight > 0)
                 {
-                    switch (SelectedCell.Good.Item.ItemType)
+                    switch (goodItem.ItemType)
                     {
                         case ItemType.Amulet:
                         case ItemType.Poison:
-                            if (MapObject.User.Stats[Stat.BagWeight] - MapObject.User.BagWeight < SelectedCell.Good.Item.Weight)
+                            if (MapObject.User.Stats[Stat.BagWeight] - MapObject.User.BagWeight < goodItem.Weight)
                             {
-                                GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.BuySellOverweight, SelectedCell.Good.Item.ItemName), MessageType.System);
+                                GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.BuySellOverweight, goodItem.ItemName), MessageType.System);
                                 return;
                             }
                             break;
                         default:
-                            maxCount = Math.Min(maxCount, (MapObject.User.Stats[Stat.BagWeight] - MapObject.User.BagWeight) / SelectedCell.Good.Item.Weight);
+                            maxCount = Math.Min(maxCount, (MapObject.User.Stats[Stat.BagWeight] - MapObject.User.BagWeight) / goodItem.Weight);
                             break;
                     }
                 }
 
                 if (maxCount < 0)
                 {
-                    GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.BuySellOverweight, SelectedCell.Good.Item.ItemName), MessageType.System);
+                    GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.BuySellOverweight, goodItem.ItemName), MessageType.System);
                     return;
                 }
 
-                ClientUserItem item = new ClientUserItem(SelectedCell.Good.Item, (int)Math.Min(int.MaxValue, maxCount));
+                ClientUserItem item = new ClientUserItem(goodItem, (int)Math.Min(int.MaxValue, maxCount));
 
                 DXItemAmountWindow window = new DXItemAmountWindow("Buy Item", item);
                 window.ConfirmButton.MouseClick += (o, e) =>
                 {
-                    CEnvir.Enqueue(new C.NPCBuy { Index = SelectedCell.Good.Index, Amount = window.Amount, GuildFunds = GuildCheckBox.Checked });
+                    CEnvir.Enqueue(new C.NPCBuy { Index = SelectedCell.GoodIndex, Amount = window.Amount, GuildFunds = GuildCheckBox.Checked });
                     GuildCheckBox.Checked = false;
                 };
             }
             else
             {
-                if (MapObject.User.Stats[Stat.BagWeight] - MapObject.User.BagWeight < SelectedCell.Good.Item.Weight)
+                if (MapObject.User.Stats[Stat.BagWeight] - MapObject.User.BagWeight < goodItem.Weight)
                 {
-                    GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.BuySellOverweight, SelectedCell.Good.Item.ItemName), MessageType.System);
+                    GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.BuySellOverweight, goodItem.ItemName), MessageType.System);
                     return;
                 }
 
                 if (cost > gold)
                 {
-                    GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.BuySellNeedGold, SelectedCell.Good.Item.ItemName), MessageType.System);
+                    GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.BuySellNeedGold, goodItem.ItemName), MessageType.System);
                     return;
                 }
 
-                CEnvir.Enqueue(new C.NPCBuy { Index = SelectedCell.Good.Index, Amount = 1, GuildFunds = GuildCheckBox.Checked });
+                CEnvir.Enqueue(new C.NPCBuy { Index = SelectedCell.GoodIndex, Amount = 1, GuildFunds = GuildCheckBox.Checked });
                 GuildCheckBox.Checked = false;
             }
         }
@@ -959,9 +1037,49 @@ namespace Client.Scenes.Views
         public event EventHandler<EventArgs> GoodChanged;
         public void OnGoodChanged(NPCGood oValue, NPCGood nValue)
         {
-            ItemCell.Item = new ClientUserItem(Good.Item, 1) { Flags = UserItemFlags.Locked };
+            RefreshGood();
+            GoodChanged?.Invoke(this, EventArgs.Empty);
+        }
 
-            switch (Good.Item.ItemType)
+        #endregion
+
+        #region TextGood
+
+        public S.ClientTextNPCGood TextGood
+        {
+            get => _TextGood;
+            set
+            {
+                if (_TextGood == value) return;
+
+                S.ClientTextNPCGood oldValue = _TextGood;
+                _TextGood = value;
+
+                OnTextGoodChanged(oldValue, value);
+            }
+        }
+        private S.ClientTextNPCGood _TextGood;
+        public event EventHandler<EventArgs> TextGoodChanged;
+        public void OnTextGoodChanged(S.ClientTextNPCGood oValue, S.ClientTextNPCGood nValue)
+        {
+            RefreshGood();
+            TextGoodChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        #endregion
+
+        public ItemInfo GoodItem => Good?.Item ?? TextGood?.Item;
+        public int GoodIndex => Good?.Index ?? TextGood?.Index ?? 0;
+        public int GoodCost => Good?.Cost ?? TextGood?.Cost ?? 0;
+
+        private void RefreshGood()
+        {
+            ItemInfo item = GoodItem;
+            if (item == null) return;
+
+            ItemCell.Item = new ClientUserItem(item, 1) { Flags = UserItemFlags.Locked };
+
+            switch (item.ItemType)
             {
                 case ItemType.Weapon:
                 case ItemType.Armour:
@@ -974,19 +1092,19 @@ namespace Client.Scenes.Views
                     ItemCell.Item.Flags |= UserItemFlags.NonRefinable;
                     break;
             }
-            ItemNameLabel.Text = Good.Item.ItemName;
+            ItemNameLabel.Text = item.ItemName;
 
-            switch (Good.Item.ItemType)
+            switch (item.ItemType)
             {
                 case ItemType.Nothing:
                     RequirementLabel.Text = string.Empty;
                     break;
                 case ItemType.Meat:
-                    RequirementLabel.Text = $"Quality: {Good.Item.Durability / 1000}";
+                    RequirementLabel.Text = $"Quality: {item.Durability / 1000}";
                     RequirementLabel.ForeColour = Color.Wheat;
                     break;
                 case ItemType.Ore:
-                    RequirementLabel.Text = $"Purity: {Good.Item.Durability / 1000}";
+                    RequirementLabel.Text = $"Purity: {item.Durability / 1000}";
                     RequirementLabel.ForeColour = Color.Wheat;
                     break;
                 case ItemType.Consumable:
@@ -1018,11 +1136,7 @@ namespace Client.Scenes.Views
             }
 
             UpdateCosts();
-
-            GoodChanged?.Invoke(this, EventArgs.Empty);
         }
-
-        #endregion
 
         #region Selected
 
@@ -1152,11 +1266,11 @@ namespace Client.Scenes.Views
 
         public void UpdateCosts()
         {
-            if (Good == null || Currency == null) return;
+            if (GoodItem == null || Currency == null) return;
 
             var userCurrency = GameScene.Game.User.GetCurrency(Currency);
 
-            var totalCost = (int)Math.Max(1, Good.Cost * Currency.ExchangeRate);
+            var totalCost = (int)Math.Max(1, GoodCost * Currency.ExchangeRate);
 
             CostLabel.Text = totalCost.ToString("##,##0");
             CostLabel.ForeColour = totalCost > userCurrency.Amount ? Color.Red : Color.Yellow;
@@ -1167,7 +1281,9 @@ namespace Client.Scenes.Views
 
         public void UpdateColours()
         {
-            switch (Good.Item.ItemType)
+            if (GoodItem == null) return;
+
+            switch (GoodItem.ItemType)
             {
                 case ItemType.Consumable:
                 case ItemType.Scroll:

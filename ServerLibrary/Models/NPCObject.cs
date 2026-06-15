@@ -16,10 +16,22 @@ namespace Server.Models
         public override ObjectType Race => ObjectType.NPC;
 
         public NPCInfo NPCInfo;
+        public CompiledTextNpcInfo TextInfo;
 
-        public override string Name => NPCInfo.NPCName;
+        public override string Name => TextInfo?.NPCName ?? NPCInfo.NPCName;
 
         public override bool Blocking => Visible;
+
+        public void NPCCall(PlayerObject ob)
+        {
+            if (TextInfo != null)
+            {
+                NPCCall(ob, TextInfo.Script.EntryPage);
+                return;
+            }
+
+            NPCCall(ob, NPCInfo.EntryPage);
+        }
 
         public void NPCCall(PlayerObject ob, NPCPage page)
         {
@@ -53,9 +65,69 @@ namespace Server.Models
 
                 ob.NPC = this;
                 ob.NPCPage = page;
+                ob.NPCTextPage = null;
+                ob.NPCTextBlock = null;
 
                 ob.Enqueue(new S.NPCResponse { ObjectID = ObjectID, Index = page.Index, Values = values });
                 break;
+            }
+        }
+
+        public void NPCCall(PlayerObject ob, string pageKey)
+        {
+            if (TextInfo?.Script == null) return;
+
+            NPCCall(ob, TextInfo.Script.GetPage(pageKey));
+        }
+
+        private void NPCCall(PlayerObject ob, CompiledNpcPage page)
+        {
+            int redirects = 0;
+
+            while (true)
+            {
+                if (page == null) return;
+                if (++redirects > 64)
+                {
+                    SEnvir.Log($"[NpcText] GOTO 循环过深，NPC: {Name}, Page: {page.Key}");
+                    return;
+                }
+
+                CompiledNpcBlock block = CheckTextPage(ob, page) ? page.MainBlock : page.ElseBlock;
+                if (block == null || block.IsEmpty)
+                {
+                    ob.NPC = null;
+                    ob.NPCPage = null;
+                    ob.NPCTextPage = null;
+                    ob.NPCTextBlock = null;
+                    ob.Enqueue(new S.NPCClose());
+                    return;
+                }
+
+                string nextPage = DoTextActions(ob, block);
+                if (!string.IsNullOrWhiteSpace(nextPage))
+                {
+                    page = TextInfo.Script.GetPage(nextPage);
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(block.Say))
+                {
+                    ob.NPC = null;
+                    ob.NPCPage = null;
+                    ob.NPCTextPage = null;
+                    ob.NPCTextBlock = null;
+                    ob.Enqueue(new S.NPCClose());
+                    return;
+                }
+
+                ob.NPC = this;
+                ob.NPCPage = null;
+                ob.NPCTextPage = page;
+                ob.NPCTextBlock = block;
+
+                ob.Enqueue(new S.NPCResponse { ObjectID = ObjectID, TextPage = page.ToClientPage(block), Values = [] });
+                return;
             }
         }
 
@@ -329,6 +401,185 @@ namespace Server.Models
                         break;
                 }
             }
+        }
+
+        private string DoTextActions(PlayerObject ob, CompiledNpcBlock block)
+        {
+            string nextPage = null;
+
+            foreach (CompiledNpcAction action in block.Actions)
+            {
+                switch (action.ActionType)
+                {
+                    case CompiledNpcActionType.Goto:
+                        nextPage = action.StringParameter1;
+                        break;
+                    case CompiledNpcActionType.GiveGold:
+                        ob.Gold.Amount += action.IntParameter1;
+                        ob.LogMilestone(MilestoneType.CurrencyGain, action.IntParameter1, currency: ob.Gold.Info);
+                        ob.GoldChanged();
+                        break;
+                    case CompiledNpcActionType.TakeGold:
+                        ob.Gold.Amount -= action.IntParameter1;
+                        ob.GoldChanged();
+                        break;
+                    case CompiledNpcActionType.GiveItem:
+                        {
+                            if (action.ItemParameter1 == null) continue;
+
+                            ItemCheck check = new(action.ItemParameter1, action.IntParameter1, UserItemFlags.None, TimeSpan.Zero);
+                            if (!ob.CanGainItems(false, check)) continue;
+
+                            while (check.Count > 0)
+                                ob.GainItem(SEnvir.CreateFreshItem(check));
+                        }
+                        break;
+                    case CompiledNpcActionType.TakeItem:
+                        if (action.ItemParameter1 != null)
+                            ob.TakeItem(action.ItemParameter1, action.IntParameter1);
+                        break;
+                    case CompiledNpcActionType.Move:
+                        {
+                            Map map = SEnvir.GetMap(action.MapParameter1, ob.CurrentMap.Instance, ob.CurrentMap.InstanceSequence);
+                            if (map != null)
+                                ob.Teleport(map, new Point(action.IntParameter1, action.IntParameter2));
+                        }
+                        break;
+                    case CompiledNpcActionType.AddNameList:
+                        SetDataList(ob, action.StringParameter1, action.DataType, true);
+                        break;
+                    case CompiledNpcActionType.DeleteNameList:
+                        SetDataList(ob, action.StringParameter1, action.DataType, false);
+                        break;
+                    case CompiledNpcActionType.SetValue:
+                        SetDataValue(ob, action.StringParameter1, action.DataType, action.IntParameter1, false);
+                        break;
+                    case CompiledNpcActionType.ChangeValue:
+                        SetDataValue(ob, action.StringParameter1, action.DataType, action.IntParameter1, true);
+                        break;
+                    case CompiledNpcActionType.LocalMessage:
+                        if (!string.IsNullOrWhiteSpace(action.StringParameter1))
+                            ob.Connection.ReceiveChat(action.StringParameter1, MessageType.System);
+                        break;
+                }
+            }
+
+            return nextPage;
+        }
+
+        private bool CheckTextPage(PlayerObject ob, CompiledNpcPage page)
+        {
+            foreach (CompiledNpcCheck check in page.Checks)
+            {
+                switch (check.CheckType)
+                {
+                    case CompiledNpcCheckType.Level:
+                        if (!Compare(check.Operator, ob.Level, check.IntParameter1)) return false;
+                        break;
+                    case CompiledNpcCheckType.Gold:
+                        if (!Compare(check.Operator, ob.Gold.Amount, check.IntParameter1)) return false;
+                        break;
+                    case CompiledNpcCheckType.Item:
+                        if (check.ItemParameter1 == null) continue;
+                        if (!Compare(check.Operator, ob.GetItemCount(check.ItemParameter1), check.IntParameter1)) return false;
+                        break;
+                    case CompiledNpcCheckType.Class:
+                        if (!HasRequiredClass(check.Class, ob.Class)) return false;
+                        break;
+                    case CompiledNpcCheckType.PKPoint:
+                        if (!Compare(check.Operator, ob.Stats[Stat.PKPoint], check.IntParameter1)) return false;
+                        break;
+                    case CompiledNpcCheckType.Random:
+                        if (check.IntParameter1 <= 0 || !Compare(check.Operator, SEnvir.Random.Next(check.IntParameter1), check.IntParameter2)) return false;
+                        break;
+                    case CompiledNpcCheckType.NameList:
+                        if (!CheckDataList(ob, check.StringParameter1, check.DataType)) return false;
+                        break;
+                    case CompiledNpcCheckType.Value:
+                        if (!Compare(check.Operator, GetDataValue(ob, check.StringParameter1, check.DataType), check.IntParameter1)) return false;
+                        break;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool HasRequiredClass(RequiredClass requiredClass, MirClass mirClass)
+        {
+            if (requiredClass == RequiredClass.None || requiredClass == RequiredClass.All) return true;
+
+            return mirClass switch
+            {
+                MirClass.Warrior => (requiredClass & RequiredClass.Warrior) == RequiredClass.Warrior,
+                MirClass.Wizard => (requiredClass & RequiredClass.Wizard) == RequiredClass.Wizard,
+                MirClass.Taoist => (requiredClass & RequiredClass.Taoist) == RequiredClass.Taoist,
+                MirClass.Assassin => (requiredClass & RequiredClass.Assassin) == RequiredClass.Assassin,
+                _ => false
+            };
+        }
+
+        private static bool CheckDataList(PlayerObject ob, string categoryName, NPCDataType dataType)
+        {
+            if (string.IsNullOrWhiteSpace(categoryName)) return false;
+
+            string category = $"{categoryName}_NameList";
+            string value = GetDataTypeValue(ob, dataType);
+            if (string.IsNullOrEmpty(value)) return false;
+
+            return SEnvir.GameNPCList.Binding.Any(x => x.Category == category && x.TypeValue == value);
+        }
+
+        private static int GetDataValue(PlayerObject ob, string categoryName, NPCDataType dataType)
+        {
+            if (string.IsNullOrWhiteSpace(categoryName)) return 0;
+
+            string value = GetDataTypeValue(ob, dataType);
+            if (string.IsNullOrEmpty(value)) return 0;
+
+            return SEnvir.GameNPCList.Binding.FirstOrDefault(x => x.Category == categoryName && x.TypeValue == value)?.IntValue1 ?? 0;
+        }
+
+        private static void SetDataList(PlayerObject ob, string categoryName, NPCDataType dataType, bool add)
+        {
+            if (string.IsNullOrWhiteSpace(categoryName)) return;
+
+            string category = $"{categoryName}_NameList";
+            string value = GetDataTypeValue(ob, dataType);
+            if (string.IsNullOrEmpty(value)) return;
+
+            GameNPCList item = SEnvir.GameNPCList.Binding.FirstOrDefault(x => x.Category == category && x.TypeValue == value);
+            if (add)
+            {
+                if (item != null) return;
+
+                item = SEnvir.GameNPCList.CreateNewObject();
+                item.Category = category;
+                item.TypeValue = value;
+                return;
+            }
+
+            item?.Delete();
+        }
+
+        private static void SetDataValue(PlayerObject ob, string categoryName, NPCDataType dataType, int amount, bool add)
+        {
+            if (string.IsNullOrWhiteSpace(categoryName)) return;
+
+            string value = GetDataTypeValue(ob, dataType);
+            if (string.IsNullOrEmpty(value)) return;
+
+            GameNPCList item = SEnvir.GameNPCList.Binding.FirstOrDefault(x => x.Category == categoryName && x.TypeValue == value);
+            if (item == null)
+            {
+                item = SEnvir.GameNPCList.CreateNewObject();
+                item.Category = categoryName;
+                item.TypeValue = value;
+            }
+
+            if (add)
+                item.IntValue1 += amount;
+            else
+                item.IntValue1 = amount;
         }
 
         private static List<ClientNPCValues> GetValues(PlayerObject ob, NPCPage page)
@@ -725,7 +976,8 @@ namespace Server.Models
             {
                 ObjectID = ObjectID,
 
-                NPCIndex = NPCInfo.Index,
+                NPCIndex = NPCInfo?.Index ?? 0,
+                TextNPC = TextInfo?.ToClientInfo(),
 
                 CurrentLocation = CurrentLocation,
 
@@ -735,54 +987,53 @@ namespace Server.Models
 
         public override bool CanBeSeenBy(PlayerObject ob)
         {
-            foreach (NPCRequirement requirement in NPCInfo.Requirements)
+            if (TextInfo != null)
             {
-                switch (requirement.Requirement)
+                if (TextInfo.MinLevel > 0 && ob.Level < TextInfo.MinLevel) return false;
+                if (TextInfo.MaxLevel > 0 && ob.Level > TextInfo.MaxLevel) return false;
+                if (!HasRequiredClass(TextInfo.Class, ob.Class)) return false;
+
+                var flag = (DaysOfWeek)Enum.ToObject(typeof(DaysOfWeek), 1 << (int)DateTime.UtcNow.DayOfWeek);
+                if (TextInfo.Days != DaysOfWeek.None && !TextInfo.Days.HasFlag(flag)) return false;
+            }
+
+            if (NPCInfo != null)
+            {
+                foreach (NPCRequirement requirement in NPCInfo.Requirements)
                 {
-                    case NPCRequirementType.MaxLevel:
-                        if (ob.Level > requirement.IntParameter1) return false;
-                        break;
-                    case NPCRequirementType.MinLevel:
-                        if (ob.Level < requirement.IntParameter1) return false;
-                        break;
-                    case NPCRequirementType.Accepted:
-                        if (ob.Quests.Any(x => x.QuestInfo == requirement.QuestParameter)) break;
+                    switch (requirement.Requirement)
+                    {
+                        case NPCRequirementType.MaxLevel:
+                            if (ob.Level > requirement.IntParameter1) return false;
+                            break;
+                        case NPCRequirementType.MinLevel:
+                            if (ob.Level < requirement.IntParameter1) return false;
+                            break;
+                        case NPCRequirementType.Accepted:
+                            if (ob.Quests.Any(x => x.QuestInfo == requirement.QuestParameter)) break;
 
-                        return false;
-                    case NPCRequirementType.NotAccepted:
-                        if (ob.Quests.Any(x => x.QuestInfo == requirement.QuestParameter)) return false;
+                            return false;
+                        case NPCRequirementType.NotAccepted:
+                            if (ob.Quests.Any(x => x.QuestInfo == requirement.QuestParameter)) return false;
 
-                        break;
-                    case NPCRequirementType.HaveCompleted:
-                        if (ob.Quests.Any(x => x.QuestInfo == requirement.QuestParameter && x.Completed)) break;
+                            break;
+                        case NPCRequirementType.HaveCompleted:
+                            if (ob.Quests.Any(x => x.QuestInfo == requirement.QuestParameter && x.Completed)) break;
 
-                        return false;
-                    case NPCRequirementType.HaveNotCompleted:
-                        if (ob.Quests.Any(x => x.QuestInfo == requirement.QuestParameter && x.Completed)) return false;
+                            return false;
+                        case NPCRequirementType.HaveNotCompleted:
+                            if (ob.Quests.Any(x => x.QuestInfo == requirement.QuestParameter && x.Completed)) return false;
 
-                        break;
-                    case NPCRequirementType.Class:
-                        switch (ob.Class)
-                        {
-                            case MirClass.Warrior:
-                                if ((requirement.Class & RequiredClass.Warrior) != RequiredClass.Warrior) return false;
-                                break;
-                            case MirClass.Wizard:
-                                if ((requirement.Class & RequiredClass.Wizard) != RequiredClass.Wizard) return false;
-                                break;
-                            case MirClass.Taoist:
-                                if ((requirement.Class & RequiredClass.Taoist) != RequiredClass.Taoist) return false;
-                                break;
-                            case MirClass.Assassin:
-                                if ((requirement.Class & RequiredClass.Assassin) != RequiredClass.Assassin) return false;
-                                break;
-                        }
-                        break;
-                    case NPCRequirementType.DaysOfWeek:
-                        var flag = (DaysOfWeek)Enum.ToObject(typeof(DaysOfWeek), 1 << (int)DateTime.UtcNow.DayOfWeek);
+                            break;
+                        case NPCRequirementType.Class:
+                            if (!HasRequiredClass(requirement.Class, ob.Class)) return false;
+                            break;
+                        case NPCRequirementType.DaysOfWeek:
+                            var flag = (DaysOfWeek)Enum.ToObject(typeof(DaysOfWeek), 1 << (int)DateTime.UtcNow.DayOfWeek);
 
-                        if (!requirement.DaysOfWeek.HasFlag(flag)) return false;
-                        break;
+                            if (!requirement.DaysOfWeek.HasFlag(flag)) return false;
+                            break;
+                    }
                 }
             }
 
