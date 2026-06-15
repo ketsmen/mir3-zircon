@@ -22,6 +22,7 @@ namespace Server.WinForms
         private readonly Assembly _configAssembly = Assembly.GetAssembly(typeof(Config));
         private readonly TabControl _tabs = new TabControl();
         private readonly StatusStrip _statusStrip = new StatusStrip();
+        private readonly ToolStripTextBox _filterText = new ToolStripTextBox();
         private readonly ToolStripStatusLabel _statusLabel = new ToolStripStatusLabel();
         private readonly Dictionary<string, DataGridView> _sectionGrids = new Dictionary<string, DataGridView>();
         private readonly Dictionary<string, DataGridViewRow> _propertyRows = new Dictionary<string, DataGridViewRow>(StringComparer.OrdinalIgnoreCase);
@@ -33,6 +34,8 @@ namespace Server.WinForms
             Width = 1120;
             Height = 760;
             StartPosition = FormStartPosition.CenterParent;
+            KeyPreview = true;
+            KeyDown += ConfigEditorForm_KeyDown;
 
             BuildLayout();
             LoadSettings();
@@ -44,6 +47,13 @@ namespace Server.WinForms
             AddButton(toolStrip, "保存", (_, _) => SaveSettings());
             AddButton(toolStrip, "重新加载", (_, _) => ReloadSettings());
             AddButton(toolStrip, "检查版本", (_, _) => CheckVersion());
+            toolStrip.Items.Add(new ToolStripSeparator());
+            toolStrip.Items.Add(new ToolStripLabel("过滤"));
+            _filterText.AutoSize = false;
+            _filterText.Width = 220;
+            _filterText.ToolTipText = "按配置项、分组、类型或当前值过滤。";
+            _filterText.TextChanged += (_, _) => ApplyFilter();
+            toolStrip.Items.Add(_filterText);
             toolStrip.Items.Add(new ToolStripSeparator());
             AddButton(toolStrip, "选择版本文件", (_, _) => SelectFileProperty("VersionPath", "选择客户端版本文件"));
             AddButton(toolStrip, "选择地图目录", (_, _) => SelectFolderProperty("MapPath", "选择地图目录"));
@@ -104,6 +114,37 @@ namespace Server.WinForms
                 _tabs.SelectedIndex = 0;
 
             _statusLabel.Text = $"已加载 {_settings.Count} 个配置项。{GetConfigPathText()}";
+            ApplyFilter();
+        }
+
+        private void ConfigEditorForm_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Control && e.KeyCode == Keys.S)
+            {
+                SaveSettings();
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.Control && e.KeyCode == Keys.F)
+            {
+                _filterText.Focus();
+                _filterText.TextBox.SelectAll();
+                SuppressKey(e);
+                return;
+            }
+
+            if (e.KeyCode == Keys.F5)
+            {
+                ReloadSettings();
+                SuppressKey(e);
+            }
+        }
+
+        private static void SuppressKey(KeyEventArgs e)
+        {
+            e.Handled = true;
+            e.SuppressKeyPress = true;
         }
 
         private DataGridView GetSectionGrid(string section)
@@ -375,8 +416,57 @@ namespace Server.WinForms
             FocusRow(row);
         }
 
+        private void ApplyFilter()
+        {
+            EndGridEdits();
+
+            string filter = _filterText.Text?.Trim();
+            int visible = 0;
+            int total = 0;
+
+            foreach (KeyValuePair<string, DataGridView> pair in _sectionGrids)
+            {
+                DataGridView grid = pair.Value;
+                grid.CurrentCell = null;
+
+                int sectionVisible = 0;
+                foreach (DataGridViewRow row in grid.Rows)
+                {
+                    if (row.Tag is not ConfigSetting setting) continue;
+
+                    total++;
+                    bool match = MatchesFilter(setting, row, filter);
+                    row.Visible = match;
+                    if (!match) continue;
+
+                    visible++;
+                    sectionVisible++;
+                }
+
+                if (grid.Parent is TabPage page)
+                    page.Text = string.IsNullOrWhiteSpace(filter) ? pair.Key : $"{pair.Key} ({sectionVisible})";
+            }
+
+            string suffix = string.IsNullOrWhiteSpace(filter) ? string.Empty : $"，过滤: {filter}";
+            _statusLabel.Text = $"配置项: {visible}/{total}{suffix}。{GetConfigPathText()}";
+        }
+
+        private static bool MatchesFilter(ConfigSetting setting, DataGridViewRow row, string filter)
+        {
+            if (string.IsNullOrWhiteSpace(filter)) return true;
+
+            string value = Convert.ToString(row.Cells[2].Value, CultureInfo.InvariantCulture) ?? string.Empty;
+            return setting.Section.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   setting.Property.Name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   GetTypeText(setting.Property.PropertyType).IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   value.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private void FocusRow(DataGridViewRow row)
         {
+            if (!row.Visible)
+                _filterText.Text = string.Empty;
+
             if (row.DataGridView?.Parent is TabPage page)
                 _tabs.SelectedTab = page;
 
