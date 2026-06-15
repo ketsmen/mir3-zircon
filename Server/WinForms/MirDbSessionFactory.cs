@@ -21,7 +21,15 @@ namespace Server.WinForms
             try
             {
                 if (!string.IsNullOrEmpty(Config.EncryptionKey))
+                {
                     SEnvir.CryptoKey = Convert.FromBase64String(Config.EncryptionKey);
+                    if (SEnvir.CryptoKey.Length != 32)
+                        throw new ApplicationException("加密密钥必须是 32 字节的 Base64 字符串。");
+                }
+            }
+            catch (ApplicationException)
+            {
+                throw;
             }
             catch (Exception)
             {
