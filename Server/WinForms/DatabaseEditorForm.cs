@@ -107,6 +107,7 @@ namespace Server.WinForms
             AddButton(toolStrip, "导入", (_, _) => ImportCurrent());
             AddButton(toolStrip, "导出选中", (_, _) => ExportCurrent());
             AddButton(toolStrip, "导出全部", (_, _) => ExportAllCurrent());
+            AddButton(toolStrip, "导出当前视图", (_, _) => _activeGrid?.ExportVisibleRows(this));
             AddButton(toolStrip, "导入 Mir2 掉落", (_, _) => ImportMir2Drops());
             AddButton(toolStrip, "导出 Mir2 掉落", (_, _) => ExportMir2Drops());
             AddButton(toolStrip, "验证文本 NPC", (_, _) => ValidateTextNpcs());

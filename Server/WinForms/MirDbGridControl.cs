@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Windows.Forms;
@@ -105,6 +106,37 @@ namespace Server.WinForms
         {
             _filterText = text ?? string.Empty;
             RefreshBinding();
+        }
+
+        public void ExportVisibleRows(IWin32Window owner)
+        {
+            if (_grid.Rows.Count == 0)
+            {
+                MessageBox.Show(owner, "当前视图没有可导出的行。", "导出当前视图", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using SaveFileDialog dialog = new SaveFileDialog
+            {
+                Title = "导出当前视图",
+                Filter = "TSV 文件 (*.tsv)|*.tsv|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
+                FileName = $"{_itemType.Name}_View_{DateTime.Now:yyyyMMdd_HHmmss}.tsv",
+                RestoreDirectory = true
+            };
+
+            if (dialog.ShowDialog(owner) != DialogResult.OK) return;
+
+            List<DataGridViewColumn> columns = GetVisibleColumns();
+            List<string> lines = new List<string>
+            {
+                string.Join("\t", columns.Select(x => EscapeTsv(x.HeaderText)))
+            };
+
+            foreach (DataGridViewRow row in _grid.Rows)
+                lines.Add(string.Join("\t", columns.Select(column => EscapeTsv(Convert.ToString(row.Cells[column.Index].FormattedValue, CultureInfo.CurrentCulture)))));
+
+            File.WriteAllLines(dialog.FileName, lines);
+            MessageBox.Show(owner, $"已导出 {_grid.Rows.Count:#,##0} 行到：\r\n{dialog.FileName}", "导出当前视图", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         public bool SelectByIndex(int index)
@@ -266,6 +298,7 @@ namespace Server.WinForms
         {
             _contextMenu.Items.Add("复制当前单元格", null, (_, _) => CopyCurrentCell());
             _contextMenu.Items.Add("复制选中行", null, (_, _) => CopySelectedRows());
+            _contextMenu.Items.Add("导出当前视图", null, (_, _) => ExportVisibleRows(this));
             _contextMenu.Items.Add(new ToolStripSeparator());
             _contextMenu.Items.Add("复制当前对象为新行", null, (_, _) => DuplicateCurrent());
             _contextMenu.Items.Add(new ToolStripSeparator());
@@ -311,10 +344,7 @@ namespace Server.WinForms
 
             if (rows.Count == 0) return;
 
-            List<DataGridViewColumn> columns = _grid.Columns.Cast<DataGridViewColumn>()
-                .Where(x => x.Visible)
-                .OrderBy(x => x.DisplayIndex)
-                .ToList();
+            List<DataGridViewColumn> columns = GetVisibleColumns();
 
             List<string> lines = new List<string>
             {
@@ -327,6 +357,22 @@ namespace Server.WinForms
             }
 
             Clipboard.SetText(string.Join(Environment.NewLine, lines));
+        }
+
+        private List<DataGridViewColumn> GetVisibleColumns()
+        {
+            return _grid.Columns.Cast<DataGridViewColumn>()
+                .Where(x => x.Visible)
+                .OrderBy(x => x.DisplayIndex)
+                .ToList();
+        }
+
+        private static string EscapeTsv(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\t", " ")
+                .Replace("\r", " ")
+                .Replace("\n", " ");
         }
 
         private void SelectCurrentRow()
