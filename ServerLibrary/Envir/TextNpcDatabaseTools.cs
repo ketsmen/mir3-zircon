@@ -980,9 +980,9 @@ namespace Server.Envir
                     report.ChecksExported++;
                     break;
                 case NPCCheckType.Class:
-                    if (check.Operator == Operator.Equal && Enum.IsDefined(typeof(MirClass), check.IntParameter1))
+                    if (check.Operator == Operator.Equal && TryFormatEnumValue<MirClass>(check.IntParameter1, out string className))
                     {
-                        script.AppendLine($"CHECKCLASS {(MirClass)check.IntParameter1}");
+                        script.AppendLine($"CHECKCLASS {className}");
                         report.ChecksExported++;
                     }
                     else
@@ -991,9 +991,9 @@ namespace Server.Envir
                     }
                     break;
                 case NPCCheckType.Gender:
-                    if (check.Operator == Operator.Equal && Enum.IsDefined(typeof(MirGender), check.IntParameter1))
+                    if (check.Operator == Operator.Equal && TryFormatEnumValue<MirGender>(check.IntParameter1, out string genderName))
                     {
-                        script.AppendLine($"CHECKGENDER {(MirGender)check.IntParameter1}");
+                        script.AppendLine($"CHECKGENDER {genderName}");
                         report.ChecksExported++;
                     }
                     else
@@ -1031,6 +1031,28 @@ namespace Server.Envir
 
             if (check.FailPage != null && GetCommonFailPage(page) != check.FailPage)
                 AddTodo(script, report, npc, page, $"条件失败页不能自动合并为 #ELSESAY: {check.FailPage.Description}");
+        }
+
+        private static bool TryFormatEnumValue<TEnum>(int value, out string text) where TEnum : struct, Enum
+        {
+            text = null;
+            Type enumType = typeof(TEnum);
+            Type underlyingType = Enum.GetUnderlyingType(enumType);
+
+            try
+            {
+                object converted = Convert.ChangeType(value, underlyingType);
+                object enumValue = Enum.ToObject(enumType, converted);
+                if (!Enum.IsDefined(enumType, enumValue))
+                    return false;
+
+                text = enumValue.ToString();
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static void ExportAction(StringBuilder script, NPCInfo npc, NPCPage page, NPCAction action, TextNpcExportReport report)
