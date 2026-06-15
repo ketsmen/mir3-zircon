@@ -431,6 +431,12 @@ namespace Server.Envir
                     else
                         report.Failures.Add($"{line.Source}: CHECKCLASS 条件格式无效。");
                     break;
+                case "CHECKGENDER":
+                    if (parts.Count >= 2 && TryParseRequiredGender(parts[1], out RequiredGender requiredGender))
+                        checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Gender, Gender = requiredGender }, line));
+                    else
+                        report.Failures.Add($"{line.Source}: CHECKGENDER 条件格式无效。");
+                    break;
                 case "CHECKPKPOINT":
                     if (TryParseComparison(parts.Skip(1).ToList(), Operator.LessThanOrEqual, out Operator pkOp, out int pkValue))
                         checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.PKPoint, Operator = pkOp, IntParameter1 = pkValue }, line));
@@ -961,6 +967,22 @@ namespace Server.Envir
             return result != RequiredClass.None;
         }
 
+        private static bool TryParseRequiredGender(string text, out RequiredGender result)
+        {
+            result = RequiredGender.None;
+            if (text.Equals("All", StringComparison.OrdinalIgnoreCase) || text.Equals("None", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            result = 0;
+            foreach (string part in text.Split([',', '|', '+'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!Enum.TryParse(part, true, out RequiredGender parsed)) return false;
+                result |= parsed;
+            }
+
+            return result != 0;
+        }
+
         private static bool TryParseDays(string text, out DaysOfWeek result)
         {
             if (text.Equals("All", StringComparison.OrdinalIgnoreCase))
@@ -1382,6 +1404,7 @@ namespace Server.Envir
         public string StringParameter1;
         public ItemInfo ItemParameter1;
         public RequiredClass Class;
+        public RequiredGender Gender = RequiredGender.None;
         public NPCDataType DataType = NPCDataType.User;
     }
 
@@ -1403,6 +1426,7 @@ namespace Server.Envir
         Gold,
         Item,
         Class,
+        Gender,
         PKPoint,
         Random,
         NameList,

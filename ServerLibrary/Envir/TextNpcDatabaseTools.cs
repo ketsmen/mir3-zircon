@@ -389,6 +389,8 @@ namespace Server.Envir
         {
             if (source.CheckType == CompiledNpcCheckType.Class && (source.Class == RequiredClass.None || source.Class == RequiredClass.All))
                 return null;
+            if (source.CheckType == CompiledNpcCheckType.Gender && source.Gender == RequiredGender.None)
+                return null;
 
             NPCCheck check = _checks.CreateNewObject();
             check.Operator = source.Operator;
@@ -415,6 +417,14 @@ namespace Server.Envir
                     check.CheckType = NPCCheckType.Class;
                     check.Operator = Operator.Equal;
                     check.IntParameter1 = (int)ToMirClass(source.Class).Value;
+                    break;
+                case CompiledNpcCheckType.Gender:
+                    MirGender? gender = ToMirGender(source.Gender);
+                    if (gender == null) return null;
+
+                    check.CheckType = NPCCheckType.Gender;
+                    check.Operator = Operator.Equal;
+                    check.IntParameter1 = (int)gender.Value;
                     break;
                 case CompiledNpcCheckType.PKPoint:
                     check.CheckType = NPCCheckType.PKPoints;
@@ -589,6 +599,16 @@ namespace Server.Envir
                 RequiredClass.Wizard => MirClass.Wizard,
                 RequiredClass.Taoist => MirClass.Taoist,
                 RequiredClass.Assassin => MirClass.Assassin,
+                _ => null
+            };
+        }
+
+        private static MirGender? ToMirGender(RequiredGender requiredGender)
+        {
+            return requiredGender switch
+            {
+                RequiredGender.Male => MirGender.Male,
+                RequiredGender.Female => MirGender.Female,
                 _ => null
             };
         }
@@ -841,6 +861,17 @@ namespace Server.Envir
                     else
                     {
                         AddTodo(script, report, npc, page, $"手动迁移职业条件: Operator={check.Operator}, Value={check.IntParameter1}");
+                    }
+                    break;
+                case NPCCheckType.Gender:
+                    if (check.Operator == Operator.Equal && Enum.IsDefined(typeof(MirGender), check.IntParameter1))
+                    {
+                        script.AppendLine($"CHECKGENDER {(MirGender)check.IntParameter1}");
+                        report.ChecksExported++;
+                    }
+                    else
+                    {
+                        AddTodo(script, report, npc, page, $"手动迁移性别条件: Operator={check.Operator}, Value={check.IntParameter1}");
                     }
                     break;
                 case NPCCheckType.PKPoints:

@@ -504,6 +504,9 @@ namespace Server.Models
                     case CompiledNpcCheckType.Class:
                         if (!HasRequiredClass(check.Class, ob.Class)) return false;
                         break;
+                    case CompiledNpcCheckType.Gender:
+                        if (!HasRequiredGender(check.Gender, ob.Gender)) return false;
+                        break;
                     case CompiledNpcCheckType.PKPoint:
                         if (!Compare(check.Operator, ob.Stats[Stat.PKPoint], check.IntParameter1)) return false;
                         break;
@@ -556,6 +559,18 @@ namespace Server.Models
                 MirClass.Wizard => (requiredClass & RequiredClass.Wizard) == RequiredClass.Wizard,
                 MirClass.Taoist => (requiredClass & RequiredClass.Taoist) == RequiredClass.Taoist,
                 MirClass.Assassin => (requiredClass & RequiredClass.Assassin) == RequiredClass.Assassin,
+                _ => false
+            };
+        }
+
+        private static bool HasRequiredGender(RequiredGender requiredGender, MirGender mirGender)
+        {
+            if (requiredGender == RequiredGender.None) return true;
+
+            return mirGender switch
+            {
+                MirGender.Male => (requiredGender & RequiredGender.Male) == RequiredGender.Male,
+                MirGender.Female => (requiredGender & RequiredGender.Female) == RequiredGender.Female,
                 _ => false
             };
         }
@@ -720,6 +735,9 @@ namespace Server.Models
                         break;
                     case NPCCheckType.Class:
                         if (!Compare(check.Operator, (int)ob.Class, check.IntParameter1)) return false;
+                        break;
+                    case NPCCheckType.Gender:
+                        if (!Compare(check.Operator, (int)ob.Gender, check.IntParameter1)) return false;
                         break;
                     case NPCCheckType.Gold:
                         if (!Compare(check.Operator, ob.Gold.Amount, check.IntParameter1)) return false;
