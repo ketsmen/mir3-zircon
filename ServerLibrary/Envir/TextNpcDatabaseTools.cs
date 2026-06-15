@@ -83,7 +83,7 @@ namespace Server.Envir
                 {
                     if (check.CheckType == CompiledNpcCheckType.Class && !CanMapClassCheck(check.Class))
                     {
-                        report.Failures.Add($"{info.NPCName} {page.Key}: CHECKCLASS `{check.Class}` 不能无损导入旧数据库条件，只支持 All/None 或单职业。");
+                        report.Failures.Add(FormatIssue(info, page, check.Source, $"CHECKCLASS `{check.Class}` 不能无损导入旧数据库条件，只支持 All/None 或单职业。"));
                         result = false;
                     }
                 }
@@ -105,22 +105,25 @@ namespace Server.Envir
 
             if (gotoCount > 1)
             {
-                report.Failures.Add($"{info.NPCName} {page.Key} {branch}: 旧数据库 SuccessPage 只能表达一个 GOTO。");
+                string source = block.Actions.FirstOrDefault(x => x.ActionType == CompiledNpcActionType.Goto)?.Source;
+                report.Failures.Add(FormatIssue(info, page, source, $"{branch}: 旧数据库 SuccessPage 只能表达一个 GOTO。"));
                 result = false;
             }
 
             if (gotoCount > 0 && !string.IsNullOrWhiteSpace(block.Say))
             {
-                report.Failures.Add($"{info.NPCName} {page.Key} {branch}: 带对话文本的 GOTO 不能无损导入旧数据库模式。");
+                string source = block.Actions.FirstOrDefault(x => x.ActionType == CompiledNpcActionType.Goto)?.Source;
+                report.Failures.Add(FormatIssue(info, page, source, $"{branch}: 带对话文本的 GOTO 不能无损导入旧数据库模式。"));
                 result = false;
             }
 
-            string gotoTarget = block.Actions.FirstOrDefault(x => x.ActionType == CompiledNpcActionType.Goto)?.StringParameter1;
+            CompiledNpcAction gotoAction = block.Actions.FirstOrDefault(x => x.ActionType == CompiledNpcActionType.Goto);
+            string gotoTarget = gotoAction?.StringParameter1;
             if (!string.IsNullOrWhiteSpace(gotoTarget) &&
                 !string.IsNullOrWhiteSpace(page.SuccessKey) &&
                 !string.Equals(gotoTarget, page.SuccessKey, StringComparison.OrdinalIgnoreCase))
             {
-                report.Failures.Add($"{info.NPCName} {page.Key} {branch}: GOTO `{gotoTarget}` 与 #SUCCESS `{page.SuccessKey}` 不能同时无损导入旧数据库。");
+                report.Failures.Add(FormatIssue(info, page, gotoAction.Source, $"{branch}: GOTO `{gotoTarget}` 与 #SUCCESS `{page.SuccessKey}` 不能同时无损导入旧数据库。"));
                 result = false;
             }
 
@@ -128,7 +131,7 @@ namespace Server.Envir
             {
                 if (action.ActionType == CompiledNpcActionType.LocalMessage)
                 {
-                    report.Failures.Add($"{info.NPCName} {page.Key} {branch}: LOCALMESSAGE 当前只能在文本运行时执行，旧数据库动作没有等价运行分支。");
+                    report.Failures.Add(FormatIssue(info, page, action.Source, $"{branch}: LOCALMESSAGE 当前只能在文本运行时执行，旧数据库动作没有等价运行分支。"));
                     result = false;
                 }
             }
@@ -277,7 +280,7 @@ namespace Server.Envir
                 NPCAction action = CreateAction(compiledAction);
                 if (action == null)
                 {
-                    report.Failures.Add($"{info.NPCName} {sourcePage.Key}: 动作 `{compiledAction.ActionType}` 没有旧数据库映射。");
+                    report.Failures.Add(FormatIssue(info, sourcePage, compiledAction.Source, $"动作 `{compiledAction.ActionType}` 没有旧数据库映射。"));
                     continue;
                 }
 
@@ -335,6 +338,12 @@ namespace Server.Envir
             if (string.IsNullOrWhiteSpace(targetKey)) return null;
 
             return pageBuilds.TryGetValue(targetKey, out NpcPageBuild build) ? build.MainPage : null;
+        }
+
+        private static string FormatIssue(CompiledTextNpcInfo info, CompiledNpcPage page, string source, string message)
+        {
+            string location = string.IsNullOrWhiteSpace(source) ? $"{info.NPCName} {page.Key}" : source;
+            return $"{location}: {info.NPCName} {page.Key}: {message}";
         }
 
         private NPCCheck CreateCheck(CompiledNpcCheck source)

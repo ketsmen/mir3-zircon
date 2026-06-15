@@ -404,13 +404,13 @@ namespace Server.Envir
             {
                 case "LEVEL":
                     if (TryParseComparison(parts.Skip(1).ToList(), Operator.GreaterThanOrEqual, out Operator levelOp, out int levelValue))
-                        checks.Add(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Level, Operator = levelOp, IntParameter1 = levelValue });
+                        checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Level, Operator = levelOp, IntParameter1 = levelValue }, line));
                     else
                         report.Failures.Add($"{line.Source}: LEVEL 条件格式无效。");
                     break;
                 case "CHECKGOLD":
                     if (TryParseComparison(parts.Skip(1).ToList(), Operator.GreaterThanOrEqual, out Operator goldOp, out int goldValue))
-                        checks.Add(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Gold, Operator = goldOp, IntParameter1 = goldValue });
+                        checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Gold, Operator = goldOp, IntParameter1 = goldValue }, line));
                     else
                         report.Failures.Add($"{line.Source}: CHECKGOLD 条件格式无效。");
                     break;
@@ -422,25 +422,25 @@ namespace Server.Envir
                     break;
                 case "CHECKCLASS":
                     if (parts.Count >= 2 && TryParseRequiredClass(parts[1], out RequiredClass requiredClass))
-                        checks.Add(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Class, Class = requiredClass });
+                        checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Class, Class = requiredClass }, line));
                     else
                         report.Failures.Add($"{line.Source}: CHECKCLASS 条件格式无效。");
                     break;
                 case "CHECKPKPOINT":
                     if (TryParseComparison(parts.Skip(1).ToList(), Operator.LessThanOrEqual, out Operator pkOp, out int pkValue))
-                        checks.Add(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.PKPoint, Operator = pkOp, IntParameter1 = pkValue });
+                        checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.PKPoint, Operator = pkOp, IntParameter1 = pkValue }, line));
                     else
                         report.Failures.Add($"{line.Source}: CHECKPKPOINT 条件格式无效。");
                     break;
                 case "RANDOM":
                     if (parts.Count >= 2 && int.TryParse(parts[1], out int randomMax) && randomMax > 0)
-                        checks.Add(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Random, Operator = Operator.Equal, IntParameter1 = randomMax, IntParameter2 = parts.Count >= 3 && int.TryParse(parts[2], out int randomValue) ? randomValue : 0 });
+                        checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Random, Operator = Operator.Equal, IntParameter1 = randomMax, IntParameter2 = parts.Count >= 3 && int.TryParse(parts[2], out int randomValue) ? randomValue : 0 }, line));
                     else
                         report.Failures.Add($"{line.Source}: RANDOM 条件格式无效。");
                     break;
                 case "CHECKNAMELIST":
                     if (parts.Count >= 2)
-                        checks.Add(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.NameList, StringParameter1 = parts[1], DataType = ParseDataType(parts, 2) });
+                        checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.NameList, StringParameter1 = parts[1], DataType = ParseDataType(parts, 2) }, line));
                     else
                         report.Failures.Add($"{line.Source}: CHECKNAMELIST 条件格式无效。");
                     break;
@@ -465,7 +465,7 @@ namespace Server.Envir
             {
                 case "GOTO":
                     if (parts.Count >= 2)
-                        actions.Add(new CompiledNpcAction { ActionType = CompiledNpcActionType.Goto, StringParameter1 = CompiledNpcScript.NormalizePageKey(parts[1]) });
+                        actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.Goto, StringParameter1 = CompiledNpcScript.NormalizePageKey(parts[1]) }, line));
                     else
                         report.Failures.Add($"{line.Source}: GOTO 需要目标页面。");
                     break;
@@ -504,7 +504,7 @@ namespace Server.Envir
                     break;
                 case "LOCALMESSAGE":
                     if (parts.Count >= 2)
-                        actions.Add(new CompiledNpcAction { ActionType = CompiledNpcActionType.LocalMessage, StringParameter1 = line.Text.Substring(line.Text.IndexOf(' ') + 1).Trim() });
+                        actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.LocalMessage, StringParameter1 = line.Text.Substring(line.Text.IndexOf(' ') + 1).Trim() }, line));
                     else
                         report.Failures.Add($"{line.Source}: LOCALMESSAGE 需要消息内容。");
                     break;
@@ -513,6 +513,18 @@ namespace Server.Envir
                     report.UnknownCommands.Add($"{line.Source}: {line.Text}");
                     break;
             }
+        }
+
+        private static CompiledNpcCheck WithSource(CompiledNpcCheck check, TextNpcScriptLine line)
+        {
+            check.Source = line.Source;
+            return check;
+        }
+
+        private static CompiledNpcAction WithSource(CompiledNpcAction action, TextNpcScriptLine line)
+        {
+            action.Source = line.Source;
+            return action;
         }
 
         private void ParseItemCheck(TextNpcScriptLine line, List<CompiledNpcCheck> checks, TextNpcLoadReport report)
@@ -540,7 +552,7 @@ namespace Server.Envir
                 return;
             }
 
-            checks.Add(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Item, Operator = Operator.GreaterThanOrEqual, ItemParameter1 = item, IntParameter1 = count });
+            checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Item, Operator = Operator.GreaterThanOrEqual, ItemParameter1 = item, IntParameter1 = count }, line));
         }
 
         private void ParseCurrencyCheck(TextNpcScriptLine line, List<CompiledNpcCheck> checks, TextNpcLoadReport report)
@@ -578,7 +590,7 @@ namespace Server.Envir
                 return;
             }
 
-            checks.Add(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Currency, Operator = op, IntParameter1 = amount, StringParameter1 = currency.Name });
+            checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Currency, Operator = op, IntParameter1 = amount, StringParameter1 = currency.Name }, line));
         }
 
         private void ParseValueCheck(TextNpcScriptLine line, List<CompiledNpcCheck> checks, TextNpcLoadReport report)
@@ -590,20 +602,20 @@ namespace Server.Envir
                 return;
             }
 
-            checks.Add(new CompiledNpcCheck
+            checks.Add(WithSource(new CompiledNpcCheck
             {
                 CheckType = CompiledNpcCheckType.Value,
                 StringParameter1 = parts[1],
                 Operator = op,
                 IntParameter1 = value,
                 DataType = ParseDataType(parts, 4)
-            });
+            }, line));
         }
 
         private void ParseIntAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, CompiledNpcActionType type, TextNpcLoadReport report)
         {
             if (parts.Count >= 2 && int.TryParse(parts[1], out int value))
-                actions.Add(new CompiledNpcAction { ActionType = type, IntParameter1 = value });
+                actions.Add(WithSource(new CompiledNpcAction { ActionType = type, IntParameter1 = value }, line));
             else
                 report.Failures.Add($"{line.Source}: {parts[0]} 需要数字参数。");
         }
@@ -632,7 +644,7 @@ namespace Server.Envir
                 return;
             }
 
-            actions.Add(new CompiledNpcAction { ActionType = type, ItemParameter1 = item, IntParameter1 = count });
+            actions.Add(WithSource(new CompiledNpcAction { ActionType = type, ItemParameter1 = item, IntParameter1 = count }, line));
         }
 
         private void ParseCurrencyAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, CompiledNpcActionType type, TextNpcLoadReport report)
@@ -651,7 +663,7 @@ namespace Server.Envir
                 return;
             }
 
-            actions.Add(new CompiledNpcAction { ActionType = type, StringParameter1 = currency.Name, IntParameter1 = amount });
+            actions.Add(WithSource(new CompiledNpcAction { ActionType = type, StringParameter1 = currency.Name, IntParameter1 = amount }, line));
         }
 
         private void ParseMoveAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, TextNpcLoadReport report)
@@ -670,7 +682,7 @@ namespace Server.Envir
                 return;
             }
 
-            actions.Add(new CompiledNpcAction { ActionType = CompiledNpcActionType.Move, MapParameter1 = map, IntParameter1 = x, IntParameter2 = y });
+            actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.Move, MapParameter1 = map, IntParameter1 = x, IntParameter2 = y }, line));
         }
 
         private void ParseDataAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, CompiledNpcActionType type, TextNpcLoadReport report)
@@ -681,7 +693,7 @@ namespace Server.Envir
                 return;
             }
 
-            actions.Add(new CompiledNpcAction { ActionType = type, StringParameter1 = parts[1], DataType = ParseDataType(parts, 2) });
+            actions.Add(WithSource(new CompiledNpcAction { ActionType = type, StringParameter1 = parts[1], DataType = ParseDataType(parts, 2) }, line));
         }
 
         private void ParseValueAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, CompiledNpcActionType type, TextNpcLoadReport report)
@@ -692,7 +704,7 @@ namespace Server.Envir
                 return;
             }
 
-            actions.Add(new CompiledNpcAction { ActionType = type, StringParameter1 = parts[1], IntParameter1 = value, DataType = ParseDataType(parts, 3) });
+            actions.Add(WithSource(new CompiledNpcAction { ActionType = type, StringParameter1 = parts[1], IntParameter1 = value, DataType = ParseDataType(parts, 3) }, line));
         }
 
         private void ParseGood(TextNpcScriptLine line, CompiledNpcPage page, TextNpcLoadReport report)
@@ -1192,6 +1204,7 @@ namespace Server.Envir
 
     public sealed class CompiledNpcCheck
     {
+        public string Source;
         public CompiledNpcCheckType CheckType;
         public Operator Operator;
         public int IntParameter1;
@@ -1204,6 +1217,7 @@ namespace Server.Envir
 
     public sealed class CompiledNpcAction
     {
+        public string Source;
         public CompiledNpcActionType ActionType;
         public int IntParameter1;
         public int IntParameter2;
