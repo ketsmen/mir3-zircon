@@ -17,6 +17,9 @@ namespace Server.WinForms
     {
         private readonly Session _session;
         private readonly TabControl _tabs = new TabControl();
+        private readonly TabPage _reportPage = new TabPage("报告");
+        private readonly TabPage _orphanPage = new TabPage("孤立数据");
+        private readonly TabPage _networkPage = new TabPage("网络诊断");
         private readonly TextBox _reportText = new TextBox();
         private readonly DataGridView _orphanGrid = new DataGridView();
         private readonly DataGridView _networkGrid = new DataGridView();
@@ -80,9 +83,8 @@ namespace Server.WinForms
             _reportText.WordWrap = false;
             _reportText.ReadOnly = true;
 
-            TabPage reportPage = new TabPage("报告");
-            reportPage.Controls.Add(_reportText);
-            _tabs.TabPages.Add(reportPage);
+            _reportPage.Controls.Add(_reportText);
+            _tabs.TabPages.Add(_reportPage);
 
             _orphanGrid.Dock = DockStyle.Fill;
             _orphanGrid.AutoGenerateColumns = true;
@@ -92,9 +94,8 @@ namespace Server.WinForms
             _orphanGrid.SelectionMode = DataGridViewSelectionMode.CellSelect;
             _orphanGrid.DataSource = _orphanResults;
 
-            TabPage orphanPage = new TabPage("孤立数据");
-            orphanPage.Controls.Add(_orphanGrid);
-            _tabs.TabPages.Add(orphanPage);
+            _orphanPage.Controls.Add(_orphanGrid);
+            _tabs.TabPages.Add(_orphanPage);
 
             _networkGrid.Dock = DockStyle.Fill;
             _networkGrid.AutoGenerateColumns = true;
@@ -104,13 +105,27 @@ namespace Server.WinForms
             _networkGrid.SelectionMode = DataGridViewSelectionMode.CellSelect;
             _networkGrid.DataSource = _networkDiagnostics;
 
-            TabPage networkPage = new TabPage("网络诊断");
-            networkPage.Controls.Add(_networkGrid);
-            _tabs.TabPages.Add(networkPage);
+            _networkPage.Controls.Add(_networkGrid);
+            _tabs.TabPages.Add(_networkPage);
 
             Controls.Add(_tabs);
             Controls.Add(toolStrip);
             toolStrip.Dock = DockStyle.Top;
+        }
+
+        public void ShowReportPage()
+        {
+            _tabs.SelectedTab = _reportPage;
+        }
+
+        public void ShowOrphanPage()
+        {
+            _tabs.SelectedTab = _orphanPage;
+        }
+
+        public void ShowNetworkPage()
+        {
+            _tabs.SelectedTab = _networkPage;
         }
 
         private static ToolStripButton AddButton(ToolStrip toolStrip, string text, EventHandler click)

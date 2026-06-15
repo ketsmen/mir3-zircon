@@ -241,6 +241,8 @@ namespace Server.WinForms
             ToolStripMenuItem toolsMenu = new ToolStripMenuItem("工具");
             toolsMenu.DropDownItems.Add("地图查看器", null, (_, _) => OpenMapViewer());
             toolsMenu.DropDownItems.Add("服务器诊断", null, (_, _) => OpenDiagnostics());
+            toolsMenu.DropDownItems.Add("孤立数据诊断", null, (_, _) => OpenOrphanDiagnostics());
+            toolsMenu.DropDownItems.Add("网络诊断", null, (_, _) => OpenNetworkDiagnostics());
             toolsMenu.DropDownItems.Add(new ToolStripSeparator());
             toolsMenu.DropDownItems.Add("导出当前日志", null, (_, _) => ExportDisplayedLogs());
             toolsMenu.DropDownItems.Add("清空当前日志", null, (_, _) => ClearDisplayedLogs());
@@ -433,6 +435,8 @@ namespace Server.WinForms
                 AddNavigationAction(operations, "数据库加密设置", OpenDatabaseEncryptionSettings);
                 AddNavigationAction(operations, "数据库同步设置", OpenDatabaseSynchronizationSettings);
                 AddNavigationAction(operations, "服务器诊断", OpenDiagnostics);
+                AddNavigationAction(operations, "孤立数据诊断", OpenOrphanDiagnostics);
+                AddNavigationAction(operations, "网络诊断", OpenNetworkDiagnostics);
                 AddNavigationAction(operations, "地图查看器", () => OpenMapViewer());
 
                 TreeNode player = AddNavigationGroup("玩家");
@@ -836,15 +840,31 @@ namespace Server.WinForms
 
         private void OpenDiagnostics()
         {
+            OpenDiagnosticsForm()?.ShowReportPage();
+        }
+
+        private void OpenOrphanDiagnostics()
+        {
+            OpenDiagnosticsForm()?.ShowOrphanPage();
+        }
+
+        private void OpenNetworkDiagnostics()
+        {
+            OpenDiagnosticsForm()?.ShowNetworkPage();
+        }
+
+        private DiagnosticsForm OpenDiagnosticsForm()
+        {
             if (_diagnosticsForm == null || _diagnosticsForm.IsDisposed)
             {
                 _diagnosticsForm = new DiagnosticsForm();
                 _diagnosticsForm.FormClosed += (_, _) => _diagnosticsForm = null;
                 _diagnosticsForm.Show(this);
-                return;
+                return _diagnosticsForm;
             }
 
             ActivateForm(_diagnosticsForm);
+            return _diagnosticsForm;
         }
 
         private MapViewerForm OpenMapViewer()
