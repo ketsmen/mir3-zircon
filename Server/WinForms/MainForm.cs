@@ -3,6 +3,7 @@ using MirDB;
 using PluginCore;
 using Server.Envir;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -15,8 +16,17 @@ namespace Server.WinForms
 {
     public sealed class MainForm : Form
     {
-        private readonly ListBox _logList = new ListBox();
         private readonly ContextMenuStrip _logMenu = new ContextMenuStrip();
+        private readonly Panel _logPanel = new Panel();
+        private readonly TabControl _logTabs = new TabControl();
+        private readonly TabPage _systemLogPage = new TabPage("系统日志");
+        private readonly TabPage _chatLogPage = new TabPage("聊天日志");
+        private readonly ListBox _systemLogList = new ListBox();
+        private readonly ListBox _chatLogList = new ListBox();
+        private readonly ToolStripTextBox _logFilterText = new ToolStripTextBox();
+        private readonly ToolStripLabel _logStatusLabel = new ToolStripLabel();
+        private readonly List<string> _systemLogs = new List<string>();
+        private readonly List<string> _chatLogs = new List<string>();
         private readonly FlowLayoutPanel _metricsPanel = new FlowLayoutPanel();
         private readonly Dictionary<string, Label> _metricLabels = new Dictionary<string, Label>();
         private readonly Panel _statusPanel = new Panel();
@@ -24,6 +34,7 @@ namespace Server.WinForms
         private readonly System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer();
         private ToolStripMenuItem _pluginsMenu;
         private Session _pluginSession;
+        private const int MaxLogLines = 2000;
 
         public MainForm()
         {
@@ -178,12 +189,8 @@ namespace Server.WinForms
 
             BuildMetricsPanel();
 
-            _logList.Dock = DockStyle.Fill;
-            _logList.Font = new Font(FontFamily.GenericMonospace, 9F);
-            _logList.Margin = Padding.Empty;
-            _logList.SelectionMode = SelectionMode.MultiExtended;
-            SetDoubleBuffered(_logList);
             BuildLogMenu();
+            BuildLogPanel();
 
             _statusPanel.Dock = DockStyle.Fill;
             _statusPanel.BackColor = SystemColors.Window;
@@ -203,7 +210,7 @@ namespace Server.WinForms
             layout.Controls.Add(menu, 0, 0);
             layout.Controls.Add(toolStrip, 0, 1);
             layout.Controls.Add(_metricsPanel, 0, 2);
-            layout.Controls.Add(_logList, 0, 3);
+            layout.Controls.Add(_logPanel, 0, 3);
             layout.Controls.Add(_statusPanel, 0, 4);
 
             Controls.Add(layout);
@@ -217,7 +224,69 @@ namespace Server.WinForms
             _logMenu.Items.Add("导出当前日志", null, (_, _) => ExportDisplayedLogs());
             _logMenu.Items.Add(new ToolStripSeparator());
             _logMenu.Items.Add("清空当前日志", null, (_, _) => ClearDisplayedLogs());
-            _logList.ContextMenuStrip = _logMenu;
+            _logMenu.Items.Add("清空全部日志", null, (_, _) => ClearAllDisplayedLogs());
+        }
+
+        private void BuildLogPanel()
+        {
+            _logPanel.Dock = DockStyle.Fill;
+            _logPanel.Margin = Padding.Empty;
+
+            TableLayoutPanel layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            ToolStrip logToolStrip = new ToolStrip
+            {
+                GripStyle = ToolStripGripStyle.Hidden,
+                Margin = Padding.Empty
+            };
+            logToolStrip.Items.Add(new ToolStripLabel("日志过滤"));
+            _logFilterText.AutoSize = false;
+            _logFilterText.Width = 260;
+            _logFilterText.ToolTipText = "按关键字过滤系统日志和聊天日志。";
+            _logFilterText.TextChanged += (_, _) => ApplyLogFilters();
+            logToolStrip.Items.Add(_logFilterText);
+            logToolStrip.Items.Add(new ToolStripSeparator());
+            logToolStrip.Items.Add("复制", null, (_, _) => CopySelectedLogs());
+            logToolStrip.Items.Add("导出", null, (_, _) => ExportDisplayedLogs());
+            logToolStrip.Items.Add("清空", null, (_, _) => ClearDisplayedLogs());
+            logToolStrip.Items.Add(new ToolStripSeparator());
+            _logStatusLabel.Text = "系统日志: 0 行";
+            logToolStrip.Items.Add(_logStatusLabel);
+
+            InitializeLogList(_systemLogList);
+            InitializeLogList(_chatLogList);
+
+            _systemLogPage.Controls.Add(_systemLogList);
+            _chatLogPage.Controls.Add(_chatLogList);
+
+            _logTabs.Dock = DockStyle.Fill;
+            _logTabs.Margin = Padding.Empty;
+            _logTabs.SelectedIndexChanged += (_, _) => UpdateLogStatus();
+            _logTabs.TabPages.Add(_systemLogPage);
+            _logTabs.TabPages.Add(_chatLogPage);
+
+            layout.Controls.Add(logToolStrip, 0, 0);
+            layout.Controls.Add(_logTabs, 0, 1);
+            _logPanel.Controls.Add(layout);
+        }
+
+        private void InitializeLogList(ListBox list)
+        {
+            list.Dock = DockStyle.Fill;
+            list.Font = new Font(FontFamily.GenericMonospace, 9F);
+            list.Margin = Padding.Empty;
+            list.SelectionMode = SelectionMode.MultiExtended;
+            list.ContextMenuStrip = _logMenu;
+            SetDoubleBuffered(list);
         }
 
         private void BuildMetricsPanel()
@@ -370,7 +439,8 @@ namespace Server.WinForms
 
         private void CopySelectedLogs()
         {
-            IEnumerable<string> lines = _logList.SelectedItems.Cast<object>().Select(x => x?.ToString()).Where(x => !string.IsNullOrEmpty(x));
+            ListBox logList = GetActiveLogList();
+            IEnumerable<string> lines = logList.SelectedItems.Cast<object>().Select(x => x?.ToString()).Where(x => !string.IsNullOrEmpty(x));
             string text = string.Join(Environment.NewLine, lines);
             if (!string.IsNullOrEmpty(text))
                 Clipboard.SetText(text);
@@ -378,24 +448,26 @@ namespace Server.WinForms
 
         private void ExportDisplayedLogs()
         {
-            if (_logList.Items.Count == 0)
+            ListBox logList = GetActiveLogList();
+            if (logList.Items.Count == 0)
             {
                 MessageBox.Show(this, "当前没有可导出的日志。", "导出日志", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
+            string logName = GetActiveLogName();
             using SaveFileDialog dialog = new SaveFileDialog
             {
-                Title = "导出当前日志",
+                Title = $"导出{logName}",
                 Filter = "文本文件|*.txt|所有文件|*.*",
-                FileName = $"ServerLog_{DateTime.Now:yyyyMMdd_HHmmss}.txt"
+                FileName = $"{logName}_{DateTime.Now:yyyyMMdd_HHmmss}.txt"
             };
 
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
             try
             {
-                File.WriteAllLines(dialog.FileName, _logList.Items.Cast<object>().Select(x => x?.ToString() ?? string.Empty));
+                File.WriteAllLines(dialog.FileName, logList.Items.Cast<object>().Select(x => x?.ToString() ?? string.Empty));
                 MessageBox.Show(this, $"日志已导出到：\r\n{dialog.FileName}", "导出日志", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
@@ -406,35 +478,36 @@ namespace Server.WinForms
 
         private void ClearDisplayedLogs()
         {
-            if (_logList.Items.Count == 0) return;
+            List<string> source = GetActiveLogSource();
+            ListBox logList = GetActiveLogList();
+            if (logList.Items.Count == 0 && source.Count == 0) return;
 
-            if (MessageBox.Show(this, "确定清空当前界面上的日志吗？这不会删除已写入磁盘的日志文件。", "清空日志", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            if (MessageBox.Show(this, $"确定清空当前界面上的{GetActiveLogName()}吗？这不会删除已写入磁盘的日志文件。", "清空日志", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
 
-            _logList.Items.Clear();
+            source.Clear();
+            logList.Items.Clear();
+            UpdateLogStatus();
+        }
+
+        private void ClearAllDisplayedLogs()
+        {
+            if (_systemLogs.Count == 0 && _chatLogs.Count == 0) return;
+
+            if (MessageBox.Show(this, "确定清空当前界面上的全部系统日志和聊天日志吗？这不会删除已写入磁盘的日志文件。", "清空日志", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            _systemLogs.Clear();
+            _chatLogs.Clear();
+            _systemLogList.Items.Clear();
+            _chatLogList.Items.Clear();
+            UpdateLogStatus();
         }
 
         private void UpdateInterface()
         {
-            if (!SEnvir.DisplayLogs.IsEmpty)
-            {
-                _logList.BeginUpdate();
-                try
-                {
-                    while (SEnvir.DisplayLogs.TryDequeue(out string log))
-                    {
-                        _logList.Items.Add(log);
-                        if (_logList.Items.Count > 1000)
-                            _logList.Items.RemoveAt(0);
-                    }
-
-                    _logList.TopIndex = Math.Max(0, _logList.Items.Count - 1);
-                }
-                finally
-                {
-                    _logList.EndUpdate();
-                }
-            }
+            DrainLogQueue(SEnvir.DisplayLogs, _systemLogs, _systemLogList);
+            DrainLogQueue(SEnvir.DisplayChatLogs, _chatLogs, _chatLogList);
 
             SetStatusText(
                 _statusLabel,
@@ -449,6 +522,106 @@ namespace Server.WinForms
             SetMetric("下载", $"{FormatBytes(SEnvir.TotalBytesReceived)} / {FormatBytes(SEnvir.DownloadSpeed)}/s");
             SetMetric("上传", $"{FormatBytes(SEnvir.TotalBytesSent)} / {FormatBytes(SEnvir.UploadSpeed)}/s");
             SetMetric("邮件", EmailService.EMailsSent.ToString("#,##0"));
+        }
+
+        private void DrainLogQueue(ConcurrentQueue<string> queue, List<string> source, ListBox list)
+        {
+            if (queue.IsEmpty) return;
+
+            list.BeginUpdate();
+            try
+            {
+                while (queue.TryDequeue(out string log))
+                    AppendLog(source, list, log);
+            }
+            finally
+            {
+                list.EndUpdate();
+            }
+
+            UpdateLogStatus();
+        }
+
+        private void AppendLog(List<string> source, ListBox list, string log)
+        {
+            source.Add(log);
+            bool trimmed = false;
+            if (source.Count > MaxLogLines)
+            {
+                source.RemoveRange(0, source.Count - MaxLogLines);
+                trimmed = true;
+            }
+
+            if (trimmed)
+            {
+                ApplyLogFilter(source, list);
+                return;
+            }
+
+            if (!MatchesLogFilter(log)) return;
+
+            list.Items.Add(log);
+            if (list.Items.Count > MaxLogLines)
+                list.Items.RemoveAt(0);
+
+            list.TopIndex = Math.Max(0, list.Items.Count - 1);
+        }
+
+        private void ApplyLogFilters()
+        {
+            ApplyLogFilter(_systemLogs, _systemLogList);
+            ApplyLogFilter(_chatLogs, _chatLogList);
+            UpdateLogStatus();
+        }
+
+        private void ApplyLogFilter(List<string> source, ListBox list)
+        {
+            list.BeginUpdate();
+            try
+            {
+                list.Items.Clear();
+                foreach (string log in source.Where(MatchesLogFilter))
+                    list.Items.Add(log);
+
+                if (list.Items.Count > 0)
+                    list.TopIndex = Math.Max(0, list.Items.Count - 1);
+            }
+            finally
+            {
+                list.EndUpdate();
+            }
+        }
+
+        private bool MatchesLogFilter(string log)
+        {
+            string filter = _logFilterText.Text?.Trim();
+            return string.IsNullOrWhiteSpace(filter) || log.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void UpdateLogStatus()
+        {
+            _systemLogPage.Text = $"系统日志 ({_systemLogList.Items.Count}/{_systemLogs.Count})";
+            _chatLogPage.Text = $"聊天日志 ({_chatLogList.Items.Count}/{_chatLogs.Count})";
+
+            ListBox activeList = GetActiveLogList();
+            int total = GetActiveLogSource().Count;
+            string filter = string.IsNullOrWhiteSpace(_logFilterText.Text) ? string.Empty : $"，过滤: {_logFilterText.Text.Trim()}";
+            _logStatusLabel.Text = $"{GetActiveLogName()}: {activeList.Items.Count}/{total} 行{filter}";
+        }
+
+        private ListBox GetActiveLogList()
+        {
+            return ReferenceEquals(_logTabs.SelectedTab, _chatLogPage) ? _chatLogList : _systemLogList;
+        }
+
+        private List<string> GetActiveLogSource()
+        {
+            return ReferenceEquals(_logTabs.SelectedTab, _chatLogPage) ? _chatLogs : _systemLogs;
+        }
+
+        private string GetActiveLogName()
+        {
+            return ReferenceEquals(_logTabs.SelectedTab, _chatLogPage) ? "聊天日志" : "系统日志";
         }
 
         private static void SetStatusText(Label label, string text)
