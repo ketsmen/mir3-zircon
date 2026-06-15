@@ -42,6 +42,7 @@ namespace Server.WinForms
         private readonly string _initialTypeName;
         private bool _buildingTree;
         private bool _dirty;
+        private const string PropertyTabKey = "__Property";
         private static readonly string UiCachePath = Path.Combine(Application.StartupPath, "DatabaseEditor.WinForms.cache.json");
 
         public DatabaseEditorForm()
@@ -680,17 +681,22 @@ namespace Server.WinForms
 
         private void ShowChildLists(object owner)
         {
+            string selectedTabKey = _childTabs.SelectedTab?.Tag as string;
             _childTabs.SuspendLayout();
             try
             {
                 _childTabs.TabPages.Clear();
                 _propertyGrid.SelectedObject = owner;
 
-                TabPage propertyPage = new TabPage("属性");
+                TabPage propertyPage = new TabPage("属性") { Tag = PropertyTabKey };
                 propertyPage.Controls.Add(_propertyGrid);
                 _childTabs.TabPages.Add(propertyPage);
 
-                if (owner == null || _currentType == null) return;
+                if (owner == null || _currentType == null)
+                {
+                    RestoreChildTab(selectedTabKey);
+                    return;
+                }
 
                 foreach (PropertyInfo property in _metadata.GetChildListProperties(_currentType))
                 {
@@ -698,7 +704,7 @@ namespace Server.WinForms
                     if (list == null) continue;
 
                     Type childType = property.PropertyType.GetGenericArguments()[0];
-                    TabPage page = new TabPage($"{property.Name} ({list.Count})");
+                    TabPage page = new TabPage($"{property.Name} ({list.Count})") { Tag = property.Name };
                     MirDbGridControl grid = new MirDbGridControl(_session, _metadata, childType, list, null, _readOnly, owner);
                     grid.CurrentObjectChanged += (_, _) =>
                     {
@@ -715,6 +721,8 @@ namespace Server.WinForms
                     page.Controls.Add(grid);
                     _childTabs.TabPages.Add(page);
                 }
+
+                RestoreChildTab(selectedTabKey);
             }
             finally
             {
@@ -722,6 +730,19 @@ namespace Server.WinForms
             }
 
             UpdateActiveGridFromSelectedChildTab();
+        }
+
+        private void RestoreChildTab(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return;
+
+            foreach (TabPage page in _childTabs.TabPages)
+            {
+                if (!string.Equals(page.Tag as string, key, StringComparison.Ordinal)) continue;
+
+                _childTabs.SelectedTab = page;
+                return;
+            }
         }
 
         private void Grid_ReferenceOpenRequested(object sender, DBObjectReferenceEventArgs e)
