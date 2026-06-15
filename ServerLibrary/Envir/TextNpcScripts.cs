@@ -454,6 +454,17 @@ namespace Server.Envir
                 case "WEAPONCANNOTRESET":
                     checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.WeaponCanReset, Operator = Operator.NotEqual }, line));
                     break;
+                case "CHECKWEAPONLEVEL":
+                case "WEAPONLEVEL":
+                    if (TryParseComparison(parts.Skip(1).ToList(), Operator.GreaterThanOrEqual, out Operator weaponLevelOp, out int weaponLevel))
+                        checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.WeaponLevel, Operator = weaponLevelOp, IntParameter1 = weaponLevel }, line));
+                    else
+                        report.Failures.Add($"{line.Source}: {parts[0]} 条件格式无效。");
+                    break;
+                case "CHECKWEAPONELEMENT":
+                case "WEAPONELEMENT":
+                    ParseWeaponElementCheck(line, parts, checks, report);
+                    break;
                 case "CHECKMARRIAGE":
                 case "CHECKRELATIONSHIP":
                     checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Marriage, Operator = Operator.Equal }, line));
@@ -607,6 +618,10 @@ namespace Server.Envir
                     break;
                 case "CHANGEHORSE":
                     ParseHorseAction(line, parts, actions, report);
+                    break;
+                case "CHANGEELEMENT":
+                case "CHANGEWEAPONELEMENT":
+                    ParseElementAction(line, parts, actions, report);
                     break;
                 default:
                     report.Failures.Add($"{line.Source}: 未知 NPC 动作 `{parts[0]}`。");
@@ -867,6 +882,29 @@ namespace Server.Envir
             actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.ChangeHorse, IntParameter1 = (int)horseType }, line));
         }
 
+        private void ParseWeaponElementCheck(TextNpcScriptLine line, List<string> parts, List<CompiledNpcCheck> checks, TextNpcLoadReport report)
+        {
+            if (parts.Count < 3 || !TryParseElement(parts[1], out Element element) ||
+                !TryParseComparison(parts.Skip(2).ToList(), Operator.GreaterThanOrEqual, out Operator op, out int value))
+            {
+                report.Failures.Add($"{line.Source}: {parts[0]} 格式应为 {parts[0]} Element [运算符] 数值。");
+                return;
+            }
+
+            checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.WeaponElement, Operator = op, IntParameter1 = (int)element, IntParameter2 = value }, line));
+        }
+
+        private void ParseElementAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, TextNpcLoadReport report)
+        {
+            if (parts.Count < 2 || !TryParseElement(parts[1], out Element element))
+            {
+                report.Failures.Add($"{line.Source}: {parts[0]} 需要有效 Element。");
+                return;
+            }
+
+            actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.ChangeElement, IntParameter1 = (int)element }, line));
+        }
+
         private void ParseGood(TextNpcScriptLine line, CompiledNpcPage page, TextNpcLoadReport report)
         {
             List<string> parts = TokenizeLine(line.Text);
@@ -1079,6 +1117,21 @@ namespace Server.Envir
             }
 
             horseType = HorseType.None;
+            return false;
+        }
+
+        private static bool TryParseElement(string value, out Element element)
+        {
+            if (Enum.TryParse(value, true, out element) && Enum.IsDefined(typeof(Element), element))
+                return true;
+
+            if (byte.TryParse(value, out byte raw) && Enum.IsDefined(typeof(Element), raw))
+            {
+                element = (Element)raw;
+                return true;
+            }
+
+            element = Element.None;
             return false;
         }
 
@@ -1594,6 +1647,8 @@ namespace Server.Envir
         Weapon,
         WeaponCanRefine,
         WeaponCanReset,
+        WeaponLevel,
+        WeaponElement,
         Marriage,
         WeddingRing,
         Horse,
@@ -1633,7 +1688,8 @@ namespace Server.Envir
         ResetWeapon,
         Rebirth,
         ChangeHorse,
-        GiveItemExperience
+        GiveItemExperience,
+        ChangeElement
     }
 
     internal enum TextNpcParseMode

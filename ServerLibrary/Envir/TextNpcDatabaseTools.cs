@@ -436,6 +436,12 @@ namespace Server.Envir
                 case CompiledNpcCheckType.WeaponCanReset:
                     check.CheckType = NPCCheckType.CanResetWeapon;
                     break;
+                case CompiledNpcCheckType.WeaponLevel:
+                    check.CheckType = NPCCheckType.WeaponLevel;
+                    break;
+                case CompiledNpcCheckType.WeaponElement:
+                    check.CheckType = NPCCheckType.WeaponElement;
+                    break;
                 case CompiledNpcCheckType.Marriage:
                     check.CheckType = NPCCheckType.Marriage;
                     break;
@@ -524,6 +530,9 @@ namespace Server.Envir
                     break;
                 case CompiledNpcActionType.GiveItemExperience:
                     action.ActionType = NPCActionType.GiveItemExperience;
+                    break;
+                case CompiledNpcActionType.ChangeElement:
+                    action.ActionType = NPCActionType.ChangeElement;
                     break;
                 case CompiledNpcActionType.GiveItem:
                     action.ActionType = NPCActionType.GiveItem;
@@ -938,6 +947,14 @@ namespace Server.Envir
                     script.AppendLine(check.Operator == Operator.Equal ? "CANRESETWEAPON" : "WEAPONCANNOTRESET");
                     report.ChecksExported++;
                     break;
+                case NPCCheckType.WeaponLevel:
+                    script.AppendLine($"CHECKWEAPONLEVEL {OperatorText(check.Operator)} {check.IntParameter1}");
+                    report.ChecksExported++;
+                    break;
+                case NPCCheckType.WeaponElement:
+                    script.AppendLine($"CHECKWEAPONELEMENT {FormatElement(check.IntParameter1)} {OperatorText(check.Operator)} {check.IntParameter2}");
+                    report.ChecksExported++;
+                    break;
                 case NPCCheckType.Marriage:
                     script.AppendLine(check.Operator == Operator.Equal ? "CHECKMARRIAGE" : "NOMARRIAGE");
                     report.ChecksExported++;
@@ -1061,6 +1078,10 @@ namespace Server.Envir
                     break;
                 case NPCActionType.ChangeHorse:
                     script.AppendLine($"CHANGEHORSE {FormatHorseType(action.IntParameter1)}");
+                    report.ActionsExported++;
+                    break;
+                case NPCActionType.ChangeElement:
+                    script.AppendLine($"CHANGEELEMENT {FormatElement(action.IntParameter1)}");
                     report.ActionsExported++;
                     break;
                 case NPCActionType.GiveItem:
@@ -1236,6 +1257,14 @@ namespace Server.Envir
         {
             if (value >= byte.MinValue && value <= byte.MaxValue && Enum.IsDefined(typeof(HorseType), (byte)value))
                 return ((HorseType)(byte)value).ToString();
+
+            return value.ToString();
+        }
+
+        private static string FormatElement(int value)
+        {
+            if (value >= byte.MinValue && value <= byte.MaxValue && Enum.IsDefined(typeof(Element), (byte)value))
+                return ((Element)(byte)value).ToString();
 
             return value.ToString();
         }

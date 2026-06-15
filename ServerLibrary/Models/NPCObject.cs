@@ -196,6 +196,7 @@ namespace Server.Models
                         break;
                     case NPCActionType.ChangeElement:
                         UserItem weapon = ob.Equipment[(int)EquipmentSlot.Weapon];
+                        if (weapon == null) continue;
 
                         S.ItemStatsChanged changedResult = new S.ItemStatsChanged { GridType = GridType.Equipment, Slot = (int)EquipmentSlot.Weapon, NewStats = new Stats() };
                         changedResult.NewStats[Stat.WeaponElement] = action.IntParameter1 - weapon.Stats[Stat.WeaponElement];
@@ -527,6 +528,20 @@ namespace Server.Models
                         ob.RefreshStats();
                         if (ob.Character.Account.Horse != HorseType.None) ob.Mount();
                         break;
+                    case CompiledNpcActionType.ChangeElement:
+                        {
+                            UserItem weapon = ob.Equipment[(int)EquipmentSlot.Weapon];
+                            if (weapon == null) continue;
+
+                            S.ItemStatsChanged changedResult = new S.ItemStatsChanged { GridType = GridType.Equipment, Slot = (int)EquipmentSlot.Weapon, NewStats = new Stats() };
+                            changedResult.NewStats[Stat.WeaponElement] = action.IntParameter1 - weapon.Stats[Stat.WeaponElement];
+
+                            weapon.AddStat(Stat.WeaponElement, action.IntParameter1 - weapon.Stats[Stat.WeaponElement], StatSource.Refine);
+                            weapon.StatsChanged();
+                            ob.RefreshStats();
+                            ob.Enqueue(changedResult);
+                        }
+                        break;
                 }
             }
 
@@ -572,6 +587,14 @@ namespace Server.Models
                         UserItem resetWeapon = ob.Equipment[(int)EquipmentSlot.Weapon];
                         bool canReset = resetWeapon != null && SEnvir.Now >= resetWeapon.ResetCoolDown;
                         if (canReset != (check.Operator == Operator.Equal)) return false;
+                        break;
+                    case CompiledNpcCheckType.WeaponLevel:
+                        UserItem levelWeapon = ob.Equipment[(int)EquipmentSlot.Weapon];
+                        if (levelWeapon == null || !Compare(check.Operator, levelWeapon.Level, check.IntParameter1)) return false;
+                        break;
+                    case CompiledNpcCheckType.WeaponElement:
+                        UserItem elementWeapon = ob.Equipment[(int)EquipmentSlot.Weapon];
+                        if (elementWeapon == null || !Compare(check.Operator, GetWeaponElementValue(elementWeapon, (Element)check.IntParameter1), check.IntParameter2)) return false;
                         break;
                     case CompiledNpcCheckType.Marriage:
                         if (ob.Character.Partner != null != (check.Operator == Operator.Equal)) return false;
@@ -651,6 +674,34 @@ namespace Server.Models
             if (currency == null) return false;
 
             return ob.GetCurrency(currency).Amount >= nextFame.Cost;
+        }
+
+        private static int GetWeaponElementValue(UserItem weapon, Element element)
+        {
+            if (weapon == null) return 0;
+
+            if (element == Element.None)
+                return weapon.Stats.GetWeaponElementValue() + weapon.Info.Stats.GetWeaponElementValue();
+
+            Stat stat = element switch
+            {
+                Element.Fire => Stat.FireAttack,
+                Element.Ice => Stat.IceAttack,
+                Element.Lightning => Stat.LightningAttack,
+                Element.Wind => Stat.WindAttack,
+                Element.Holy => Stat.HolyAttack,
+                Element.Dark => Stat.DarkAttack,
+                Element.Phantom => Stat.PhantomAttack,
+                _ => Stat.None
+            };
+
+            if (stat == Stat.None) return 0;
+
+            Stat weaponElement = weapon.Stats.GetWeaponElement();
+            if (weaponElement == Stat.None)
+                weaponElement = weapon.Info.Stats.GetWeaponElement();
+
+            return weaponElement == stat ? weapon.Stats.GetWeaponElementValue() + weapon.Info.Stats.GetWeaponElementValue() : 0;
         }
 
         private static bool HasRequiredClass(RequiredClass requiredClass, MirClass mirClass)
