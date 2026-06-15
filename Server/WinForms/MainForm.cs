@@ -261,6 +261,9 @@ namespace Server.WinForms
             toolStrip.Margin = Padding.Empty;
             _startToolButton = AddToolButton(toolStrip, "启动", (_, _) => StartServer());
             _stopToolButton = AddToolButton(toolStrip, "停止", (_, _) => StopServer());
+            AddToolButton(toolStrip, "系统日志", (_, _) => ShowSystemLog());
+            AddToolButton(toolStrip, "聊天日志", (_, _) => ShowChatLog());
+            toolStrip.Items.Add(new ToolStripSeparator());
             AddToolButton(toolStrip, "数据库", (_, _) => OpenDatabaseEditor());
             AddToolButton(toolStrip, "物品", (_, _) => OpenDatabaseEditor("ItemInfo"));
             AddToolButton(toolStrip, "怪物", (_, _) => OpenDatabaseEditor("MonsterInfo"));
@@ -430,8 +433,8 @@ namespace Server.WinForms
                 _navigationTree.Nodes.Clear();
 
                 TreeNode operations = AddNavigationGroup("运维");
-                AddNavigationAction(operations, "系统日志", () => _logTabs.SelectedTab = _systemLogPage);
-                AddNavigationAction(operations, "聊天日志", () => _logTabs.SelectedTab = _chatLogPage);
+                AddNavigationAction(operations, "系统日志", ShowSystemLog);
+                AddNavigationAction(operations, "聊天日志", ShowChatLog);
                 AddNavigationAction(operations, "配置编辑器", () => OpenConfigEditor());
                 AddNavigationAction(operations, "数据库加密设置", OpenDatabaseEncryptionSettings);
                 AddNavigationAction(operations, "数据库同步设置", OpenDatabaseSynchronizationSettings);
@@ -664,6 +667,20 @@ namespace Server.WinForms
             button.Click += click;
             toolStrip.Items.Add(button);
             return button;
+        }
+
+        private void ShowSystemLog()
+        {
+            _logTabs.SelectedTab = _systemLogPage;
+            _systemLogList.Focus();
+            UpdateLogStatus();
+        }
+
+        private void ShowChatLog()
+        {
+            _logTabs.SelectedTab = _chatLogPage;
+            _chatLogList.Focus();
+            UpdateLogStatus();
         }
 
         private void AddDatabaseShortcut(ToolStripMenuItem menu, string text, string typeName)
