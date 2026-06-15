@@ -257,6 +257,7 @@ namespace Server.WinForms
 
             _gridHost.Dock = DockStyle.Fill;
             _childTabs.Dock = DockStyle.Fill;
+            _childTabs.SelectedIndexChanged += (_, _) => UpdateActiveGridFromSelectedChildTab();
             _propertyGrid.Dock = DockStyle.Fill;
             _propertyGrid.Enabled = !_readOnly;
             _propertyGrid.PropertySort = PropertySort.Categorized;
@@ -719,6 +720,8 @@ namespace Server.WinForms
             {
                 _childTabs.ResumeLayout();
             }
+
+            UpdateActiveGridFromSelectedChildTab();
         }
 
         private void Grid_ReferenceOpenRequested(object sender, DBObjectReferenceEventArgs e)
@@ -752,6 +755,26 @@ namespace Server.WinForms
             _activeGrid?.ApplySearch(_searchText.Text);
             UpdateGridStatus();
             UpdateMapRegionCommand();
+        }
+
+        private void UpdateActiveGridFromSelectedChildTab()
+        {
+            MirDbGridControl grid = FindChildGrid(_childTabs.SelectedTab);
+            SetActiveGrid(grid ?? _rootGrid);
+        }
+
+        private static MirDbGridControl FindChildGrid(Control parent)
+        {
+            if (parent == null) return null;
+            if (parent is MirDbGridControl grid) return grid;
+
+            foreach (Control child in parent.Controls)
+            {
+                MirDbGridControl result = FindChildGrid(child);
+                if (result != null) return result;
+            }
+
+            return null;
         }
 
         private string GetTypeNodeText(Type type)
