@@ -35,6 +35,7 @@ namespace Server.WinForms
         private ToolStripButton _openMapButton;
         private ToolStripButton _mapRegionButton;
         private DiagnosticsForm _diagnosticsForm;
+        private MapViewerForm _mapViewerForm;
 
         private MirDbGridControl _rootGrid;
         private MirDbGridControl _activeGrid;
@@ -110,6 +111,9 @@ namespace Server.WinForms
             {
                 if (_diagnosticsForm != null && !_diagnosticsForm.IsDisposed)
                     _diagnosticsForm.Close();
+
+                if (_mapViewerForm != null && !_mapViewerForm.IsDisposed)
+                    _mapViewerForm.Close();
 
                 _lockService.Dispose();
             }
@@ -881,9 +885,19 @@ namespace Server.WinForms
                 return;
             }
 
-            MapViewerForm viewer = new MapViewerForm();
-            viewer.LoadMap(map.FileName);
-            viewer.Show(this);
+            if (_mapViewerForm == null || _mapViewerForm.IsDisposed)
+            {
+                _mapViewerForm = new MapViewerForm();
+                _mapViewerForm.FormClosed += (_, _) => _mapViewerForm = null;
+                _mapViewerForm.Show(this);
+            }
+            else
+            {
+                ActivateForm(_mapViewerForm);
+            }
+
+            _mapViewerForm.MapRegion = null;
+            _mapViewerForm.LoadMap(map.FileName);
         }
 
         private void JumpToIndex()
