@@ -10,6 +10,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Windows.Forms;
 
 namespace Server.WinForms
@@ -22,6 +23,7 @@ namespace Server.WinForms
         private readonly ToolStripButton _saveButton = new ToolStripButton("保存");
         private readonly ToolStripButton _cancelButton = new ToolStripButton("取消");
         private readonly ToolStripButton _realMapButton = new ToolStripButton("真实地图");
+        private readonly ToolStripButton _missingLibraryButton = new ToolStripButton("缺失图库诊断");
         private readonly ToolStripButton _attributesButton = new ToolStripButton("属性");
         private readonly ToolStripButton _selectionButton = new ToolStripButton("选择");
         private readonly ToolStripButton _blockedOnlyButton = new ToolStripButton("属性选择");
@@ -241,6 +243,8 @@ namespace Server.WinForms
                 _canvas.Invalidate();
             };
             toolStrip.Items.Add(_realMapButton);
+            _missingLibraryButton.Click += (_, _) => ShowMissingLibraryDiagnostics();
+            toolStrip.Items.Add(_missingLibraryButton);
             toolStrip.Items.Add(new ToolStripSeparator());
 
             toolStrip.Items.Add(new ToolStripLabel("X"));
@@ -436,6 +440,7 @@ namespace Server.WinForms
             _saveButton.Enabled = dirty;
             _cancelButton.Enabled = dirty;
             _realMapButton.Enabled = hasMap;
+            _missingLibraryButton.Enabled = hasMap;
             _attributesButton.Enabled = hasMap;
             _selectionButton.Enabled = hasMap;
             _blockedOnlyButton.Enabled = hasMap;
@@ -1105,6 +1110,231 @@ namespace Server.WinForms
             _jumpYText.Text = location.Y.ToString();
         }
 
+        private void ShowMissingLibraryDiagnostics()
+        {
+            if (_map.IsEmpty)
+            {
+                MessageBox.Show(this, "当前没有已加载的地图。", "缺失图库诊断", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            try
+            {
+                UseWaitCursor = true;
+                List<MapLibraryDiagnosticIssue> issues = ScanMissingLibraryIssues();
+                string report = BuildMissingLibraryDiagnosticReport(issues);
+                string fileName = $"MapLibraryDiagnostics_{SanitizeReportFileName(Path.GetFileNameWithoutExtension(_mapPath))}_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
+
+                TextReportForm form = new TextReportForm("缺失图库诊断", report, fileName);
+                form.Show(this);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "缺失图库诊断失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                UseWaitCursor = false;
+            }
+        }
+
+        private List<MapLibraryDiagnosticIssue> ScanMissingLibraryIssues()
+        {
+            Dictionary<string, MapLibraryDiagnosticIssue> issues = new Dictionary<string, MapLibraryDiagnosticIssue>(StringComparer.OrdinalIgnoreCase);
+
+            for (int y = 0; y < _map.Height; y++)
+            {
+                for (int x = 0; x < _map.Width; x++)
+                {
+                    MapCell cell = _map.Cells[x, y];
+                    Point location = new Point(x, y);
+
+                    if (x % 2 == 0 && y % 2 == 0)
+                        CheckMapImageReference(issues, "底图", location, cell.BackFile, cell.BackImage, 0, allowTiles: true);
+
+                    CheckMapImageReference(issues, "中层", location, cell.MiddleFile, cell.MiddleImage - 1, cell.MiddleAnimationFrame, allowTiles: false);
+                    CheckMapImageReference(issues, "前景", location, cell.FrontFile, cell.FrontImage - 1, cell.FrontAnimationFrame, allowTiles: false);
+                }
+            }
+
+            return issues.Values
+                .OrderBy(x => x.Category)
+                .ThenBy(x => x.FileIndex)
+                .ThenBy(x => x.ImageIndex)
+                .ThenBy(x => x.Layer)
+                .ToList();
+        }
+
+        private void CheckMapImageReference(
+            Dictionary<string, MapLibraryDiagnosticIssue> issues,
+            string layer,
+            Point location,
+            int fileIndex,
+            int imageIndex,
+            int animationFrame,
+            bool allowTiles)
+        {
+            if (imageIndex < 0) return;
+
+            if (!Libraries.KROrder.TryGetValue(fileIndex, out LibraryFile file))
+            {
+                AddMapLibraryIssue(issues, "缺少编号映射", layer, location, fileIndex, null, null, null, -1, "Libraries.KROrder 没有这个地图图库编号。");
+                return;
+            }
+
+            if (!allowTiles && file == LibraryFile.Tilesc)
+                return;
+
+            _tileLibraries.TryGetLibraryPath(file, out string relativePath, out string fullPath);
+
+            if (!_tileLibraries.TryGetLibrary(file, out MapTileLibrary library))
+            {
+                string reason = _tileLibraries.TryGetMissingReason(file, out string missingReason)
+                    ? missingReason
+                    : "图库不可用。";
+
+                AddMapLibraryIssue(issues, "缺失图库", layer, location, fileIndex, file.ToString(), relativePath, fullPath, -1, reason);
+                return;
+            }
+
+            int animationCount = GetAnimationImageCount(animationFrame);
+            if (animationCount <= 0)
+            {
+                CheckLibraryImage(issues, library, layer, location, fileIndex, file, relativePath, fullPath, imageIndex);
+                return;
+            }
+
+            for (int i = 0; i < animationCount; i++)
+                CheckLibraryImage(issues, library, layer, location, fileIndex, file, relativePath, fullPath, imageIndex + i);
+        }
+
+        private void CheckLibraryImage(
+            Dictionary<string, MapLibraryDiagnosticIssue> issues,
+            MapTileLibrary library,
+            string layer,
+            Point location,
+            int fileIndex,
+            LibraryFile file,
+            string relativePath,
+            string fullPath,
+            int imageIndex)
+        {
+            try
+            {
+                if (library.HasImage(imageIndex)) return;
+
+                AddMapLibraryIssue(issues, "缺失图片索引", layer, location, fileIndex, file.ToString(), relativePath, fullPath, imageIndex, "图库文件存在，但没有这个图片索引。");
+            }
+            catch (Exception ex)
+            {
+                AddMapLibraryIssue(issues, "图库读取失败", layer, location, fileIndex, file.ToString(), relativePath, fullPath, imageIndex, ex.Message);
+            }
+        }
+
+        private static int GetAnimationImageCount(int animationFrame)
+        {
+            if (!IsAnimated(animationFrame)) return 0;
+
+            int count = animationFrame & 0x4F;
+            return Math.Max(0, count);
+        }
+
+        private static void AddMapLibraryIssue(
+            Dictionary<string, MapLibraryDiagnosticIssue> issues,
+            string category,
+            string layer,
+            Point location,
+            int fileIndex,
+            string libraryName,
+            string relativePath,
+            string fullPath,
+            int imageIndex,
+            string reason)
+        {
+            string key = string.Join("|", category, layer, fileIndex, libraryName, relativePath, imageIndex, reason);
+            if (!issues.TryGetValue(key, out MapLibraryDiagnosticIssue issue))
+            {
+                issue = new MapLibraryDiagnosticIssue
+                {
+                    Category = category,
+                    Layer = layer,
+                    FileIndex = fileIndex,
+                    LibraryName = libraryName,
+                    RelativePath = relativePath,
+                    FullPath = fullPath,
+                    ImageIndex = imageIndex,
+                    Reason = reason
+                };
+                issues[key] = issue;
+            }
+
+            issue.Count++;
+            if (issue.SampleLocations.Count < 8)
+                issue.SampleLocations.Add(location);
+        }
+
+        private string BuildMissingLibraryDiagnosticReport(List<MapLibraryDiagnosticIssue> issues)
+        {
+            StringBuilder builder = new StringBuilder();
+
+            builder.AppendLine("Mir3 地图真实渲染缺失图库诊断");
+            builder.AppendLine($"生成时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            builder.AppendLine($"地图: {GetMapDisplayName()}");
+            builder.AppendLine($"地图文件: {_mapPath}");
+            builder.AppendLine($"地图大小: {_map.Width},{_map.Height}");
+            builder.AppendLine($"ClientPath: {_tileLibraries.ClientPath ?? "未配置"}");
+            builder.AppendLine();
+            builder.AppendLine($"问题分组: {issues.Count}");
+            builder.AppendLine($"引用次数: {issues.Sum(x => x.Count)}");
+            builder.AppendLine();
+
+            if (issues.Count == 0)
+            {
+                builder.AppendLine("没有发现缺失的图库、图库编号映射或图片索引。");
+                return builder.ToString();
+            }
+
+            foreach (IGrouping<string, MapLibraryDiagnosticIssue> group in issues.GroupBy(x => x.Category))
+                builder.AppendLine($"{group.Key}: {group.Count()} 组，{group.Sum(x => x.Count)} 次引用");
+
+            builder.AppendLine();
+            builder.AppendLine("明细");
+
+            for (int i = 0; i < issues.Count; i++)
+            {
+                MapLibraryDiagnosticIssue issue = issues[i];
+                builder.AppendLine($"[{i + 1}] {issue.Category}");
+                builder.AppendLine($"层: {issue.Layer}");
+                builder.AppendLine($"图库编号: {issue.FileIndex}");
+                builder.AppendLine($"图库名称: {FormatEmpty(issue.LibraryName)}");
+                builder.AppendLine($"图库路径: {FormatEmpty(issue.RelativePath)}");
+                builder.AppendLine($"完整路径: {FormatEmpty(issue.FullPath)}");
+                if (issue.ImageIndex >= 0)
+                    builder.AppendLine($"图片索引: {issue.ImageIndex}");
+                builder.AppendLine($"引用次数: {issue.Count}");
+                builder.AppendLine($"示例坐标: {string.Join(", ", issue.SampleLocations.Select(x => $"{x.X},{x.Y}"))}");
+                builder.AppendLine($"原因: {issue.Reason}");
+                builder.AppendLine();
+            }
+
+            return builder.ToString();
+        }
+
+        private static string FormatEmpty(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? "无" : value;
+        }
+
+        private static string SanitizeReportFileName(string name)
+        {
+            name = string.IsNullOrWhiteSpace(name) ? "Map" : name;
+
+            foreach (char c in Path.GetInvalidFileNameChars())
+                name = name.Replace(c, '_');
+
+            return name;
+        }
+
         private static string ResolveMapPath(string value)
         {
             if (string.IsNullOrWhiteSpace(value)) return null;
@@ -1193,6 +1423,103 @@ namespace Server.WinForms
             public int MiddleAnimationFrame;
             public int Light;
             public bool Flag;
+        }
+
+        private sealed class MapLibraryDiagnosticIssue
+        {
+            public string Category;
+            public string Layer;
+            public int FileIndex;
+            public string LibraryName;
+            public string RelativePath;
+            public string FullPath;
+            public int ImageIndex;
+            public string Reason;
+            public int Count;
+            public List<Point> SampleLocations { get; } = new List<Point>();
+        }
+
+        private sealed class TextReportForm : Form
+        {
+            private readonly TextBox _textBox = new TextBox();
+            private readonly string _defaultFileName;
+
+            public TextReportForm(string title, string text, string defaultFileName)
+            {
+                Text = title;
+                Width = 980;
+                Height = 680;
+                StartPosition = FormStartPosition.CenterParent;
+                KeyPreview = true;
+                _defaultFileName = defaultFileName;
+
+                ToolStrip toolStrip = new ToolStrip();
+                AddButton(toolStrip, "复制报告", (_, _) => CopyReport());
+                AddButton(toolStrip, "导出报告", (_, _) => ExportReport());
+
+                _textBox.Dock = DockStyle.Fill;
+                _textBox.Multiline = true;
+                _textBox.ReadOnly = true;
+                _textBox.ScrollBars = ScrollBars.Both;
+                _textBox.WordWrap = false;
+                _textBox.Text = text ?? string.Empty;
+
+                Controls.Add(_textBox);
+                Controls.Add(toolStrip);
+                toolStrip.Dock = DockStyle.Top;
+
+                KeyDown += TextReportForm_KeyDown;
+            }
+
+            private static void AddButton(ToolStrip toolStrip, string text, EventHandler click)
+            {
+                ToolStripButton button = new ToolStripButton(text);
+                button.Click += click;
+                toolStrip.Items.Add(button);
+            }
+
+            private void TextReportForm_KeyDown(object sender, KeyEventArgs e)
+            {
+                if (e.Control && e.KeyCode == Keys.C)
+                {
+                    CopyReport();
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                }
+                else if (e.Control && e.KeyCode == Keys.S)
+                {
+                    ExportReport();
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                }
+            }
+
+            private void CopyReport()
+            {
+                if (string.IsNullOrWhiteSpace(_textBox.Text))
+                {
+                    MessageBox.Show(this, "当前没有可复制的报告。", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                Clipboard.SetText(_textBox.Text);
+            }
+
+            private void ExportReport()
+            {
+                using SaveFileDialog dialog = new SaveFileDialog
+                {
+                    Title = "导出缺失图库诊断报告",
+                    Filter = "文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
+                    FileName = _defaultFileName,
+                    RestoreDirectory = true
+                };
+
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                File.WriteAllText(dialog.FileName, _textBox.Text, Encoding.UTF8);
+                MessageBox.Show(this, $"诊断报告已导出到：\r\n{dialog.FileName}", "导出报告", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
         }
 
         private sealed class DoubleBufferedCanvas : Panel

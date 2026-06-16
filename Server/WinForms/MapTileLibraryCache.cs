@@ -18,6 +18,7 @@ namespace Server.WinForms
         public int LoadedLibraryCount => _libraries.Count;
         public int MissingLibraryCount => _missingLibraries.Count;
         public string LastFailure { get; private set; }
+        public string ClientPath => ResolveClientPath();
 
         public bool TryGetLibrary(LibraryFile file, out MapTileLibrary library)
         {
@@ -78,6 +79,27 @@ namespace Server.WinForms
             return $"显示: 真实地图（图库 {_libraries.Count}，缺失 {_missingLibraries.Count}）";
         }
 
+        public bool TryGetLibraryPath(LibraryFile file, out string relativePath, out string fullPath)
+        {
+            relativePath = null;
+            fullPath = null;
+
+            if (!Libraries.LibraryList.TryGetValue(file, out relativePath))
+                return false;
+
+            string clientPath = ResolveClientPath();
+            if (string.IsNullOrWhiteSpace(clientPath))
+                return true;
+
+            fullPath = Path.GetFullPath(Path.Combine(clientPath, relativePath));
+            return true;
+        }
+
+        public bool TryGetMissingReason(LibraryFile file, out string reason)
+        {
+            return _missingLibraries.TryGetValue(file, out reason);
+        }
+
         private void RememberMissing(LibraryFile file, string reason)
         {
             _missingLibraries[file] = reason;
@@ -125,6 +147,11 @@ namespace Server.WinForms
             if (!CheckImage(index)) return Size.Empty;
 
             return new Size(_images[index].Width, _images[index].Height);
+        }
+
+        public bool HasImage(int index)
+        {
+            return CheckImage(index);
         }
 
         public Bitmap GetBitmap(int index)
