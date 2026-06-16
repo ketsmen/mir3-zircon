@@ -706,21 +706,42 @@ namespace Server.Envir
             if (string.IsNullOrWhiteSpace(npcDirectory))
                 throw new ArgumentException("NPC 导出目录不能为空。", nameof(npcDirectory));
 
+            npcDirectory = Path.GetFullPath(npcDirectory);
             Directory.CreateDirectory(npcDirectory);
 
             TextNpcExportReport report = new();
             string infoPath = Path.Combine(npcDirectory, "NPCInfo.txt");
+            string todoReportPath = Path.Combine(npcDirectory, TextNpcExportReport.DefaultTodoReportFileName);
             if (File.Exists(infoPath) && !overwrite)
                 throw new IOException($"导出文件已存在: {infoPath}");
+            if (File.Exists(todoReportPath) && !overwrite)
+                throw new IOException($"导出文件已存在: {todoReportPath}");
+
+            report.InfoPath = infoPath;
+            report.TodoReportPath = todoReportPath;
 
             StringBuilder info = new();
 
-            foreach (NPCInfo npc in npcs.Where(x => x?.Region?.Map != null && x.EntryPage != null).OrderBy(x => x.Index))
+            foreach (NPCInfo npc in npcs.Where(x => x != null).OrderBy(x => x.Index))
             {
                 report.NpcsVisited++;
 
-                Point point = npc.Region.PointList?.FirstOrDefault() ?? npc.Region.PointRegion?.FirstOrDefault() ?? Point.Empty;
                 string scriptFile = $"{SanitizeFileName(npc.NPCName)}_{npc.Index}.txt";
+                if (npc.Region?.Map == null)
+                {
+                    report.NpcsSkipped++;
+                    AddTodoDetail(report, npc, null, scriptFile, string.Empty, "NPCInfo", "跳过导出: NPC 缺少 Region 或 Map。");
+                    continue;
+                }
+
+                if (npc.EntryPage == null)
+                {
+                    report.NpcsSkipped++;
+                    AddTodoDetail(report, npc, null, scriptFile, string.Empty, "NPCInfo", "跳过导出: NPC 缺少 EntryPage。");
+                    continue;
+                }
+
+                Point point = npc.Region.PointList?.FirstOrDefault() ?? npc.Region.PointRegion?.FirstOrDefault() ?? Point.Empty;
 
                 info.AppendLine($"{Quote(npc.Region.Map.FileName)} {point.X} {point.Y} {Quote(npc.NPCName)} {npc.Image} {npc.FaceImage} {Quote(scriptFile)} MapIcon={npc.MapIcon} OverrideIndex={npc.Index}");
                 ExportScript(Path.Combine(npcDirectory, scriptFile), npc, overwrite, report);
@@ -728,7 +749,7 @@ namespace Server.Envir
             }
 
             File.WriteAllText(infoPath, info.ToString(), Encoding.UTF8);
-            report.InfoPath = infoPath;
+            File.WriteAllText(todoReportPath, report.BuildTodoDetailsText(), Encoding.UTF8);
             return report;
         }
 
@@ -737,6 +758,7 @@ namespace Server.Envir
             if (File.Exists(path) && !overwrite)
                 throw new IOException($"导出文件已存在: {path}");
 
+            string scriptFile = Path.GetFileName(path);
             Dictionary<NPCPage, string> keys = BuildPageKeys(npc.EntryPage);
             HashSet<NPCPage> embeddedElsePages = FindEmbeddableElsePages(keys.Keys);
 
@@ -757,17 +779,17 @@ namespace Server.Envir
                 {
                     script.AppendLine("#IF");
                     foreach (NPCCheck check in page.Checks)
-                        ExportCheck(script, npc, page, check, report);
+                        ExportCheck(script, npc, page, check, report, scriptFile, key);
                 }
 
                 script.AppendLine("#SAY");
-                script.AppendLine(ConvertButtonsForExport(page.Say, page, keys, report));
+                script.AppendLine(ConvertButtonsForExport(page.Say, npc, page, keys, report, scriptFile, key));
 
                 if (page.Actions.Count > 0)
                 {
                     script.AppendLine("#ACT");
                     foreach (NPCAction action in page.Actions)
-                        ExportAction(script, npc, page, action, report);
+                        ExportAction(script, npc, page, action, report, scriptFile, key);
                 }
 
                 NPCPage elsePage = GetCommonFailPage(page);
@@ -776,24 +798,24 @@ namespace Server.Envir
                     if (!string.IsNullOrWhiteSpace(elsePage.Say))
                     {
                         script.AppendLine("#ELSESAY");
-                        script.AppendLine(ConvertButtonsForExport(elsePage.Say, elsePage, keys, report));
+                        script.AppendLine(ConvertButtonsForExport(elsePage.Say, npc, elsePage, keys, report, scriptFile, $"{key} #ELSE"));
                     }
 
                     if (elsePage.Actions.Count > 0)
                     {
                         script.AppendLine("#ELSEACT");
                         foreach (NPCAction action in elsePage.Actions)
-                            ExportAction(script, npc, elsePage, action, report);
+                            ExportAction(script, npc, elsePage, action, report, scriptFile, $"{key} #ELSE");
                     }
                 }
 
                 if (page.SuccessPage != null && keys.TryGetValue(page.SuccessPage, out string successKey))
                     script.AppendLine($"#SUCCESS {successKey}");
 
-                ExportTrade(script, page, report);
+                ExportTrade(script, npc, page, report, scriptFile, key);
                 ExportTypes(script, page, report);
                 ExportCurrency(script, page);
-                ExportUnsupportedValues(script, npc, page, report);
+                ExportUnsupportedValues(script, npc, page, report, scriptFile, key);
 
                 script.AppendLine();
                 report.PagesExported++;
@@ -901,7 +923,7 @@ namespace Server.Envir
             return failPage;
         }
 
-        private static void ExportCheck(StringBuilder script, NPCInfo npc, NPCPage page, NPCCheck check, TextNpcExportReport report)
+        private static void ExportCheck(StringBuilder script, NPCInfo npc, NPCPage page, NPCCheck check, TextNpcExportReport report, string scriptFile, string pageKey)
         {
             switch (check.CheckType)
             {
@@ -929,7 +951,7 @@ namespace Server.Envir
                     }
                     else
                     {
-                        AddTodo(script, report, npc, page, $"手动迁移条件: {check.CheckType} {check.Operator}");
+                        AddTodo(script, report, npc, page, scriptFile, pageKey, "条件", $"手动迁移条件: {check.CheckType} {check.Operator}");
                     }
                     break;
                 case NPCCheckType.CanGainItem:
@@ -940,7 +962,7 @@ namespace Server.Envir
                     }
                     else
                     {
-                        AddTodo(script, report, npc, page, "手动迁移背包空间条件: 缺少 ItemParameter1");
+                        AddTodo(script, report, npc, page, scriptFile, pageKey, "条件", "手动迁移背包空间条件: 缺少 ItemParameter1");
                     }
                     break;
                 case NPCCheckType.HasWeapon:
@@ -987,7 +1009,7 @@ namespace Server.Envir
                     }
                     else
                     {
-                        AddTodo(script, report, npc, page, $"手动迁移职业条件: Operator={check.Operator}, Value={check.IntParameter1}");
+                        AddTodo(script, report, npc, page, scriptFile, pageKey, "条件", $"手动迁移职业条件: Operator={check.Operator}, Value={check.IntParameter1}");
                     }
                     break;
                 case NPCCheckType.Gender:
@@ -998,7 +1020,7 @@ namespace Server.Envir
                     }
                     else
                     {
-                        AddTodo(script, report, npc, page, $"手动迁移性别条件: Operator={check.Operator}, Value={check.IntParameter1}");
+                        AddTodo(script, report, npc, page, scriptFile, pageKey, "条件", $"手动迁移性别条件: Operator={check.Operator}, Value={check.IntParameter1}");
                     }
                     break;
                 case NPCCheckType.PKPoints:
@@ -1013,7 +1035,7 @@ namespace Server.Envir
                     }
                     else
                     {
-                        AddTodo(script, report, npc, page, $"手动迁移随机条件: Operator={check.Operator}, Max={check.IntParameter1}, Value={check.IntParameter2}");
+                        AddTodo(script, report, npc, page, scriptFile, pageKey, "条件", $"手动迁移随机条件: Operator={check.Operator}, Max={check.IntParameter1}, Value={check.IntParameter2}");
                     }
                     break;
                 case NPCCheckType.CheckDataList:
@@ -1025,12 +1047,12 @@ namespace Server.Envir
                     report.ChecksExported++;
                     break;
                 default:
-                    AddTodo(script, report, npc, page, $"手动迁移条件: {check.CheckType}");
+                    AddTodo(script, report, npc, page, scriptFile, pageKey, "条件", $"手动迁移条件: {check.CheckType}");
                     break;
             }
 
             if (check.FailPage != null && GetCommonFailPage(page) != check.FailPage)
-                AddTodo(script, report, npc, page, $"条件失败页不能自动合并为 #ELSESAY: {check.FailPage.Description}");
+                AddTodo(script, report, npc, page, scriptFile, pageKey, "条件", $"条件失败页不能自动合并为 #ELSESAY: {DescribePage(check.FailPage)}");
         }
 
         private static bool TryFormatEnumValue<TEnum>(int value, out string text) where TEnum : struct, Enum
@@ -1055,7 +1077,7 @@ namespace Server.Envir
             }
         }
 
-        private static void ExportAction(StringBuilder script, NPCInfo npc, NPCPage page, NPCAction action, TextNpcExportReport report)
+        private static void ExportAction(StringBuilder script, NPCInfo npc, NPCPage page, NPCAction action, TextNpcExportReport report, string scriptFile, string pageKey)
         {
             switch (action.ActionType)
             {
@@ -1067,7 +1089,7 @@ namespace Server.Envir
                     }
                     else
                     {
-                        AddTodo(script, report, npc, page, $"手动迁移传送动作: {action.InstanceParameter1}");
+                        AddTodo(script, report, npc, page, scriptFile, pageKey, "动作", $"手动迁移传送动作: {action.InstanceParameter1}");
                     }
                     break;
                 case NPCActionType.GiveGold:
@@ -1130,7 +1152,7 @@ namespace Server.Envir
                     }
                     else
                     {
-                        AddTodo(script, report, npc, page, "手动迁移给物品动作: 缺少 ItemParameter1");
+                        AddTodo(script, report, npc, page, scriptFile, pageKey, "动作", "手动迁移给物品动作: 缺少 ItemParameter1");
                     }
                     break;
                 case NPCActionType.GiveItemExperience:
@@ -1141,7 +1163,7 @@ namespace Server.Envir
                     }
                     else
                     {
-                        AddTodo(script, report, npc, page, "手动迁移给经验物品动作: 缺少 ItemParameter1");
+                        AddTodo(script, report, npc, page, scriptFile, pageKey, "动作", "手动迁移给经验物品动作: 缺少 ItemParameter1");
                     }
                     break;
                 case NPCActionType.TakeItem:
@@ -1152,7 +1174,7 @@ namespace Server.Envir
                     }
                     else
                     {
-                        AddTodo(script, report, npc, page, "手动迁移收物品动作: 缺少 ItemParameter1");
+                        AddTodo(script, report, npc, page, scriptFile, pageKey, "动作", "手动迁移收物品动作: 缺少 ItemParameter1");
                     }
                     break;
                 case NPCActionType.AddDataList:
@@ -1176,19 +1198,23 @@ namespace Server.Envir
                     report.ActionsExported++;
                     break;
                 default:
-                    AddTodo(script, report, npc, page, $"手动迁移动作: {action.ActionType}");
+                    AddTodo(script, report, npc, page, scriptFile, pageKey, "动作", $"手动迁移动作: {action.ActionType}");
                     break;
             }
         }
 
-        private static void ExportTrade(StringBuilder script, NPCPage page, TextNpcExportReport report)
+        private static void ExportTrade(StringBuilder script, NPCInfo npc, NPCPage page, TextNpcExportReport report, string scriptFile, string pageKey)
         {
             if (page.Goods.Count == 0) return;
 
             script.AppendLine("[TRADE]");
             foreach (NPCGood good in page.Goods)
             {
-                if (good.Item == null) continue;
+                if (good.Item == null)
+                {
+                    AddTodo(script, report, npc, page, scriptFile, pageKey, "商品", "手动迁移商品: NPCGood 缺少 Item 引用。");
+                    continue;
+                }
 
                 script.AppendLine($"{Quote(good.Item.ItemName)} {good.Rate}");
                 report.GoodsExported++;
@@ -1212,13 +1238,13 @@ namespace Server.Envir
             script.AppendLine(Quote(page.Currency.Name));
         }
 
-        private static void ExportUnsupportedValues(StringBuilder script, NPCInfo npc, NPCPage page, TextNpcExportReport report)
+        private static void ExportUnsupportedValues(StringBuilder script, NPCInfo npc, NPCPage page, TextNpcExportReport report, string scriptFile, string pageKey)
         {
             foreach (NPCValue value in page.Values)
-                AddTodo(script, report, npc, page, $"手动迁移动态值: {value.ValueType} ID={value.ValueID}");
+                AddTodo(script, report, npc, page, scriptFile, pageKey, "动态值", $"手动迁移动态值: {value.ValueType} ID={value.ValueID}");
         }
 
-        private static string ConvertButtonsForExport(string say, NPCPage page, Dictionary<NPCPage, string> keys, TextNpcExportReport report)
+        private static string ConvertButtonsForExport(string say, NPCInfo npc, NPCPage page, Dictionary<NPCPage, string> keys, TextNpcExportReport report, string scriptFile, string pageKey)
         {
             if (string.IsNullOrWhiteSpace(say)) return string.Empty;
 
@@ -1230,20 +1256,58 @@ namespace Server.Envir
             {
                 if (!int.TryParse(match.Groups["ID"].Value, out int id)) return match.Value;
                 if (id == 0) return $"<{match.Groups["Text"].Value}/@EXIT>";
-                if (!buttons.TryGetValue(id, out NPCButton button)) return match.Value;
-                if (button.DestinationPage == null || !keys.TryGetValue(button.DestinationPage, out string destination)) return match.Value;
+                if (!buttons.TryGetValue(id, out NPCButton button))
+                {
+                    AddTodoDetail(report, npc, page, scriptFile, pageKey, "按钮", $"对话按钮 ID={id} 找不到对应 NPCButton，原文={match.Value}。");
+                    return match.Value;
+                }
+
+                if (button.DestinationPage == null)
+                {
+                    AddTodoDetail(report, npc, page, scriptFile, pageKey, "按钮", $"对话按钮 ID={id} 没有目标页面，原文={match.Value}。");
+                    return match.Value;
+                }
+
+                if (!keys.TryGetValue(button.DestinationPage, out string destination))
+                {
+                    AddTodoDetail(report, npc, page, scriptFile, pageKey, "按钮", $"对话按钮 ID={id} 的目标页面不在入口页树内: {DescribePage(button.DestinationPage)}。");
+                    return match.Value;
+                }
 
                 report.ButtonsExported++;
                 return $"<{match.Groups["Text"].Value}/{destination}>";
             });
         }
 
-        private static void AddTodo(StringBuilder script, TextNpcExportReport report, NPCInfo npc, NPCPage page, string message)
+        private static void AddTodo(StringBuilder script, TextNpcExportReport report, NPCInfo npc, NPCPage page, string scriptFile, string pageKey, string category, string message)
         {
-            string text = $"{npc.NPCName}#{npc.Index} {page.Description}: {message}";
-            report.Todos.Add(text);
+            AddTodoDetail(report, npc, page, scriptFile, pageKey, category, message);
+            script.AppendLine($"; TODO [{category}] {message}");
+        }
+
+        private static void AddTodoDetail(TextNpcExportReport report, NPCInfo npc, NPCPage page, string scriptFile, string pageKey, string category, string message)
+        {
+            TextNpcExportTodo todo = new()
+            {
+                NPCName = npc?.NPCName ?? string.Empty,
+                NPCIndex = npc?.Index ?? 0,
+                ScriptFile = scriptFile ?? string.Empty,
+                PageKey = pageKey ?? string.Empty,
+                PageDescription = DescribePage(page),
+                Category = category ?? string.Empty,
+                Message = message ?? string.Empty
+            };
+
+            report.TodoDetails.Add(todo);
+            report.Todos.Add(todo.ToSummaryLine());
             report.TodoLines++;
-            script.AppendLine($"; TODO {message}");
+        }
+
+        private static string DescribePage(NPCPage page)
+        {
+            if (page == null) return string.Empty;
+            if (!string.IsNullOrWhiteSpace(page.Description)) return page.Description;
+            return $"NPCPage#{page.Index}";
         }
 
         private static string GetPreferredPageKey(NPCDialogType dialogType)
@@ -1315,6 +1379,8 @@ namespace Server.Envir
 
         private static string SanitizeFileName(string name)
         {
+            name ??= "NPC";
+
             foreach (char c in Path.GetInvalidFileNameChars())
                 name = name.Replace(c, '_');
 
@@ -1353,9 +1419,14 @@ namespace Server.Envir
 
     public sealed class TextNpcExportReport
     {
+        public const string DefaultTodoReportFileName = "NPC导出TODO报告.txt";
+
         public string InfoPath;
+        public string TodoReportPath;
+        public DateTime GeneratedAt = DateTime.Now;
         public int NpcsVisited;
         public int NpcsExported;
+        public int NpcsSkipped;
         public int PagesExported;
         public int ButtonsExported;
         public int ChecksExported;
@@ -1364,13 +1435,71 @@ namespace Server.Envir
         public int TypesExported;
         public int TodoLines;
         public List<string> Todos { get; } = [];
+        public List<TextNpcExportTodo> TodoDetails { get; } = [];
 
         public string ToDisplayText()
         {
             return
                 $"输出 NPCInfo: {InfoPath}\r\n" +
-                $"访问NPC={NpcsVisited}, 导出NPC={NpcsExported}, 页面={PagesExported}, 按钮={ButtonsExported}\r\n" +
+                $"TODO 明细报告: {TodoReportPath}\r\n" +
+                $"访问NPC={NpcsVisited}, 导出NPC={NpcsExported}, 跳过NPC={NpcsSkipped}, 页面={PagesExported}, 按钮={ButtonsExported}\r\n" +
                 $"条件={ChecksExported}, 动作={ActionsExported}, 商品={GoodsExported}, 类型={TypesExported}, TODO={TodoLines}";
+        }
+
+        public string BuildTodoDetailsText()
+        {
+            StringBuilder builder = new();
+            builder.AppendLine("Mir3 NPC 文本导出 TODO 明细报告");
+            builder.AppendLine($"生成时间: {GeneratedAt:yyyy-MM-dd HH:mm:ss}");
+            builder.AppendLine($"输出 NPCInfo: {InfoPath}");
+            builder.AppendLine($"报告文件: {TodoReportPath}");
+            builder.AppendLine();
+            builder.AppendLine("汇总");
+            builder.AppendLine($"访问NPC={NpcsVisited}, 导出NPC={NpcsExported}, 跳过NPC={NpcsSkipped}");
+            builder.AppendLine($"页面={PagesExported}, 按钮={ButtonsExported}, 条件={ChecksExported}, 动作={ActionsExported}, 商品={GoodsExported}, 类型={TypesExported}");
+            builder.AppendLine($"TODO={TodoLines}");
+            builder.AppendLine();
+
+            if (TodoDetails.Count == 0)
+            {
+                builder.AppendLine("当前导出没有产生 TODO。");
+                return builder.ToString();
+            }
+
+            builder.AppendLine("TODO 明细");
+            for (int i = 0; i < TodoDetails.Count; i++)
+            {
+                TextNpcExportTodo todo = TodoDetails[i];
+                builder.AppendLine($"[{i + 1}] {todo.Category}");
+                builder.AppendLine($"NPC: {todo.NPCName} (Index={todo.NPCIndex})");
+                builder.AppendLine($"脚本: {todo.ScriptFile}");
+                builder.AppendLine($"页面: {todo.PageKey}");
+                builder.AppendLine($"上下文: {todo.PageDescription}");
+                builder.AppendLine($"原因: {todo.Message}");
+                builder.AppendLine();
+            }
+
+            return builder.ToString();
+        }
+    }
+
+    public sealed class TextNpcExportTodo
+    {
+        public string NPCName;
+        public int NPCIndex;
+        public string ScriptFile;
+        public string PageKey;
+        public string PageDescription;
+        public string Category;
+        public string Message;
+
+        public string ToSummaryLine()
+        {
+            string page = string.IsNullOrWhiteSpace(PageKey) ? PageDescription : PageKey;
+            if (!string.IsNullOrWhiteSpace(PageDescription) && !string.Equals(PageDescription, page, StringComparison.OrdinalIgnoreCase))
+                page += $" ({PageDescription})";
+
+            return $"{NPCName}#{NPCIndex} {ScriptFile} {page} [{Category}]: {Message}";
         }
     }
 }

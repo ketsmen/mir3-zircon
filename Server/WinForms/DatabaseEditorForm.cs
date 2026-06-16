@@ -1469,7 +1469,11 @@ namespace Server.WinForms
 
                 string details = report.ToDisplayText();
                 if (report.Todos.Count > 0)
+                {
+                    OpenDiagnosticsForm()?.ShowReport(report.BuildTodoDetailsText());
+                    details += "\r\n\r\n完整 TODO 明细已写入报告文件，并已在诊断窗口显示，可使用“复制报告”复制。";
                     details += "\r\n\r\nTODO 示例:\r\n" + string.Join("\r\n", report.Todos.Take(20));
+                }
 
                 MessageBox.Show(this, details, "导出 NPC 文本完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
