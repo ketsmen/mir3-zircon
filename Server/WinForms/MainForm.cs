@@ -255,6 +255,7 @@ namespace Server.WinForms
 
             ToolStripMenuItem configMenu = new ToolStripMenuItem("配置");
             configMenu.DropDownItems.Add("打开配置编辑器", null, (_, _) => OpenConfigEditor());
+            configMenu.DropDownItems.Add("英雄配置", null, (_, _) => OpenHeroSettings());
             configMenu.DropDownItems.Add("数据库加密设置", null, (_, _) => OpenDatabaseEncryptionSettings());
             configMenu.DropDownItems.Add("数据库同步设置", null, (_, _) => OpenDatabaseSynchronizationSettings());
             configMenu.DropDownItems.Add(new ToolStripSeparator());
@@ -1025,6 +1026,11 @@ namespace Server.WinForms
         private void OpenDatabaseSynchronizationSettings()
         {
             OpenConfigEditor().FocusDatabaseSynchronizationSettings();
+        }
+
+        private void OpenHeroSettings()
+        {
+            OpenConfigEditor().FocusHeroSettings();
         }
 
         private void OpenDiagnostics()

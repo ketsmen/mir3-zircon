@@ -28,6 +28,15 @@ namespace Server.WinForms
         private readonly Dictionary<string, DataGridView> _sectionGrids = new Dictionary<string, DataGridView>();
         private readonly Dictionary<string, DataGridViewRow> _propertyRows = new Dictionary<string, DataGridViewRow>(StringComparer.OrdinalIgnoreCase);
         private readonly List<ConfigSetting> _settings = new List<ConfigSetting>();
+        private const string HeroSectionName = "英雄";
+        private static readonly HashSet<string> HeroSettingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "AllowNewHero",
+            "HeroRequiredLevel",
+            "HeroMaxCount",
+            "HeroReviveDelay",
+            "HeroExperienceRate"
+        };
 
         public ConfigEditorForm()
         {
@@ -50,6 +59,11 @@ namespace Server.WinForms
         public void FocusDatabaseSynchronizationSettings()
         {
             FocusSetting("SyncRemotePreffix", "数据库同步设置：可配置 ClientPath、SyncRemotePreffix、SyncKey，并执行本地或远程同步。");
+        }
+
+        public void FocusHeroSettings()
+        {
+            FocusSetting("AllowNewHero", "英雄配置：可设置英雄创建开关、创建等级、数量上限、复活延迟和经验倍率。");
         }
 
         public bool FocusSetting(string propertyName, string statusText = null)
@@ -121,6 +135,7 @@ namespace Server.WinForms
             AddButton(toolStrip, "还原当前项", (_, _) => ResetCurrentSetting());
             AddButton(toolStrip, "还原全部修改", (_, _) => ResetAllModifiedSettings());
             AddButton(toolStrip, "复制当前项", (_, _) => CopyCurrentSetting());
+            AddButton(toolStrip, "英雄配置", (_, _) => FocusHeroSettings());
             toolStrip.Items.Add(new ToolStripSeparator());
             AddButton(toolStrip, "选择版本文件", (_, _) => SelectFileProperty("VersionPath", "选择客户端版本文件"));
             AddButton(toolStrip, "选择地图目录", (_, _) => SelectFolderProperty("MapPath", "选择地图目录"));
@@ -152,6 +167,11 @@ namespace Server.WinForms
             return button;
         }
 
+        private static string GetDisplaySection(PropertyInfo property, string currentSection)
+        {
+            return HeroSettingNames.Contains(property.Name) ? HeroSectionName : currentSection;
+        }
+
         private void LoadSettings()
         {
             _tabs.TabPages.Clear();
@@ -170,10 +190,11 @@ namespace Server.WinForms
                 if (!property.CanRead || !property.CanWrite) continue;
                 if (property.GetCustomAttribute<ConfigPropertyIgnore>() != null) continue;
 
-                ConfigSetting setting = new ConfigSetting(currentSection, property);
+                string displaySection = GetDisplaySection(property, currentSection);
+                ConfigSetting setting = new ConfigSetting(displaySection, property);
                 _settings.Add(setting);
 
-                DataGridView grid = GetSectionGrid(currentSection);
+                DataGridView grid = GetSectionGrid(displaySection);
                 AddSettingRow(grid, setting);
             }
 
@@ -388,6 +409,8 @@ namespace Server.WinForms
                 }
             }
 
+            ValidateConfigValues(values, errors);
+
             if (errors.Count > 0)
             {
                 string message = string.Join("\r\n", errors.Take(20));
@@ -419,6 +442,46 @@ namespace Server.WinForms
 
             ApplyFilter();
             return true;
+        }
+
+        private static void ValidateConfigValues(List<ConfigValue> values, List<string> errors)
+        {
+            if (TryGetConfigValue(values, "HeroRequiredLevel", out int heroRequiredLevel))
+            {
+                if (heroRequiredLevel < 0)
+                    errors.Add("HeroRequiredLevel: 英雄创建所需等级不能小于 0。");
+
+                if (TryGetConfigValue(values, "MaxLevel", out int maxLevel) && maxLevel >= 0 && heroRequiredLevel > maxLevel)
+                    errors.Add($"HeroRequiredLevel: 不能大于 MaxLevel ({maxLevel})，否则角色无法达到创建英雄条件。");
+            }
+
+            if (TryGetConfigValue(values, "HeroMaxCount", out int heroMaxCount) &&
+                (heroMaxCount < 0 || heroMaxCount > Globals.HeroMaximumCount))
+                errors.Add($"HeroMaxCount: 英雄数量上限必须在 0 到 {Globals.HeroMaximumCount} 之间。");
+
+            if (TryGetConfigValue(values, "HeroReviveDelay", out TimeSpan heroReviveDelay) && heroReviveDelay < TimeSpan.Zero)
+                errors.Add("HeroReviveDelay: 英雄复活延迟不能为负数。");
+
+            if (TryGetConfigValue(values, "HeroExperienceRate", out int heroExperienceRate) && heroExperienceRate < -100)
+                errors.Add("HeroExperienceRate: 英雄经验倍率不能小于 -100。");
+        }
+
+        private static bool TryGetConfigValue<T>(List<ConfigValue> values, string propertyName, out T value)
+        {
+            foreach (ConfigValue configValue in values)
+            {
+                if (!configValue.Property.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (configValue.Value is T typedValue)
+                {
+                    value = typedValue;
+                    return true;
+                }
+            }
+
+            value = default;
+            return false;
         }
 
         private void EndGridEdits()
