@@ -18,6 +18,7 @@ namespace LibraryEditor
         private Mir3Library.Mir3Image _selectedImage, _exportImage;
         private Image _originalImage;
         public int newImages;
+        private const int ImagePreviewPadding = 8;
 
         [DllImport("user32.dll")]
         private static extern int SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
@@ -26,7 +27,9 @@ namespace LibraryEditor
         {
             InitializeComponent();
             splitContainer1.Panel2.Resize += PreviewListPanel_Resize;
+            panel.Resize += ImagePanel_Resize;
             RefreshPreviewListLayout();
+            RefreshImageBoxLayout();
 
             SendMessage(PreviewListView.Handle, 4149, 0, 5242946); //80 x 66
 
@@ -70,6 +73,7 @@ namespace LibraryEditor
             _selectedImage = null;
             ImageBox.Image = null;
             ZoomTrackBar.Value = 1;
+            RefreshImageBoxLayout(true);
 
             WidthLabel.Text = "无图片";
             HeightLabel.Text = "无图片";
@@ -132,6 +136,8 @@ namespace LibraryEditor
 
                 ImageBox.Image = _selectedImage.OverlayImage;
             }
+
+            RefreshImageBoxLayout(true);
 
             // Keep track of what image/s are selected.
             if (PreviewListView.SelectedIndices.Count > 1)
@@ -660,6 +666,11 @@ namespace LibraryEditor
             RefreshPreviewListLayout();
         }
 
+        private void ImagePanel_Resize(object sender, EventArgs e)
+        {
+            RefreshImageBoxLayout();
+        }
+
         private void ClampMainSplitter()
         {
             const int minimumPreviewHeight = 150;
@@ -680,6 +691,42 @@ namespace LibraryEditor
             PreviewListView.Dock = DockStyle.Fill;
             PreviewListView.Bounds = splitContainer1.Panel2.ClientRectangle;
             PreviewListView.Invalidate();
+        }
+
+        private void RefreshImageBoxLayout(bool resetScroll = false)
+        {
+            if (ImageBox.Image == null)
+            {
+                panel.AutoScrollMinSize = Size.Empty;
+                ImageBox.Location = new Point(ImagePreviewPadding, ImagePreviewPadding);
+                return;
+            }
+
+            if (resetScroll)
+                panel.AutoScrollPosition = Point.Empty;
+
+            ImageBox.Size = ImageBox.Image.Size;
+
+            Size viewport = panel.ClientSize;
+            Size imageSize = ImageBox.Size;
+            Size paddedImageSize = new Size(
+                imageSize.Width + ImagePreviewPadding * 2,
+                imageSize.Height + ImagePreviewPadding * 2);
+
+            panel.AutoScrollMinSize = paddedImageSize;
+
+            bool needsHorizontalScroll = paddedImageSize.Width > viewport.Width;
+            bool needsVerticalScroll = paddedImageSize.Height > viewport.Height;
+
+            int x = needsHorizontalScroll
+                ? ImagePreviewPadding
+                : Math.Max(ImagePreviewPadding, (viewport.Width - imageSize.Width) / 2);
+
+            int y = needsVerticalScroll
+                ? ImagePreviewPadding
+                : Math.Max(ImagePreviewPadding, (viewport.Height - imageSize.Height) / 2);
+
+            ImageBox.Location = new Point(x, y);
         }
 
         // Resize the image(Zoom).
@@ -721,6 +768,7 @@ namespace LibraryEditor
                         g.DrawImage(_selectedImage.Image, new Rectangle(0, 0, _newBMP.Width, _newBMP.Height));
                     }
                     ImageBox.Image = _newBMP;
+                    RefreshImageBoxLayout(true);
 
                     toolStripStatusLabel.ForeColor = SystemColors.ControlText;
                     toolStripStatusLabel.Text = "当前图片: " + string.Format("{0} / {1}",
@@ -781,6 +829,7 @@ namespace LibraryEditor
             {
                 PreviewListView.RedrawItems(0, PreviewListView.Items.Count - 1, true);
                 ImageBox.Image = _library.Images[PreviewListView.SelectedIndices[0]].Image;
+                RefreshImageBoxLayout(true);
             }
             catch (Exception)
             {
