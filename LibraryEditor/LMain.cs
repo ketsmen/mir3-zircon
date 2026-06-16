@@ -25,6 +25,8 @@ namespace LibraryEditor
         public LMain()
         {
             InitializeComponent();
+            splitContainer1.Panel2.Resize += PreviewListPanel_Resize;
+            RefreshPreviewListLayout();
 
             SendMessage(PreviewListView.Handle, 4149, 0, 5242946); //80 x 66
 
@@ -37,6 +39,7 @@ namespace LibraryEditor
                 OpenLibraryDialog.FileName = Program.openFileWith;
                 _library = new Mir3Library(OpenLibraryDialog.FileName);
                 PreviewListView.VirtualListSize = _library.Images.Count;
+                RefreshPreviewListLayout();
 
                 // Show .Lib path in application title.
                 this.Text = OpenLibraryDialog.FileName.ToString();
@@ -240,6 +243,7 @@ namespace LibraryEditor
             if (_library != null) _library.Close();
             _library = new Mir3Library(OpenLibraryDialog.FileName);
             PreviewListView.VirtualListSize = _library.Images.Count;
+            RefreshPreviewListLayout();
 
             // Show .Lib path in application title.
             this.Text = OpenLibraryDialog.FileName.ToString();
@@ -647,11 +651,35 @@ namespace LibraryEditor
         // Don't let the splitter go out of sight on resizing.
         private void LMain_Resize(object sender, EventArgs e)
         {
-            if (splitContainer1.SplitterDistance <= this.Height - 150) return;
-            if (this.Height - 150 > 0)
+            ClampMainSplitter();
+            RefreshPreviewListLayout();
+        }
+
+        private void PreviewListPanel_Resize(object sender, EventArgs e)
+        {
+            RefreshPreviewListLayout();
+        }
+
+        private void ClampMainSplitter()
+        {
+            const int minimumPreviewHeight = 150;
+
+            int maxDistance = splitContainer1.ClientSize.Height - splitContainer1.SplitterWidth - minimumPreviewHeight;
+
+            if (maxDistance < splitContainer1.Panel1MinSize)
+                maxDistance = splitContainer1.Panel1MinSize;
+
+            if (splitContainer1.SplitterDistance > maxDistance)
             {
-                splitContainer1.SplitterDistance = this.Height - 150;
+                splitContainer1.SplitterDistance = maxDistance;
             }
+        }
+
+        private void RefreshPreviewListLayout()
+        {
+            PreviewListView.Dock = DockStyle.Fill;
+            PreviewListView.Bounds = splitContainer1.Panel2.ClientRectangle;
+            PreviewListView.Invalidate();
         }
 
         // Resize the image(Zoom).
