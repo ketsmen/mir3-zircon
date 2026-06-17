@@ -1358,13 +1358,71 @@ namespace Client.Scenes.Views
             if (ObjectLookup.TryGetValue(ob.ObjectID, out MapObject existing) && ReferenceEquals(existing, ob))
                 ObjectLookup.Remove(ob.ObjectID);
 
-            if (ob.CurrentLocation.X >= 0 && ob.CurrentLocation.X < Width && ob.CurrentLocation.Y >= 0 && ob.CurrentLocation.Y < Height)
+            if (ob.CurrentCell != null)
+                ob.CurrentCell.RemoveObject(ob);
+            else if (ob.CurrentLocation.X >= 0 && ob.CurrentLocation.X < Width && ob.CurrentLocation.Y >= 0 && ob.CurrentLocation.Y < Height)
                 Cells[ob.CurrentLocation.X, ob.CurrentLocation.Y].RemoveObject(ob);
         }
 
         public bool TryGetObject(uint objectID, out MapObject ob)
         {
             return ObjectLookup.TryGetValue(objectID, out ob);
+        }
+
+        public void ClearForMapChange()
+        {
+            MapButtons = MouseButtons.None;
+            Mining = false;
+            FishingState = FishingState.None;
+            AutoCast = false;
+
+            MapObject.MouseObject = null;
+            MapObject.TargetObject = null;
+            MapObject.MagicObject = null;
+            GameScene.Game.FocusObject = null;
+
+            if (GameScene.Game.NPCID != 0)
+            {
+                GameScene.Game.NPCID = 0;
+                GameScene.Game.NPCBox.Visible = false;
+            }
+
+            if (GameScene.Game.MonsterBox.Monster != null)
+                GameScene.Game.MonsterBox.Monster = null;
+
+            foreach (MapObject ob in Objects.ToArray())
+            {
+                if (ob == User) continue;
+
+                ob.Remove();
+            }
+
+            if (User != null)
+            {
+                foreach (MagicEffect effect in User.MagicEffects.Keys.ToList())
+                    User.EndMagicEffect(effect);
+
+                User.Effects.Clear();
+            }
+
+            foreach (MirEffect effect in Effects.ToArray())
+                effect.Remove();
+
+            if (ParticleEffects != null)
+            {
+                foreach (var effect in ParticleEffects.ToArray())
+                    effect.Dispose();
+
+                ParticleEffects.Clear();
+            }
+
+            if (FLayer != null)
+                FLayer.TextureValid = false;
+
+            if (LLayer != null)
+                LLayer.TextureValid = false;
+
+            TextureValid = false;
         }
 
         public bool CanAttack(MapObject ob)
@@ -1880,6 +1938,12 @@ namespace Client.Scenes.Views
 
         public void RemoveObject(MapObject ob)
         {
+            if (Objects == null)
+            {
+                ob.CurrentCell = null;
+                return;
+            }
+
             Objects.Remove(ob);
 
             if (Objects.Count == 0)

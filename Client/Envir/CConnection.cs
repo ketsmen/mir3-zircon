@@ -809,6 +809,8 @@ namespace Client.Envir
         }
         public void Process(S.MapChanged p)
         {
+            GameScene.Game.MapControl.ClearForMapChange();
+
             GameScene.Game.MapControl.MapInfo = Globals.MapInfoList.Binding.FirstOrDefault(x => x.Index == p.MapIndex);
 
             GameScene.Game.MapControl.InstanceInfo = Globals.InstanceInfoList.Binding.FirstOrDefault(x => x.Index == p.InstanceIndex);

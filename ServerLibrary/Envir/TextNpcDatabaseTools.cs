@@ -1024,7 +1024,7 @@ namespace Server.Envir
                     }
                     break;
                 case NPCCheckType.PKPoints:
-                    script.AppendLine($"CHECKPKPOINT {OperatorText(check.Operator)} {check.IntParameter1}");
+                    script.AppendLine($"CHECKPKPOINT {OperatorText(check.Operator)} {(check.IntParameter1 == 0 ? Config.RedPoint : check.IntParameter1)}");
                     report.ChecksExported++;
                     break;
                 case NPCCheckType.Random:

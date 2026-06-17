@@ -5635,7 +5635,8 @@ namespace Client.Models
 
             CurrentCell.RemoveObject(this);
 
-            if (CurrentLocation.X < GameScene.Game.MapControl.Width && CurrentLocation.Y < GameScene.Game.MapControl.Height)
+            if (CurrentLocation.X >= 0 && CurrentLocation.Y >= 0 &&
+                CurrentLocation.X < GameScene.Game.MapControl.Width && CurrentLocation.Y < GameScene.Game.MapControl.Height)
                 GameScene.Game.MapControl.Cells[CurrentLocation.X, CurrentLocation.Y].AddObject(this);
         }
 
