@@ -13,19 +13,19 @@ namespace MirDB
 
         public DBBindingList(DBObject parent, PropertyInfo property)
         {
-            Session = parent.Collection.Session;
+            Session = parent.Collection?.Session;
             Parent = parent;
             Property = property;
             Link = property.GetCustomAttribute<AssociationAttribute>();
 
-            RaiseListChangedEvents = Session.GetCollection(property.PropertyType.GetGenericArguments()[0]).RaisePropertyChanges;
+            RaiseListChangedEvents = Session != null && Session.GetCollection(property.PropertyType.GetGenericArguments()[0]).RaisePropertyChanges;
         }
 
         protected override void OnAddingNew(AddingNewEventArgs e)
         {
             base.OnAddingNew(e);
 
-            e.NewObject = Session.CreateObject<T>();
+            e.NewObject = Session == null ? new T() : Session.CreateObject<T>();
         }
         protected override void InsertItem(int index, T item)
         {

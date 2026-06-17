@@ -1,0 +1,29 @@
+[Monster]
+Name="示例拾取随从"
+Image=Deer
+Level=1
+ViewRange=9
+AttackDelay=0
+MoveDelay=500
+CanPush=False
+CanTame=False
+
+[Stats]
+Health=100
+MinAC=5
+MaxAC=5
+MinMR=5
+MaxMR=5
+
+[Behavior]
+Template=PickupCompanion
+CanBeKilled=False
+CanAttackPlayers=False
+IsPickupCompanion=True
+AttackRange=1
+RoamDelay=1000
+
+; 说明：
+; 1. 该模板需要由自定义技能 Template=Summon 召唤出来，召唤后会拥有 PetOwner。
+; 2. 有 PetOwner 时会跟随主人，并拾取主人可拾取的掉落到主人背包。
+; 3. 完整随从背包、装备、外观解锁仍使用原 CompanionInfo/UserCompanion 系统。

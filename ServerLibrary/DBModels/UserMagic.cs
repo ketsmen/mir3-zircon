@@ -221,6 +221,7 @@ namespace Server.DBModels
                 ItemRequired = ItemRequired,
 
                 Cooldown = Cooldown > SEnvir.Now ? Cooldown - SEnvir.Now : TimeSpan.Zero,
+                CustomSkill = SEnvir.GetClientCustomSkillPacket(Info.Index),
             };
         }
     }

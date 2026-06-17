@@ -340,7 +340,16 @@ namespace Client.Models
             HermitPoints = info.HermitPoints;
 
             foreach (ClientUserMagic magic in info.Magics)
+            {
+                CEnvir.SyncClientCustomSkillOverride(magic.InfoIndex, magic.CustomSkill);
+                if (magic.Info == null)
+                {
+                    CEnvir.AddDynamicLibraryDiagnostic($"服务器下发了客户端本地不存在的技能资料: InfoIndex={magic.InfoIndex}");
+                    continue;
+                }
+
                 Magics[magic.Info] = magic;
+            }
 
             foreach (ClientBuffInfo buff in info.Buffs)
                 AddBuff(buff);
@@ -638,7 +647,7 @@ namespace Client.Models
                     if (BagWeight > Stats[Stat.BagWeight] || (Poison & PoisonType.Neutralize) == PoisonType.Neutralize)
                         NextMagicTime += Globals.MagicDelay;
 
-                    CEnvir.Enqueue(new C.Magic { Direction = action.Direction, Action = action.Action, Type = MagicType, Target = AttackTargets?.Count > 0 ? AttackTargets[0].ObjectID : 0, Location = MagicLocations?.Count > 0 ? MagicLocations[0] : Point.Empty });
+                    CEnvir.Enqueue(new C.Magic { Direction = action.Direction, Action = action.Action, Type = MagicType, MagicInfoIndex = MagicInfoIndex, Target = AttackTargets?.Count > 0 ? AttackTargets[0].ObjectID : 0, Location = MagicLocations?.Count > 0 ? MagicLocations[0] : Point.Empty });
                     GameScene.Game.CanRun = false;
                     break;
                 case MirAction.Fishing:

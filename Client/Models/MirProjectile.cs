@@ -33,6 +33,22 @@ namespace Client.Models
             }
         }
 
+        public MirProjectile(int startIndex, int frameCount, TimeSpan frameDelay, MirLibrary library, int startlight, int endlight, Color lightColour, Point origin, Type particleEmitter = null) : base(startIndex, frameCount, frameDelay, library, startlight, endlight, lightColour)
+        {
+            Has16Directions = true;
+
+            Origin = origin;
+            Speed = 50;
+            Explode = false;
+
+            if (Config.DrawParticles && particleEmitter != null)
+            {
+                _particleEmitter = (ParticleEmitter)Activator.CreateInstance(particleEmitter, this);
+
+                GameScene.Game.MapControl.ParticleEffects.Add(_particleEmitter);
+            }
+        }
+
         public override void Process()
         {
             Point location = Target?.CurrentLocation ?? MapTarget;

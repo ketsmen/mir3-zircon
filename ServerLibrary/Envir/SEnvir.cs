@@ -247,6 +247,15 @@ namespace Server.Envir
         public static DBCollection<RespawnInfo> RespawnInfoList;
         public static DBCollection<MagicInfo> MagicInfoList;
         public static DBCollection<CurrencyInfo> CurrencyInfoList;
+        public static DBCollection<CustomResourceLibraryInfo> CustomResourceLibraryInfoList;
+        public static DBCollection<CustomMonsterVisualInfo> CustomMonsterVisualInfoList;
+        public static DBCollection<CustomMonsterAnimationInfo> CustomMonsterAnimationInfoList;
+        public static DBCollection<CustomMonsterBehaviorInfo> CustomMonsterBehaviorInfoList;
+        public static DBCollection<CustomMonsterSkillInfo> CustomMonsterSkillInfoList;
+        public static DBCollection<CustomMonsterAiRuleInfo> CustomMonsterAiRuleInfoList;
+        public static DBCollection<CustomMonsterAiActionInfo> CustomMonsterAiActionInfoList;
+        public static DBCollection<CustomSkillInfo> CustomSkillInfoList;
+        public static DBCollection<CustomSkillEffectInfo> CustomSkillEffectInfoList;
 
         public static DBCollection<AccountInfo> AccountInfoList;
         public static DBCollection<CharacterInfo> CharacterInfoList;
@@ -317,8 +326,20 @@ namespace Server.Envir
 
         public static CompiledMonsterDropTable MonsterDropTable;
         private static IReadOnlyDictionary<MonsterInfo, CompiledMonsterDrop> DropTextOverrides;
+        private static IReadOnlyDictionary<MonsterInfo, CompiledMonsterDrop> CustomDropTextOverrides;
         public static IReadOnlyList<CompiledTextNpcInfo> TextNpcs = [];
         private static IReadOnlyDictionary<NPCInfo, CompiledTextNpcInfo> TextNpcOverrides = new Dictionary<NPCInfo, CompiledTextNpcInfo>();
+        public static CustomSystemRegistry CustomSystem { get; private set; } = CustomSystemRegistry.Empty;
+
+        public static S.ClientCustomSkillInfo GetClientCustomSkillPacket(int magicInfoIndex)
+        {
+            if (magicInfoIndex <= 0 || CustomSystem == null) return null;
+
+            if (!CustomSystem.SkillsByMagicIndex.TryGetValue(magicInfoIndex, out CustomSkillInfo skill))
+                return null;
+
+            return S.ClientCustomSkillInfo.From(skill);
+        }
 
         #endregion
 
@@ -492,6 +513,15 @@ namespace Server.Envir
             RespawnInfoList = Session.GetCollection<RespawnInfo>();
             MagicInfoList = Session.GetCollection<MagicInfo>();
             CurrencyInfoList = Session.GetCollection<CurrencyInfo>();
+            CustomResourceLibraryInfoList = Session.GetCollection<CustomResourceLibraryInfo>();
+            CustomMonsterVisualInfoList = Session.GetCollection<CustomMonsterVisualInfo>();
+            CustomMonsterAnimationInfoList = Session.GetCollection<CustomMonsterAnimationInfo>();
+            CustomMonsterBehaviorInfoList = Session.GetCollection<CustomMonsterBehaviorInfo>();
+            CustomMonsterSkillInfoList = Session.GetCollection<CustomMonsterSkillInfo>();
+            CustomMonsterAiRuleInfoList = Session.GetCollection<CustomMonsterAiRuleInfo>();
+            CustomMonsterAiActionInfoList = Session.GetCollection<CustomMonsterAiActionInfo>();
+            CustomSkillInfoList = Session.GetCollection<CustomSkillInfo>();
+            CustomSkillEffectInfoList = Session.GetCollection<CustomSkillEffectInfo>();
             FameInfoList = Session.GetCollection<FameInfo>();
 
             AccountInfoList = Session.GetCollection<AccountInfo>();
@@ -591,9 +621,10 @@ namespace Server.Envir
                 if (UserQuestTaskList[i].Task == null)
                     UserQuestTaskList[i].Delete();
 
-            DropTextOverrides = LoadDropTextOverrides();
-            RebuildMonsterDropTable();
             LoadTextNpcs();
+            DropTextOverrides = LoadDropTextOverrides();
+            LoadCustomSystem();
+            RebuildMonsterDropTable();
 
             foreach (MonsterInfo monster in MonsterInfoList.Binding)
             {
@@ -608,7 +639,7 @@ namespace Server.Envir
 
         public static void RebuildMonsterDropTable()
         {
-            MonsterDropTable = MonsterInfoList == null ? null : CompiledMonsterDropTable.Build(MonsterInfoList.Binding, DropTextOverrides);
+            MonsterDropTable = MonsterInfoList == null ? null : CompiledMonsterDropTable.Build(MonsterInfoList.Binding, MergeDropOverrides(DropTextOverrides, CustomDropTextOverrides));
         }
 
         private static IReadOnlyDictionary<MonsterInfo, CompiledMonsterDrop> LoadDropTextOverrides()
@@ -698,6 +729,93 @@ namespace Server.Envir
                 TextNpcs = [];
                 TextNpcOverrides = new Dictionary<NPCInfo, CompiledTextNpcInfo>();
             }
+        }
+
+        public static CustomSystemTextReport ReloadCustomSystem()
+        {
+            CustomSystemTextReport report = LoadCustomSystem();
+            RebuildMonsterDropTable();
+            return report;
+        }
+
+        private static CustomSystemTextReport LoadCustomSystem()
+        {
+            CustomSystemTextLoadResult textResult = null;
+            CustomSystemTextReport report = new();
+            CustomDropTextOverrides = null;
+
+            if (Config.CustomTextOverrideEnabled)
+            {
+                string path = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Config.CustomTextPath));
+                if (!Directory.Exists(path))
+                {
+                    Log($"[CustomSystem] 文本覆盖跳过，目录不存在: {path}");
+                }
+                else
+                {
+                    try
+                    {
+                        CustomSystemTextLoader loader = new(Session);
+                        textResult = loader.BuildRuntimeOverrides(path, Config.CustomTextStrictMode);
+                        report = textResult.Report;
+
+                        Log($"[CustomSystem] 已从 {Config.CustomTextPath} 加载文本覆盖，覆盖只在本次运行内存中生效。");
+                        Log(textResult.Report.ToDisplayText());
+
+                        foreach (string failure in textResult.Report.Failures.Take(200))
+                            Log($"[CustomSystem][Failure] {failure}");
+
+                        foreach (string resource in textResult.Report.MissingResources.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
+                            Log($"[CustomSystem][MissingResource] {resource}");
+
+                        foreach (string monster in textResult.Report.MissingMonsters.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
+                            Log($"[CustomSystem][MissingMonster] {monster}");
+
+                        foreach (string magic in textResult.Report.MissingMagics.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
+                            Log($"[CustomSystem][MissingMagic] {magic}");
+
+                        foreach (string item in textResult.Report.MissingItems.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
+                            Log($"[CustomSystem][MissingItem] {item}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("[CustomSystem] 文本覆盖加载失败，继续使用数据库自定义系统。");
+                        Log(ex.ToString());
+                        report.Failures.Add(ex.Message);
+                        textResult = null;
+                    }
+                }
+            }
+
+            CustomSystem = CustomSystemRegistry.Build(Session, textResult);
+            if (textResult?.DropOverrides.Count > 0)
+            {
+                CustomDropTextOverrides = textResult.DropOverrides;
+                Log($"[CustomSystem] 已合并文本怪物掉落覆盖 {textResult.DropOverrides.Count} 个。");
+            }
+
+            Log($"[CustomSystem] 注册完成。资源 {CustomSystem.ResourcesByKey.Count}, 怪物视觉 {CustomSystem.MonsterVisualsByMonsterIndex.Count}, 怪物行为 {CustomSystem.MonsterBehaviorsByMonsterIndex.Count}, 技能 {CustomSystem.SkillsByMagicIndex.Count}。");
+            return report;
+        }
+
+        private static IReadOnlyDictionary<MonsterInfo, CompiledMonsterDrop> MergeDropOverrides(
+            IReadOnlyDictionary<MonsterInfo, CompiledMonsterDrop> existing,
+            IReadOnlyDictionary<MonsterInfo, CompiledMonsterDrop> custom)
+        {
+            if (custom == null || custom.Count == 0) return existing;
+
+            Dictionary<MonsterInfo, CompiledMonsterDrop> merged = existing == null
+                ? new Dictionary<MonsterInfo, CompiledMonsterDrop>()
+                : new Dictionary<MonsterInfo, CompiledMonsterDrop>(existing);
+
+            foreach (KeyValuePair<MonsterInfo, CompiledMonsterDrop> pair in custom)
+            {
+                if (pair.Key == null || pair.Value?.HasDrops != true) continue;
+
+                merged[pair.Key] = pair.Value;
+            }
+
+            return merged;
         }
 
         public static void RankingSort(CharacterInfo character, bool updateLead = true, bool initialSetup = false)
@@ -1431,6 +1549,15 @@ namespace Server.Envir
             MonsterInfoList = null;
             RespawnInfoList = null;
             MagicInfoList = null;
+            CustomResourceLibraryInfoList = null;
+            CustomMonsterVisualInfoList = null;
+            CustomMonsterAnimationInfoList = null;
+            CustomMonsterBehaviorInfoList = null;
+            CustomMonsterSkillInfoList = null;
+            CustomMonsterAiRuleInfoList = null;
+            CustomMonsterAiActionInfoList = null;
+            CustomSkillInfoList = null;
+            CustomSkillEffectInfoList = null;
             FishingInfoList = null;
             DisciplineInfoList = null;
             FameInfoList = null;
@@ -1515,6 +1642,9 @@ namespace Server.Envir
             BossList.Clear();
             MagicTypes.Clear();
             MonsterDropTable = null;
+            DropTextOverrides = null;
+            CustomDropTextOverrides = null;
+            CustomSystem = CustomSystemRegistry.Empty;
 
             _ObjectID = 0;
 

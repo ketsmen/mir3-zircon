@@ -662,10 +662,8 @@ namespace Server.Envir
         {
             if (Stage != GameStage.Game) return;
 
-            foreach (var type in Player.MagicObjects.Keys)
+            foreach (MagicObject magicObject in Player.MagicObjects.OrderedObjects)
             {
-                var magicObject = Player.MagicObjects[type];
-
                 if (magicObject.Magic.Set1Key == p.Set1Key)
                     magicObject.Magic.Set1Key = SpellKey.None;
 
@@ -679,7 +677,13 @@ namespace Server.Envir
                     magicObject.Magic.Set4Key = SpellKey.None;
             }
 
-            if (!Player.GetMagic(p.Magic, out MagicObject magic)) return;
+            MagicObject magic = null;
+
+            if (p.MagicInfoIndex > 0)
+                Player.MagicObjects.TryGetByInfoIndex(p.MagicInfoIndex, out magic);
+
+            if (magic == null && !Player.GetMagic(p.Magic, out magic)) return;
+            if (magic == null || !magic.CanUseMagic()) return;
 
             magic.Magic.Set1Key = p.Set1Key;
             magic.Magic.Set2Key = p.Set2Key;

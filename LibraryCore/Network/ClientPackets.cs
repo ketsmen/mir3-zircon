@@ -134,6 +134,7 @@ namespace Library.Network.ClientPackets
         public MirDirection Direction { get; set; }
         public MirAction Action { get; set; }
         public MagicType Type { get; set; }
+        public int MagicInfoIndex { get; set; }
         public uint Target { get; set; }
         public Point Location { get; set; }
     }
@@ -316,6 +317,7 @@ namespace Library.Network.ClientPackets
     public sealed class MagicKey : Packet
     {
         public MagicType Magic { get; set; }
+        public int MagicInfoIndex { get; set; }
 
         public SpellKey Set1Key { get; set; }
         public SpellKey Set2Key { get; set; }

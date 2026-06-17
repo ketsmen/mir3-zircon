@@ -94,6 +94,10 @@ namespace Client.Envir
 
             return Images[index];
         }
+        public bool HasImage(int index)
+        {
+            return CheckImage(index);
+        }
         public MirImage CreateImage(int index, ImageType type)
         {
             if (!CheckImage(index))

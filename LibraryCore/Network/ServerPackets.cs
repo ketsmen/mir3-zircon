@@ -172,9 +172,120 @@ namespace Library.Network.ServerPackets
         public Element AttackElement { get; set; }
 
         public uint TargetID { get; set; }
+        public int AnimationVariant { get; set; }
 
         public TimeSpan Slow { get; set; }
     }
+
+    public sealed class ClientCustomSkillEffectInfo
+    {
+        public ClientCustomResourceLibraryInfo Resource { get; set; }
+        public CustomSkillEffectStage Stage { get; set; }
+        public int StartIndex { get; set; }
+        public int EndIndex { get; set; }
+        public int FrameCount { get; set; }
+        public int FrameDelay { get; set; }
+        public int OffsetX { get; set; }
+        public int OffsetY { get; set; }
+        public int StartLight { get; set; }
+        public int EndLight { get; set; }
+        public SoundIndex Sound { get; set; }
+        public bool Blend { get; set; }
+        public bool Loop { get; set; }
+        public int Duration { get; set; }
+        public bool FollowTarget { get; set; }
+
+        public static ClientCustomSkillEffectInfo From(CustomSkillEffectInfo effect)
+        {
+            if (effect == null) return null;
+
+            return new ClientCustomSkillEffectInfo
+            {
+                Resource = ClientCustomResourceLibraryInfo.From(effect.Resource),
+                Stage = effect.Stage,
+                StartIndex = effect.StartIndex,
+                EndIndex = effect.EndIndex,
+                FrameCount = effect.FrameCount,
+                FrameDelay = effect.FrameDelay,
+                OffsetX = effect.OffsetX,
+                OffsetY = effect.OffsetY,
+                StartLight = effect.StartLight,
+                EndLight = effect.EndLight,
+                Sound = effect.Sound,
+                Blend = effect.Blend,
+                Loop = effect.Loop,
+                Duration = effect.Duration,
+                FollowTarget = effect.FollowTarget,
+            };
+        }
+    }
+
+    public sealed class ClientCustomSkillInfo
+    {
+        public int Index { get; set; }
+        public int MagicIndex { get; set; }
+        public string MagicName { get; set; }
+        public MagicType MagicType { get; set; }
+        public CustomSkillTemplate Template { get; set; }
+        public CustomSkillTargetRule TargetRule { get; set; }
+        public bool Enabled { get; set; }
+        public int Range { get; set; }
+        public int Radius { get; set; }
+        public int MaxTargets { get; set; }
+        public CustomSkillShape Shape { get; set; }
+        public int Length { get; set; }
+        public int Width { get; set; }
+        public int Angle { get; set; }
+        public int WaveCount { get; set; }
+        public int WaveInterval { get; set; }
+        public int CastDelay { get; set; }
+        public int ProjectileSpeed { get; set; }
+        public List<ClientCustomSkillEffectInfo> Effects { get; set; } = new List<ClientCustomSkillEffectInfo>();
+
+        public static ClientCustomSkillInfo From(CustomSkillInfo skill)
+        {
+            if (skill == null) return null;
+
+            ClientCustomSkillInfo result = new ClientCustomSkillInfo
+            {
+                Index = skill.Index,
+                MagicIndex = skill.Magic?.Index ?? 0,
+                MagicName = skill.Magic?.Name,
+                MagicType = skill.Magic?.Magic ?? MagicType.Custom,
+                Template = skill.Template,
+                TargetRule = skill.TargetRule,
+                Enabled = skill.Enabled,
+                Range = skill.Range,
+                Radius = skill.Radius,
+                MaxTargets = skill.MaxTargets,
+                Shape = skill.Shape,
+                Length = skill.Length,
+                Width = skill.Width,
+                Angle = skill.Angle,
+                WaveCount = skill.WaveCount,
+                WaveInterval = skill.WaveInterval,
+                CastDelay = skill.CastDelay,
+                ProjectileSpeed = skill.ProjectileSpeed,
+            };
+
+            if (skill.Effects != null)
+                foreach (CustomSkillEffectInfo effect in skill.Effects.Where(x => x != null))
+                    result.Effects.Add(ClientCustomSkillEffectInfo.From(effect));
+
+            return result;
+        }
+
+        public MagicInfo ToMagicInfo()
+        {
+            return new MagicInfo
+            {
+                Index = MagicIndex,
+                Name = string.IsNullOrWhiteSpace(MagicName) ? $"Magic #{MagicIndex}" : MagicName,
+                Magic = MagicType == MagicType.None ? MagicType.Custom : MagicType,
+            };
+        }
+    }
+
     public sealed class ObjectRangeAttack : Packet
     {
         public uint ObjectID { get; set; }
@@ -184,6 +295,9 @@ namespace Library.Network.ServerPackets
 
         public MagicType AttackMagic { get; set; }
         public Element AttackElement { get; set; }
+        public int MagicInfoIndex { get; set; }
+        public ClientCustomSkillInfo CustomSkill { get; set; }
+        public int AnimationVariant { get; set; }
 
         public List<uint> Targets { get; set; } = new List<uint>();
     }
@@ -195,6 +309,9 @@ namespace Library.Network.ServerPackets
         public Point CurrentLocation { get; set; }
 
         public MagicType Type { get; set; }
+        public int MagicInfoIndex { get; set; }
+        public ClientCustomSkillInfo CustomSkill { get; set; }
+        public int AnimationVariant { get; set; }
         public List<uint> Targets { get; set; } = new List<uint>();
         public List<Point> Locations { get; set; } = new List<Point>();
         public bool Cast { get; set; }
@@ -210,6 +327,8 @@ namespace Library.Network.ServerPackets
         public Point CurrentLocation { get; set; }
 
         public MagicType Type { get; set; }
+        public int MagicInfoIndex { get; set; }
+        public ClientCustomSkillInfo CustomSkill { get; set; }
         public List<uint> Targets { get; set; } = new List<uint>();
         public List<Point> Locations { get; set; } = new List<Point>();
     }
@@ -319,10 +438,243 @@ namespace Library.Network.ServerPackets
 
         public bool HideHead;
     }
+    public sealed class ClientCustomResourceLibraryInfo
+    {
+        public int Index { get; set; }
+        public string Key { get; set; }
+        public string DisplayName { get; set; }
+        public string RelativePath { get; set; }
+        public LibraryFile LibraryFile { get; set; }
+        public string Hash { get; set; }
+        public string Version { get; set; }
+        public bool Enabled { get; set; }
+        public CustomResourceScope Scope { get; set; }
+
+        public static ClientCustomResourceLibraryInfo From(CustomResourceLibraryInfo resource)
+        {
+            if (resource == null) return null;
+
+            return new ClientCustomResourceLibraryInfo
+            {
+                Index = resource.Index,
+                Key = resource.Key,
+                DisplayName = resource.DisplayName,
+                RelativePath = resource.RelativePath,
+                LibraryFile = resource.LibraryFile,
+                Hash = resource.Hash,
+                Version = resource.Version,
+                Enabled = resource.Enabled,
+                Scope = resource.Scope,
+            };
+        }
+    }
+
+    public sealed class ClientCustomMonsterAnimationInfo
+    {
+        public ClientCustomResourceLibraryInfo Resource { get; set; }
+        public CustomMonsterAnimationType Action { get; set; }
+        public int Variant { get; set; }
+        public int StartIndex { get; set; }
+        public int EndIndex { get; set; }
+        public int FrameCount { get; set; }
+        public int DirectionCount { get; set; }
+        public int DirectionOffset { get; set; }
+        public int FrameDelay { get; set; }
+        public bool Loop { get; set; }
+        public bool Reversed { get; set; }
+        public int OffsetX { get; set; }
+        public int OffsetY { get; set; }
+        public int Priority { get; set; }
+        public SoundIndex Sound { get; set; }
+        public ClientCustomResourceLibraryInfo EffectResource { get; set; }
+        public CustomMonsterEffectTarget EffectTarget { get; set; }
+        public int EffectStartIndex { get; set; }
+        public int EffectEndIndex { get; set; }
+        public int EffectFrameCount { get; set; }
+        public int EffectFrameDelay { get; set; }
+        public int EffectOffsetX { get; set; }
+        public int EffectOffsetY { get; set; }
+        public int EffectStartLight { get; set; }
+        public int EffectEndLight { get; set; }
+        public int EffectStartDelay { get; set; }
+        public int EffectDuration { get; set; }
+        public int EffectTriggerFrame { get; set; }
+        public bool EffectBlend { get; set; }
+        public bool EffectLoop { get; set; }
+
+        public static ClientCustomMonsterAnimationInfo From(CustomMonsterAnimationInfo animation)
+        {
+            if (animation == null) return null;
+
+            return new ClientCustomMonsterAnimationInfo
+            {
+                Resource = ClientCustomResourceLibraryInfo.From(animation.Resource),
+                Action = animation.Action,
+                Variant = animation.Variant,
+                StartIndex = animation.StartIndex,
+                EndIndex = animation.EndIndex,
+                FrameCount = animation.FrameCount,
+                DirectionCount = animation.DirectionCount,
+                DirectionOffset = animation.DirectionOffset,
+                FrameDelay = animation.FrameDelay,
+                Loop = animation.Loop,
+                Reversed = animation.Reversed,
+                OffsetX = animation.OffsetX,
+                OffsetY = animation.OffsetY,
+                Priority = animation.Priority,
+                Sound = animation.Sound,
+                EffectResource = ClientCustomResourceLibraryInfo.From(animation.EffectResource),
+                EffectTarget = animation.EffectTarget,
+                EffectStartIndex = animation.EffectStartIndex,
+                EffectEndIndex = animation.EffectEndIndex,
+                EffectFrameCount = animation.EffectFrameCount,
+                EffectFrameDelay = animation.EffectFrameDelay,
+                EffectOffsetX = animation.EffectOffsetX,
+                EffectOffsetY = animation.EffectOffsetY,
+                EffectStartLight = animation.EffectStartLight,
+                EffectEndLight = animation.EffectEndLight,
+                EffectStartDelay = animation.EffectStartDelay,
+                EffectDuration = animation.EffectDuration,
+                EffectTriggerFrame = animation.EffectTriggerFrame,
+                EffectBlend = animation.EffectBlend,
+                EffectLoop = animation.EffectLoop,
+            };
+        }
+    }
+
+    public sealed class ClientCustomMonsterVisualInfo
+    {
+        public int Index { get; set; }
+        public int MonsterIndex { get; set; }
+        public ClientCustomResourceLibraryInfo DefaultResource { get; set; }
+        public float Scale { get; set; }
+        public bool DrawShadow { get; set; }
+        public bool Blend { get; set; }
+        public bool KeepCorpse { get; set; }
+        public int DefaultFrameDelay { get; set; }
+        public int FrameBase { get; set; }
+        public SoundIndex AttackSound { get; set; }
+        public SoundIndex RangeAttackSound { get; set; }
+        public SoundIndex MagicSound { get; set; }
+        public SoundIndex StruckSound { get; set; }
+        public SoundIndex DieSound { get; set; }
+        public SoundIndex ShowSound { get; set; }
+        public SoundIndex HideSound { get; set; }
+        public List<ClientCustomMonsterAnimationInfo> Animations { get; set; } = new List<ClientCustomMonsterAnimationInfo>();
+
+        public static ClientCustomMonsterVisualInfo From(CustomMonsterVisualInfo visual)
+        {
+            if (visual == null) return null;
+
+            ClientCustomMonsterVisualInfo result = new ClientCustomMonsterVisualInfo
+            {
+                Index = visual.Index,
+                MonsterIndex = visual.Monster?.Index ?? 0,
+                DefaultResource = ClientCustomResourceLibraryInfo.From(visual.DefaultResource),
+                Scale = visual.Scale,
+                DrawShadow = visual.DrawShadow,
+                Blend = visual.Blend,
+                KeepCorpse = visual.KeepCorpse,
+                DefaultFrameDelay = visual.DefaultFrameDelay,
+                FrameBase = visual.FrameBase,
+                AttackSound = visual.AttackSound,
+                RangeAttackSound = visual.RangeAttackSound,
+                MagicSound = visual.MagicSound,
+                StruckSound = visual.StruckSound,
+                DieSound = visual.DieSound,
+                ShowSound = visual.ShowSound,
+                HideSound = visual.HideSound,
+            };
+
+            if (visual.Animations != null)
+                foreach (CustomMonsterAnimationInfo animation in visual.Animations.Where(x => x != null))
+                    result.Animations.Add(ClientCustomMonsterAnimationInfo.From(animation));
+
+            return result;
+        }
+    }
+
+    public sealed class ClientRuntimeMonsterInfo
+    {
+        public int Index { get; set; }
+        public string Name { get; set; }
+        public MonsterImage Image { get; set; }
+        public int AI { get; set; }
+        public int Level { get; set; }
+        public int ViewRange { get; set; }
+        public int CoolEye { get; set; }
+        public decimal Experience { get; set; }
+        public bool Undead { get; set; }
+        public bool CanPush { get; set; }
+        public bool CanTame { get; set; }
+        public int AttackDelay { get; set; }
+        public int MoveDelay { get; set; }
+        public bool IsBoss { get; set; }
+        public MonsterFlag Flag { get; set; }
+        public int FaceImage { get; set; }
+        public Stats Stats { get; set; }
+
+        public static ClientRuntimeMonsterInfo From(MonsterInfo info)
+        {
+            if (info == null) return null;
+
+            return new ClientRuntimeMonsterInfo
+            {
+                Index = info.Index,
+                Name = info.MonsterName,
+                Image = info.Image,
+                AI = info.AI,
+                Level = info.Level,
+                ViewRange = info.ViewRange,
+                CoolEye = info.CoolEye,
+                Experience = info.Experience,
+                Undead = info.Undead,
+                CanPush = info.CanPush,
+                CanTame = info.CanTame,
+                AttackDelay = info.AttackDelay,
+                MoveDelay = info.MoveDelay,
+                IsBoss = info.IsBoss,
+                Flag = info.Flag,
+                FaceImage = info.FaceImage,
+                Stats = info.Stats == null ? new Stats() : new Stats(info.Stats),
+            };
+        }
+
+        public MonsterInfo ToMonsterInfo()
+        {
+            MonsterInfo info = new MonsterInfo
+            {
+                Index = Index,
+                MonsterName = string.IsNullOrWhiteSpace(Name) ? $"Monster #{Index}" : Name,
+                Image = Image,
+                AI = AI,
+                Level = Level,
+                ViewRange = ViewRange,
+                CoolEye = CoolEye,
+                Experience = Experience,
+                Undead = Undead,
+                CanPush = CanPush,
+                CanTame = CanTame,
+                AttackDelay = AttackDelay,
+                MoveDelay = MoveDelay,
+                IsBoss = IsBoss,
+                Flag = Flag,
+                FaceImage = FaceImage,
+            };
+
+            info.Stats = Stats == null ? new Stats() : new Stats(Stats);
+
+            return info;
+        }
+    }
+
     public sealed class ObjectMonster : Packet
     {
         public uint ObjectID { get; set; }
         public int MonsterIndex { get; set; }
+        public ClientRuntimeMonsterInfo RuntimeMonsterInfo { get; set; }
+        public int CustomMonsterVisualIndex { get; set; }
+        public ClientCustomMonsterVisualInfo CustomMonsterVisual { get; set; }
         public string CustomName { get; set; }
         public Color NameColour { get; set; }
         public string PetOwner { get; set; }
@@ -1407,6 +1759,9 @@ namespace Library.Network.ServerPackets
 
         public MonsterInfo MonsterInfo;
         public int MonsterIndex { get; set; }
+        public ClientRuntimeMonsterInfo RuntimeMonsterInfo { get; set; }
+        public int CustomMonsterVisualIndex { get; set; }
+        public ClientCustomMonsterVisualInfo CustomMonsterVisual { get; set; }
         public string PetOwner { get; set; }
 
         public int Health { get; set; }
@@ -1416,7 +1771,9 @@ namespace Library.Network.ServerPackets
         [CompleteObject]
         public void OnComplete()
         {
-            MonsterInfo = Globals.MonsterInfoList.Binding.First(x => x.Index == MonsterIndex);
+            MonsterInfo = Globals.MonsterInfoList?.Binding.FirstOrDefault(x => x.Index == MonsterIndex)
+                          ?? RuntimeMonsterInfo?.ToMonsterInfo()
+                          ?? new ClientRuntimeMonsterInfo { Index = MonsterIndex }.ToMonsterInfo();
         }
     }
     public sealed class DataObjectItem : Packet

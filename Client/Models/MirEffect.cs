@@ -16,6 +16,7 @@ namespace Client.Models
         public MirLibrary Library;
 
         public DateTime StartTime;
+        public DateTime ExpireTime;
         public int StartIndex;
         public int FrameCount;
         public TimeSpan[] Delays;
@@ -132,6 +133,18 @@ namespace Client.Models
         }
 
         public MirEffect(int startIndex, int frameCount, TimeSpan frameDelay, LibraryFile file, int startLight, int endLight, Color lightColour)
+            : this(startIndex, frameCount, frameDelay, startLight, endLight, lightColour)
+        {
+            CEnvir.LibraryList.TryGetValue(file, out Library);
+        }
+
+        public MirEffect(int startIndex, int frameCount, TimeSpan frameDelay, MirLibrary library, int startLight, int endLight, Color lightColour)
+            : this(startIndex, frameCount, frameDelay, startLight, endLight, lightColour)
+        {
+            Library = library;
+        }
+
+        private MirEffect(int startIndex, int frameCount, TimeSpan frameDelay, int startLight, int endLight, Color lightColour)
         {
             StartIndex = startIndex;
             FrameCount = frameCount;
@@ -150,14 +163,19 @@ namespace Client.Models
                 LightColours[i] = lightColour;
             }
 
-            CEnvir.LibraryList.TryGetValue(file, out Library);
-
             GameScene.Game.MapControl.Effects.Add(this);
         }
 
         public virtual void Process()
         {
             if (CEnvir.Now < StartTime) return;
+
+            if (ExpireTime != DateTime.MinValue && CEnvir.Now >= ExpireTime)
+            {
+                CompleteAction?.Invoke();
+                Remove();
+                return;
+            }
 
             if (Target != null)
             {

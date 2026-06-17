@@ -18,9 +18,11 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using S = Library.Network.ServerPackets;
 
 namespace Client.Envir
 {
@@ -46,6 +48,10 @@ namespace Client.Envir
         public static bool WrongVersion;
 
         public static Dictionary<LibraryFile, MirLibrary> LibraryList = new Dictionary<LibraryFile, MirLibrary>();
+        public static Dictionary<string, MirLibrary> DynamicLibraryList = new Dictionary<string, MirLibrary>(StringComparer.OrdinalIgnoreCase);
+        public static List<string> DynamicLibraryDiagnostics = new List<string>();
+        private static readonly object DynamicLibraryDiagnosticLock = new object();
+        public static Dictionary<int, CustomSkillInfo> ClientCustomSkillOverrideList = new Dictionary<int, CustomSkillInfo>();
 
         public static ClientUserItem[] Storage, MainStorage, PartsStorage, MainPartsStorage;
 
@@ -66,6 +72,223 @@ namespace Client.Envir
         public static bool TestServer;
 
         public static StringMessages Language { get; set; }
+
+        public static bool TryGetCustomLibrary(CustomResourceLibraryInfo resource, out MirLibrary library)
+        {
+            library = null;
+
+            if (resource == null || !resource.Enabled || string.IsNullOrWhiteSpace(resource.Key))
+                return false;
+
+            if (resource.LibraryFile != LibraryFile.None)
+            {
+                if (LibraryList.TryGetValue(resource.LibraryFile, out library) && library != null)
+                    return true;
+
+                AddDynamicLibraryDiagnostic($"自定义资源引用的客户端图库未加载: {resource.Key} -> {resource.LibraryFile}");
+
+                if (string.IsNullOrWhiteSpace(resource.RelativePath))
+                    return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(resource.RelativePath))
+            {
+                AddDynamicLibraryDiagnostic($"自定义资源未配置 RelativePath 或 LibraryFile: {resource.Key}");
+                return false;
+            }
+
+            if (!TryGetSafeCustomPath(resource.RelativePath, out string fullPath))
+            {
+                AddDynamicLibraryDiagnostic($"自定义资源 {resource.Key} 的路径无效或不在 Data\\Custom 下: {resource.RelativePath}");
+                return false;
+            }
+
+            if (DynamicLibraryList.TryGetValue(resource.Key, out library))
+                return library != null;
+
+            if (!File.Exists(fullPath))
+            {
+                AddDynamicLibraryDiagnostic($"缺少自定义资源文件: {resource.Key} -> {resource.RelativePath}");
+                DynamicLibraryList[resource.Key] = null;
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(resource.Hash) && !HashMatches(fullPath, resource.Hash))
+                AddDynamicLibraryDiagnostic($"自定义资源 Hash 不匹配: {resource.Key} -> {resource.RelativePath}");
+
+            try
+            {
+                library = new MirLibrary(fullPath);
+                DynamicLibraryList[resource.Key] = library;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AddDynamicLibraryDiagnostic($"自定义资源加载失败: {resource.Key} -> {resource.RelativePath}, {ex.Message}");
+                DynamicLibraryList[resource.Key] = null;
+                return false;
+            }
+        }
+
+        public static bool TryGetCustomSkill(int magicInfoIndex, out CustomSkillInfo skill)
+        {
+            if (ClientCustomSkillOverrideList.TryGetValue(magicInfoIndex, out skill) && skill?.Enabled == true)
+                return true;
+
+            skill = Globals.CustomSkillInfoList?.Binding.FirstOrDefault(x => x?.Magic?.Index == magicInfoIndex && x.Enabled);
+            return skill != null;
+        }
+
+        public static void RegisterClientCustomSkillOverride(S.ClientCustomSkillInfo info)
+        {
+            if (info == null || info.MagicIndex <= 0) return;
+
+            MagicInfo magic = Globals.MagicInfoList?.Binding.FirstOrDefault(x => x?.Index == info.MagicIndex);
+            magic ??= info.ToMagicInfo();
+
+            CustomSkillInfo skill = new CustomSkillInfo
+            {
+                Magic = magic,
+                Template = info.Template,
+                TargetRule = info.TargetRule,
+                Enabled = info.Enabled,
+                Range = info.Range,
+                Radius = info.Radius,
+                MaxTargets = info.MaxTargets,
+                Shape = info.Shape,
+                Length = info.Length,
+                Width = info.Width,
+                Angle = info.Angle,
+                WaveCount = info.WaveCount <= 0 ? 1 : info.WaveCount,
+                WaveInterval = info.WaveInterval,
+                CastDelay = info.CastDelay <= 0 ? 500 : info.CastDelay,
+                ProjectileSpeed = info.ProjectileSpeed <= 0 ? Globals.ProjectileSpeed : info.ProjectileSpeed,
+            };
+
+            skill.Effects = new DBBindingList<CustomSkillEffectInfo>(
+                skill,
+                typeof(CustomSkillInfo).GetProperty(nameof(CustomSkillInfo.Effects)));
+
+            if (info.Effects != null)
+                foreach (S.ClientCustomSkillEffectInfo source in info.Effects.Where(x => x != null))
+                {
+                    CustomSkillEffectInfo effect = new CustomSkillEffectInfo
+                    {
+                        Resource = CreateRuntimeCustomResource(source.Resource),
+                        Stage = source.Stage,
+                        StartIndex = source.StartIndex,
+                        EndIndex = source.EndIndex,
+                        FrameCount = source.FrameCount,
+                        FrameDelay = source.FrameDelay <= 0 ? 100 : source.FrameDelay,
+                        OffsetX = source.OffsetX,
+                        OffsetY = source.OffsetY,
+                        StartLight = source.StartLight,
+                        EndLight = source.EndLight,
+                        Sound = source.Sound,
+                        Blend = source.Blend,
+                        Loop = source.Loop,
+                        Duration = source.Duration,
+                        FollowTarget = source.FollowTarget,
+                    };
+
+                    skill.Effects.Add(effect);
+                }
+
+            ClientCustomSkillOverrideList[info.MagicIndex] = skill;
+        }
+
+        public static void SyncClientCustomSkillOverride(int magicInfoIndex, S.ClientCustomSkillInfo info)
+        {
+            if (info != null)
+            {
+                RegisterClientCustomSkillOverride(info);
+                return;
+            }
+
+            if (magicInfoIndex > 0)
+                ClientCustomSkillOverrideList.Remove(magicInfoIndex);
+        }
+
+        private static CustomResourceLibraryInfo CreateRuntimeCustomResource(S.ClientCustomResourceLibraryInfo info)
+        {
+            if (info == null) return null;
+
+            return new CustomResourceLibraryInfo
+            {
+                Key = info.Key,
+                DisplayName = info.DisplayName,
+                RelativePath = info.RelativePath,
+                LibraryFile = info.LibraryFile,
+                Hash = info.Hash,
+                Version = info.Version,
+                Enabled = info.Enabled,
+                Scope = info.Scope,
+            };
+        }
+
+        private static bool TryGetSafeCustomPath(string relativePath, out string fullPath)
+        {
+            fullPath = null;
+
+            if (string.IsNullOrWhiteSpace(relativePath) || Path.IsPathRooted(relativePath))
+                return false;
+
+            string normalized = relativePath.Replace('/', Path.DirectorySeparatorChar).TrimStart(Path.DirectorySeparatorChar);
+            if (normalized.Contains(".." + Path.DirectorySeparatorChar) || normalized.Equals("..", StringComparison.Ordinal))
+                return false;
+
+            string customRoot = Path.GetFullPath(Path.Combine(Application.StartupPath, "Data", "Custom"));
+            fullPath = Path.GetFullPath(Path.Combine(Application.StartupPath, normalized));
+
+            return fullPath.StartsWith(customRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(fullPath, customRoot, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool HashMatches(string fullPath, string expectedHash)
+        {
+            try
+            {
+                string expected = expectedHash.Trim();
+                if (expected.Length != 64) return false;
+
+                using SHA256 sha = SHA256.Create();
+                byte[] hash = sha.ComputeHash(File.ReadAllBytes(fullPath));
+                string actual = BitConverter.ToString(hash).Replace("-", string.Empty);
+
+                return string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static void AddDynamicLibraryDiagnostic(string message)
+        {
+            lock (DynamicLibraryDiagnosticLock)
+            {
+                if (DynamicLibraryDiagnostics.Contains(message)) return;
+                DynamicLibraryDiagnostics.Add(message);
+            }
+
+            SaveDynamicLibraryDiagnostic(message);
+        }
+
+        private static void SaveDynamicLibraryDiagnostic(string message)
+        {
+            try
+            {
+                const string logPath = @".\Errors\";
+
+                if (!Directory.Exists(logPath))
+                    Directory.CreateDirectory(logPath);
+
+                File.AppendAllText(Path.Combine(logPath, "DynamicLibraryDiagnostics.txt"), $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
+            }
+            catch
+            {
+            }
+        }
 
 
         static CEnvir()
@@ -391,6 +614,15 @@ namespace Client.Envir
                     Globals.HelpInfoList = Session.GetCollection<HelpInfo>();
                     Globals.MilestoneInfoList = Session.GetCollection<MilestoneInfo>();
                     Globals.MilestoneTaskInfoList = Session.GetCollection<MilestoneInfoTask>();
+                    Globals.CustomResourceLibraryInfoList = Session.GetCollection<CustomResourceLibraryInfo>();
+                    Globals.CustomMonsterVisualInfoList = Session.GetCollection<CustomMonsterVisualInfo>();
+                    Globals.CustomMonsterAnimationInfoList = Session.GetCollection<CustomMonsterAnimationInfo>();
+                    Globals.CustomMonsterBehaviorInfoList = Session.GetCollection<CustomMonsterBehaviorInfo>();
+                    Globals.CustomMonsterSkillInfoList = Session.GetCollection<CustomMonsterSkillInfo>();
+                    Globals.CustomMonsterAiRuleInfoList = Session.GetCollection<CustomMonsterAiRuleInfo>();
+                    Globals.CustomMonsterAiActionInfoList = Session.GetCollection<CustomMonsterAiActionInfo>();
+                    Globals.CustomSkillInfoList = Session.GetCollection<CustomSkillInfo>();
+                    Globals.CustomSkillEffectInfoList = Session.GetCollection<CustomSkillEffectInfo>();
 
                     KeyBinds = Session.GetCollection<KeyBindInfo>();
                     WindowSettings = Session.GetCollection<WindowSetting>();
@@ -980,6 +1212,13 @@ namespace Client.Envir
             Connection = null;
 
             con?.Disconnect();
+
+            foreach (MirLibrary library in DynamicLibraryList.Values.Where(x => x != null))
+                library.Dispose();
+
+            DynamicLibraryList.Clear();
+            DynamicLibraryDiagnostics.Clear();
+            ClientCustomSkillOverrideList.Clear();
         }
         public static KeyBindInfo GetKeyBind(KeyBindAction action)
         {

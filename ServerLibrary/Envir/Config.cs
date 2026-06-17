@@ -125,6 +125,9 @@ namespace Server.Envir
         public static int MaxRespawnBatchSize { get; set; } = 25;
         public static bool DropTextOverrideEnabled { get; set; } = true;
         public static string DropTextOverridePath { get; set; } = @".\Envir\Drops\";
+        public static bool CustomTextOverrideEnabled { get; set; } = true;
+        public static string CustomTextPath { get; set; } = @".\Envir\Custom\";
+        public static bool CustomTextStrictMode { get; set; } = true;
 
         [ConfigSection("NPCs")]
         public static bool NpcTextOverrideEnabled { get; set; } = true;

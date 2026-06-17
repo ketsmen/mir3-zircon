@@ -108,10 +108,12 @@ namespace Server.Models
         }
 
         public PoisonType PoisonType;
+        public int PoisonValue;
         public bool PoisonStackable = false;
         public int PoisonRate = 10;
         public int PoisonTicks = 5;
         public int PoisonFrequency = 2;
+        public bool PoisonCanKill;
 
         public bool IgnoreShield;
         public bool IgnoreArmour;
@@ -127,6 +129,14 @@ namespace Server.Models
 
         public static MonsterObject GetMonster(MonsterInfo monsterInfo)
         {
+            if (SEnvir.CustomSystem.TryGetBehavior(monsterInfo, out CustomMonsterBehaviorInfo customBehavior) && customBehavior.Template != CustomMonsterBehaviorTemplate.None)
+            {
+                if (customBehavior.Template == CustomMonsterBehaviorTemplate.Guard)
+                    return new Guard { MonsterInfo = monsterInfo };
+
+                return new CustomMonsterObject { MonsterInfo = monsterInfo };
+            }
+
             switch (monsterInfo.AI)
             {
                 case -1:
@@ -1982,11 +1992,11 @@ namespace Server.Models
                     return 0;
                 }
 
-                damage = power - ob.GetAC();
+                damage = IgnoreArmour ? power : power - ob.GetAC();
             }
             else
             {
-                damage = power - ob.GetMR();
+                damage = IgnoreArmour ? power : power - ob.GetMR();
             }
 
             int res = ob.Stats.GetResistanceValue(element);
@@ -2018,15 +2028,17 @@ namespace Server.Models
             foreach (UserMagic magic in Magics)
                 PetOwner?.LevelMagic(magic);
 
-            if (PoisonType == PoisonType.None || SEnvir.Random.Next(PoisonRate) > 0) return damage;
+            if (PoisonType == PoisonType.None || (PoisonRate > 0 && SEnvir.Random.Next(PoisonRate) > 0)) return damage;
 
             ob.ApplyPoison(new Poison
             {
                 Owner = this,
                 Type = PoisonType,
-                Value = GetSC(),
+                Value = PoisonValue > 0 ? PoisonValue : GetSC(),
                 TickFrequency = TimeSpan.FromSeconds(PoisonFrequency),
                 TickCount = PoisonTicks,
+                CanKill = PoisonCanKill,
+                Stackable = PoisonStackable,
             });
 
             return damage;
@@ -3654,10 +3666,18 @@ namespace Server.Models
         }
         public override Packet GetInfoPacket(PlayerObject ob)
         {
+            SEnvir.CustomSystem.TryGetVisual(MonsterInfo, out CustomMonsterVisualInfo customVisual);
+            SEnvir.CustomSystem.TryGetBehavior(MonsterInfo, out CustomMonsterBehaviorInfo customBehavior);
+            S.ClientCustomMonsterVisualInfo clientVisual = S.ClientCustomMonsterVisualInfo.From(customVisual);
+            S.ClientRuntimeMonsterInfo runtimeInfo = customVisual != null || customBehavior != null ? S.ClientRuntimeMonsterInfo.From(MonsterInfo) : null;
+
             return new S.ObjectMonster
             {
                 ObjectID = ObjectID,
                 MonsterIndex = MonsterInfo.Index,
+                RuntimeMonsterInfo = runtimeInfo,
+                CustomMonsterVisualIndex = customVisual?.Index ?? 0,
+                CustomMonsterVisual = clientVisual,
 
                 Location = CurrentLocation,
 
@@ -3680,11 +3700,19 @@ namespace Server.Models
         }
         public override Packet GetDataPacket(PlayerObject ob)
         {
+            SEnvir.CustomSystem.TryGetVisual(MonsterInfo, out CustomMonsterVisualInfo customVisual);
+            SEnvir.CustomSystem.TryGetBehavior(MonsterInfo, out CustomMonsterBehaviorInfo customBehavior);
+            S.ClientCustomMonsterVisualInfo clientVisual = S.ClientCustomMonsterVisualInfo.From(customVisual);
+            S.ClientRuntimeMonsterInfo runtimeInfo = customVisual != null || customBehavior != null ? S.ClientRuntimeMonsterInfo.From(MonsterInfo) : null;
+
             return new S.DataObjectMonster
             {
                 ObjectID = ObjectID,
 
                 MonsterIndex = MonsterInfo.Index,
+                RuntimeMonsterInfo = runtimeInfo,
+                CustomMonsterVisualIndex = customVisual?.Index ?? 0,
+                CustomMonsterVisual = clientVisual,
 
                 MapIndex = CurrentMap.Info.Index,
                 CurrentLocation = CurrentLocation,

@@ -26,7 +26,8 @@ namespace Server.Envir.Commands.Command.Admin
             {
                 foreach (var magic in targetCharacter.Discipline.Magics)
                 {
-                    targetCharacter.Player?.MagicObjects.Remove(magic.Info.Magic);
+                    if (magic?.Info != null)
+                        targetCharacter.Player?.MagicObjects.RemoveByInfoIndex(magic.Info.Index);
                 }
 
                 targetCharacter.Discipline.Delete();

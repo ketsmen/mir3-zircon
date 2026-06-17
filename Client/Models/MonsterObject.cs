@@ -4,6 +4,7 @@ using Client.Scenes;
 using Client.Scenes.Views;
 using Library;
 using Library.SystemModels;
+using MirDB;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -24,6 +25,10 @@ namespace Client.Models
         public int BodyShape;
 
         public float Scale = 1F;
+        public CustomMonsterVisualInfo CustomVisual;
+        public bool UsingCustomVisual;
+        private Dictionary<MirAnimation, CustomMonsterAnimationInfo> CustomAnimationMap;
+        private Dictionary<MirAnimation, MirLibrary> CustomAnimationLibraryMap;
 
         public int GrowthLevel;
 
@@ -69,6 +74,7 @@ namespace Client.Models
         public MonsterObject(CompanionInfo info)
         {
             MonsterInfo = info.MonsterInfo;
+            CustomVisual = Globals.CustomMonsterVisualInfoList?.Binding.FirstOrDefault(x => x?.Monster == MonsterInfo);
 
             Stats = new Stats(MonsterInfo.Stats);
 
@@ -86,7 +92,9 @@ namespace Client.Models
         {
             ObjectID = info.ObjectID;
 
-            MonsterInfo = Globals.MonsterInfoList.Binding.First(x => x.Index == info.MonsterIndex);
+            MonsterInfo = ResolveMonsterInfo(info.MonsterIndex, info.RuntimeMonsterInfo);
+            CustomVisual = CreateRuntimeCustomVisual(info.CustomMonsterVisual, MonsterInfo)
+                           ?? ResolveCustomVisual(MonsterInfo, info.CustomMonsterVisualIndex);
 
             CompanionObject = info.CompanionObject;
 
@@ -134,9 +142,115 @@ namespace Client.Models
 
             UpdateQuests();
         }
+
+        private static MonsterInfo ResolveMonsterInfo(int monsterIndex, S.ClientRuntimeMonsterInfo runtimeInfo)
+        {
+            return Globals.MonsterInfoList?.Binding.FirstOrDefault(x => x.Index == monsterIndex)
+                   ?? runtimeInfo?.ToMonsterInfo()
+                   ?? new S.ClientRuntimeMonsterInfo { Index = monsterIndex }.ToMonsterInfo();
+        }
+
+        private static CustomMonsterVisualInfo ResolveCustomVisual(MonsterInfo monsterInfo, int visualIndex)
+        {
+            if (visualIndex > 0)
+                return Globals.CustomMonsterVisualInfoList?.Binding.FirstOrDefault(x => x?.Index == visualIndex);
+
+            return Globals.CustomMonsterVisualInfoList?.Binding.FirstOrDefault(x => x?.Monster == monsterInfo);
+        }
+
+        private static CustomMonsterVisualInfo CreateRuntimeCustomVisual(S.ClientCustomMonsterVisualInfo info, MonsterInfo monsterInfo)
+        {
+            if (info == null) return null;
+
+            CustomMonsterVisualInfo visual = new CustomMonsterVisualInfo
+            {
+                Monster = monsterInfo,
+                DefaultResource = CreateRuntimeCustomResource(info.DefaultResource),
+                Scale = info.Scale <= 0 ? 1F : info.Scale,
+                DrawShadow = info.DrawShadow,
+                Blend = info.Blend,
+                KeepCorpse = info.KeepCorpse,
+                DefaultFrameDelay = info.DefaultFrameDelay <= 0 ? 100 : info.DefaultFrameDelay,
+                FrameBase = info.FrameBase,
+                AttackSound = info.AttackSound,
+                RangeAttackSound = info.RangeAttackSound,
+                MagicSound = info.MagicSound,
+                StruckSound = info.StruckSound,
+                DieSound = info.DieSound,
+                ShowSound = info.ShowSound,
+                HideSound = info.HideSound,
+            };
+
+            visual.Animations = new DBBindingList<CustomMonsterAnimationInfo>(
+                visual,
+                typeof(CustomMonsterVisualInfo).GetProperty(nameof(CustomMonsterVisualInfo.Animations)));
+
+            if (info.Animations == null) return visual;
+
+            foreach (S.ClientCustomMonsterAnimationInfo source in info.Animations.Where(x => x != null))
+            {
+                CustomMonsterAnimationInfo animation = new CustomMonsterAnimationInfo
+                {
+                    Resource = CreateRuntimeCustomResource(source.Resource),
+                    Action = source.Action,
+                    Variant = source.Variant,
+                    StartIndex = source.StartIndex,
+                    EndIndex = source.EndIndex,
+                    FrameCount = source.FrameCount,
+                    DirectionCount = source.DirectionCount <= 0 ? 8 : source.DirectionCount,
+                    DirectionOffset = source.DirectionOffset,
+                    FrameDelay = source.FrameDelay <= 0 ? 100 : source.FrameDelay,
+                    Loop = source.Loop,
+                    Reversed = source.Reversed,
+                    OffsetX = source.OffsetX,
+                    OffsetY = source.OffsetY,
+                    Priority = source.Priority,
+                    Sound = source.Sound,
+                    EffectResource = CreateRuntimeCustomResource(source.EffectResource),
+                    EffectTarget = source.EffectTarget,
+                    EffectStartIndex = source.EffectStartIndex,
+                    EffectEndIndex = source.EffectEndIndex,
+                    EffectFrameCount = source.EffectFrameCount,
+                    EffectFrameDelay = source.EffectFrameDelay <= 0 ? 100 : source.EffectFrameDelay,
+                    EffectOffsetX = source.EffectOffsetX,
+                    EffectOffsetY = source.EffectOffsetY,
+                    EffectStartLight = source.EffectStartLight,
+                    EffectEndLight = source.EffectEndLight,
+                    EffectStartDelay = source.EffectStartDelay,
+                    EffectDuration = source.EffectDuration,
+                    EffectTriggerFrame = source.EffectTriggerFrame,
+                    EffectBlend = source.EffectBlend,
+                    EffectLoop = source.EffectLoop,
+                };
+
+                visual.Animations.Add(animation);
+            }
+
+            return visual;
+        }
+
+        private static CustomResourceLibraryInfo CreateRuntimeCustomResource(S.ClientCustomResourceLibraryInfo info)
+        {
+            if (info == null) return null;
+
+            return new CustomResourceLibraryInfo
+            {
+                Key = info.Key,
+                DisplayName = info.DisplayName,
+                RelativePath = info.RelativePath,
+                LibraryFile = info.LibraryFile,
+                Hash = info.Hash,
+                Version = info.Version,
+                Enabled = info.Enabled,
+                Scope = info.Scope,
+            };
+        }
+
         public void UpdateLibraries()
         {
             BodyLibrary = null;
+            UsingCustomVisual = false;
+            CustomAnimationMap = null;
 
             Frames = new Dictionary<MirAnimation, Frame>(FrameSet.DefaultMonster);
 
@@ -148,6 +262,9 @@ namespace Client.Models
             //OtherSounds
 
             Image = MonsterInfo.Image;
+
+            if (TryApplyCustomVisual())
+                return;
 
             switch (Image)
             {
@@ -2735,6 +2852,176 @@ namespace Client.Models
             }
         }
 
+        private bool TryApplyCustomVisual()
+        {
+            if (CustomVisual?.Animations == null || CustomVisual.Animations.Count == 0)
+                return false;
+
+            CustomResourceLibraryInfo resource = CustomVisual.DefaultResource ?? CustomVisual.Animations.FirstOrDefault(x => x?.Resource != null)?.Resource;
+            if (!CEnvir.TryGetCustomLibrary(resource, out BodyLibrary))
+                return false;
+
+            BodyShape = 0;
+            BodyOffSet = 0;
+            Frames = new Dictionary<MirAnimation, Frame>();
+            CustomAnimationMap = new Dictionary<MirAnimation, CustomMonsterAnimationInfo>();
+            CustomAnimationLibraryMap = new Dictionary<MirAnimation, MirLibrary>();
+            UsingCustomVisual = true;
+            AttackSound = CustomVisual.AttackSound;
+            StruckSound = CustomVisual.StruckSound;
+            DieSound = CustomVisual.DieSound;
+
+            foreach (CustomMonsterAnimationInfo animation in CustomVisual.Animations
+                         .Where(x => x != null)
+                         .OrderBy(x => x.Priority)
+                         .ThenBy(x => x.Action)
+                         .ThenBy(x => x.Variant))
+            {
+                MirAnimation mirAnimation = GetCustomAnimation(animation.Action, animation.Variant);
+                MirLibrary animationLibrary = BodyLibrary;
+
+                if (animation.Resource != null && !CEnvir.TryGetCustomLibrary(animation.Resource, out animationLibrary))
+                    continue;
+
+                int frameCount = animation.FrameCount > 0
+                    ? animation.FrameCount
+                    : Math.Max(1, animation.EndIndex - animation.StartIndex + 1);
+
+                int directionOffset = animation.DirectionOffset > 0
+                    ? animation.DirectionOffset
+                    : frameCount;
+
+                int startIndex = CustomVisual.FrameBase + animation.StartIndex;
+                int endIndex = CustomVisual.FrameBase + animation.EndIndex;
+
+                ReportMissingCustomAnimationFrames(animation, animationLibrary, startIndex, frameCount, directionOffset);
+
+                Frame frame = new(startIndex, frameCount, directionOffset, TimeSpan.FromMilliseconds(Math.Max(1, animation.FrameDelay)))
+                {
+                    Reversed = animation.Reversed
+                };
+
+                Frames[mirAnimation] = frame;
+                CustomAnimationMap[mirAnimation] = animation;
+                CustomAnimationLibraryMap[mirAnimation] = animationLibrary;
+
+                if (animation.Action == CustomMonsterAnimationType.Walking)
+                {
+                    Frames[MirAnimation.Pushed] = new Frame(startIndex, frameCount, directionOffset, TimeSpan.FromMilliseconds(50)) { Reversed = true, StaticSpeed = true };
+                    CustomAnimationMap[MirAnimation.Pushed] = animation;
+                    CustomAnimationLibraryMap[MirAnimation.Pushed] = animationLibrary;
+                }
+                else if (animation.Action == CustomMonsterAnimationType.Die && !Frames.ContainsKey(MirAnimation.Dead))
+                {
+                    Frames[MirAnimation.Dead] = new Frame(animation.EndIndex > 0 ? endIndex : startIndex + frameCount - 1, 1, directionOffset, TimeSpan.FromMilliseconds(1000));
+                    CustomAnimationMap[MirAnimation.Dead] = animation;
+                    CustomAnimationLibraryMap[MirAnimation.Dead] = animationLibrary;
+                }
+            }
+
+            if (!Frames.ContainsKey(MirAnimation.Standing))
+                Frames[MirAnimation.Standing] = new Frame(CustomVisual.FrameBase, 1, 0, TimeSpan.FromMilliseconds(Math.Max(1, CustomVisual.DefaultFrameDelay)));
+
+            if (!Frames.ContainsKey(MirAnimation.Walking))
+                CopyCustomAnimationFallback(MirAnimation.Walking, MirAnimation.Standing);
+
+            if (!Frames.ContainsKey(MirAnimation.Combat1))
+                CopyCustomAnimationFallback(MirAnimation.Combat1, MirAnimation.Standing);
+
+            if (!Frames.ContainsKey(MirAnimation.Combat2))
+                CopyCustomAnimationFallback(MirAnimation.Combat2, MirAnimation.Combat1);
+
+            if (!Frames.ContainsKey(MirAnimation.Combat3))
+                CopyCustomAnimationFallback(MirAnimation.Combat3, MirAnimation.Combat1);
+
+            if (!Frames.ContainsKey(MirAnimation.Struck))
+                CopyCustomAnimationFallback(MirAnimation.Struck, MirAnimation.Standing);
+
+            if (!Frames.ContainsKey(MirAnimation.Die))
+                CopyCustomAnimationFallback(MirAnimation.Die, MirAnimation.Standing);
+
+            if (!Frames.ContainsKey(MirAnimation.Dead))
+                CopyCustomAnimationFallback(MirAnimation.Dead, MirAnimation.Die);
+
+            return true;
+        }
+
+        private void ReportMissingCustomAnimationFrames(CustomMonsterAnimationInfo animation, MirLibrary library, int startIndex, int frameCount, int directionOffset)
+        {
+            if (animation == null || library == null) return;
+
+            int directionCount = Math.Max(1, animation.DirectionCount <= 0 ? 8 : animation.DirectionCount);
+            int lastDirectionStart = startIndex + directionOffset * (directionCount - 1);
+            int maxIndex = lastDirectionStart + Math.Max(1, frameCount) - 1;
+
+            if (library.HasImage(startIndex) && library.HasImage(maxIndex)) return;
+
+            string resourceName = GetCustomResourceName(animation.Resource ?? CustomVisual?.DefaultResource);
+            CEnvir.AddDynamicLibraryDiagnostic(
+                $"自定义怪物动画帧缺失: {Name ?? MonsterInfo?.MonsterName} Action={animation.Action} Variant={animation.Variant} Resource={resourceName} FrameBase={CustomVisual?.FrameBase ?? 0} Start={animation.StartIndex} End={animation.EndIndex} FrameCount={frameCount} DirectionCount={directionCount} DirectionOffset={directionOffset} MaxIndex={maxIndex}");
+        }
+
+        private static string GetCustomResourceName(CustomResourceLibraryInfo resource)
+        {
+            if (resource == null) return "未配置";
+            if (!string.IsNullOrWhiteSpace(resource.Key)) return resource.Key;
+            if (resource.LibraryFile != LibraryFile.None) return resource.LibraryFile.ToString();
+            return string.IsNullOrWhiteSpace(resource.RelativePath) ? $"#{resource.Index}" : resource.RelativePath;
+        }
+
+        private void CopyCustomAnimationFallback(MirAnimation target, MirAnimation source)
+        {
+            Frames[target] = Frames.TryGetValue(source, out Frame frame) ? frame : Frame.EmptyFrame;
+
+            if (CustomAnimationMap != null && CustomAnimationMap.TryGetValue(source, out CustomMonsterAnimationInfo animation))
+                CustomAnimationMap[target] = animation;
+
+            if (CustomAnimationLibraryMap != null && CustomAnimationLibraryMap.TryGetValue(source, out MirLibrary library))
+                CustomAnimationLibraryMap[target] = library;
+        }
+
+        private static MirAnimation GetCustomAnimation(CustomMonsterAnimationType action, int variant)
+        {
+            return action switch
+            {
+                CustomMonsterAnimationType.Standing => MirAnimation.Standing,
+                CustomMonsterAnimationType.Walking => MirAnimation.Walking,
+                CustomMonsterAnimationType.Attack => GetCombatAnimation(variant, MirAnimation.Combat1),
+                CustomMonsterAnimationType.RangeAttack => GetCombatAnimation(variant, MirAnimation.Combat2),
+                CustomMonsterAnimationType.Magic => GetCombatAnimation(variant, MirAnimation.Combat3),
+                CustomMonsterAnimationType.Struck => MirAnimation.Struck,
+                CustomMonsterAnimationType.Die => MirAnimation.Die,
+                CustomMonsterAnimationType.Dead => MirAnimation.Dead,
+                CustomMonsterAnimationType.Show => MirAnimation.Show,
+                CustomMonsterAnimationType.Hide => MirAnimation.Hide,
+                CustomMonsterAnimationType.Idle1 => MirAnimation.Combat1,
+                CustomMonsterAnimationType.Idle2 => MirAnimation.Combat2,
+                CustomMonsterAnimationType.Idle3 => MirAnimation.Combat3,
+                CustomMonsterAnimationType.Idle4 => MirAnimation.Combat4,
+                CustomMonsterAnimationType.Idle5 => MirAnimation.Combat5,
+                CustomMonsterAnimationType.Idle6 => MirAnimation.Combat6,
+                CustomMonsterAnimationType.Idle7 => MirAnimation.Combat7,
+                CustomMonsterAnimationType.Idle8 => MirAnimation.Combat8,
+                _ => MirAnimation.Standing,
+            };
+        }
+
+        private static MirAnimation GetCombatAnimation(int variant, MirAnimation defaultAnimation)
+        {
+            return variant switch
+            {
+                1 => MirAnimation.Combat1,
+                2 => MirAnimation.Combat2,
+                3 => MirAnimation.Combat3,
+                4 => MirAnimation.Combat4,
+                5 => MirAnimation.Combat5,
+                6 => MirAnimation.Combat6,
+                7 => MirAnimation.Combat7,
+                8 => MirAnimation.Combat8,
+                _ => defaultAnimation,
+            };
+        }
+
         public void SetScale()
         {
             int sizePercent = Stats[Stat.SizePercent];
@@ -2744,11 +3031,21 @@ namespace Client.Models
             if (GrowthLevel > 0)
                 sizePercent = GrowthLevel * 5;
 
-            Scale = (float)(100 + Math.Min(20, Math.Max(-20, sizePercent))) / 100;
+            float statScale = (float)(100 + Math.Min(20, Math.Max(-20, sizePercent))) / 100;
+            Scale = UsingCustomVisual && CustomVisual?.Scale > 0 ? CustomVisual.Scale * statScale : statScale;
         }
 
         public override void SetAnimation(ObjectAction action)
         {
+            if (UsingCustomVisual)
+            {
+                CurrentAnimation = GetCustomActionAnimation(action);
+                if (!Frames.TryGetValue(CurrentAnimation, out CurrentFrame))
+                    CurrentFrame = Frame.EmptyFrame;
+
+                return;
+            }
+
             MirAnimation animation;
             MagicType type;
 
@@ -2860,9 +3157,53 @@ namespace Client.Models
                 CurrentFrame = Frame.EmptyFrame;
         }
 
+        private static MirAnimation GetCustomActionAnimation(ObjectAction action)
+        {
+            return action.Action switch
+            {
+                MirAction.Standing => MirAnimation.Standing,
+                MirAction.Moving => MirAnimation.Walking,
+                MirAction.Pushed => MirAnimation.Pushed,
+                MirAction.Attack => GetCombatAnimation(GetCustomActionVariant(action), MirAnimation.Combat1),
+                MirAction.RangeAttack => GetCombatAnimation(GetCustomActionVariant(action), MirAnimation.Combat2),
+                MirAction.Spell => GetCombatAnimation(GetCustomActionVariant(action), MirAnimation.Combat3),
+                MirAction.Struck => MirAnimation.Struck,
+                MirAction.Die => MirAnimation.Die,
+                MirAction.Dead => MirAnimation.Dead,
+                MirAction.Show => MirAnimation.Show,
+                MirAction.Hide => MirAnimation.Hide,
+                MirAction.Idle => action.Extra?.Length > 0 && action.Extra[0] is int value
+                    ? value switch
+                    {
+                        1 => MirAnimation.Combat1,
+                        2 => MirAnimation.Combat2,
+                        3 => MirAnimation.Combat3,
+                        4 => MirAnimation.Combat4,
+                        5 => MirAnimation.Combat5,
+                        6 => MirAnimation.Combat6,
+                        7 => MirAnimation.Combat7,
+                        8 => MirAnimation.Combat8,
+                        _ => MirAnimation.Standing,
+                    }
+                    : MirAnimation.Standing,
+                _ => MirAnimation.Standing,
+            };
+        }
+
+        private static int GetCustomActionVariant(ObjectAction action)
+        {
+            return action.Action switch
+            {
+                MirAction.Attack => action.Extra?.Length > 3 && action.Extra[3] is int attackVariant ? attackVariant : 0,
+                MirAction.RangeAttack => action.Extra?.Length > 4 && action.Extra[4] is int rangeVariant ? rangeVariant : 0,
+                MirAction.Spell => action.Extra?.Length > 6 && action.Extra[6] is int magicVariant ? magicVariant : 0,
+                _ => 0,
+            };
+        }
+
         public override void Draw()
         {
-            if (BodyLibrary == null || !Visible) return;
+            if (!Visible || GetCurrentBodyLibrary() == null) return;
 
             int y = DrawY;
 
@@ -2883,6 +3224,18 @@ namespace Client.Models
 
         public void DrawShadow(int x, int y)
         {
+            if (UsingCustomVisual)
+            {
+                MirLibrary library = GetCurrentBodyLibrary();
+                if (CustomVisual?.DrawShadow == true && library != null)
+                {
+                    Point offset = GetCurrentCustomAnimationOffset();
+                    library.Draw(BodyFrame, x + offset.X, y + offset.Y, Color.White, true, 0.5f, ImageType.Shadow, Scale);
+                }
+
+                return;
+            }
+
             switch (Image)
             {
                 case MonsterImage.None:
@@ -2934,6 +3287,32 @@ namespace Client.Models
                     RenderingPipelineManager.EnableOutlineEffect(result, 2f);
                     outlineEnabled = true;
                 }
+            }
+
+            if (UsingCustomVisual)
+            {
+                MirLibrary currentLibrary = GetCurrentBodyLibrary();
+                if (currentLibrary == null)
+                {
+                    if (outlineEnabled)
+                        RenderingPipelineManager.DisableOutlineEffect();
+
+                    return;
+                }
+
+                Point offset = GetCurrentCustomAnimationOffset();
+                x += offset.X;
+                y += offset.Y;
+
+                if (CustomVisual?.Blend == true)
+                    currentLibrary.DrawBlend(BodyFrame, x, y, DrawColour, true, Opacity, ImageType.Image);
+                else
+                    currentLibrary.Draw(BodyFrame, x, y, DrawColour, true, Opacity, ImageType.Image, Scale);
+
+                if (outlineEnabled)
+                    RenderingPipelineManager.DisableOutlineEffect();
+
+                return;
             }
 
             switch (Image)
@@ -3045,7 +3424,7 @@ namespace Client.Models
 
         public override void DrawBlend()
         {
-            if (BodyLibrary == null || !Visible) return;
+            if (!Visible || GetCurrentBodyLibrary() == null) return;
 
             int y = DrawY;
 
@@ -3055,7 +3434,9 @@ namespace Client.Models
                     y -= MapControl.CellHeight;
                     break;
                 case MonsterImage.JinamStoneGate:
-                    return;
+                    if (!UsingCustomVisual)
+                        return;
+                    break;
             }
 
             RenderingPipelineManager.SetBlend(true, 0.20F, BlendMode.HIGHLIGHT);//0.60F
@@ -3072,6 +3453,9 @@ namespace Client.Models
 
         public override void CreateProjectile()
         {
+            if (UsingCustomVisual)
+                return;
+
             base.CreateProjectile();
 
             switch (Image)
@@ -3457,22 +3841,37 @@ namespace Client.Models
 
         public override bool MouseOver(Point p)
         {
-            if (!Visible || BodyLibrary == null) return false;
+            if (!Visible) return false;
+
+            MirLibrary library = GetCurrentBodyLibrary();
+            if (library == null) return false;
+
+            if (UsingCustomVisual)
+            {
+                Point offset = GetCurrentCustomAnimationOffset();
+                return library.VisiblePixel(BodyFrame, new Point(p.X - DrawX - offset.X, p.Y - DrawY - offset.Y), false, true);
+            }
 
             switch (Image)
             {
                 case MonsterImage.LobsterLord:
-                    return BodyLibrary.VisiblePixel(BodyFrame, new Point(p.X - DrawX, p.Y - DrawY), false, true) ||
-                           BodyLibrary.VisiblePixel(BodyFrame + 1000, new Point(p.X - DrawX, p.Y - DrawY), false, true) ||
-                           BodyLibrary.VisiblePixel(BodyFrame + 2000, new Point(p.X - DrawX, p.Y - DrawY), false, true);
+                    return library.VisiblePixel(BodyFrame, new Point(p.X - DrawX, p.Y - DrawY), false, true) ||
+                           library.VisiblePixel(BodyFrame + 1000, new Point(p.X - DrawX, p.Y - DrawY), false, true) ||
+                           library.VisiblePixel(BodyFrame + 2000, new Point(p.X - DrawX, p.Y - DrawY), false, true);
                 default:
-                    return BodyLibrary.VisiblePixel(BodyFrame, new Point(p.X - DrawX, p.Y - DrawY), false, true);
+                    return library.VisiblePixel(BodyFrame, new Point(p.X - DrawX, p.Y - DrawY), false, true);
             }
 
         }
 
         public override void FrameIndexChanged()
         {
+            if (UsingCustomVisual)
+            {
+                ProcessCustomFrameEvent();
+                return;
+            }
+
             switch (CurrentAction)
             {
                 case MirAction.Attack:
@@ -3509,6 +3908,12 @@ namespace Client.Models
                     break;
                 case MirAction.RangeAttack:
                     if (FrameIndex != 4) return;
+                    if (MagicInfoIndex > 0 && CEnvir.TryGetCustomSkill(MagicInfoIndex, out _))
+                    {
+                        PlayAttackSound();
+                        return;
+                    }
+
                     CreateProjectile();
                     PlayAttackSound();
                     break;
@@ -3526,8 +3931,197 @@ namespace Client.Models
             }
         }
 
+        private void ProcessCustomFrameEvent()
+        {
+            CustomMonsterAnimationInfo animation = GetCurrentCustomAnimation();
+            int triggerFrame = GetCustomActionTriggerFrame(animation);
+
+            if (FrameIndex != triggerFrame) return;
+
+            PlayCustomActionSound(animation);
+            CreateCustomAnimationEffect(animation);
+
+            if (CurrentAction != MirAction.RangeAttack) return;
+
+            if (MagicInfoIndex > 0 && CEnvir.TryGetCustomSkill(MagicInfoIndex, out _))
+                return;
+
+            CreateProjectile();
+        }
+
+        private CustomMonsterAnimationInfo GetCurrentCustomAnimation()
+        {
+            if (CustomAnimationMap != null && CustomAnimationMap.TryGetValue(CurrentAnimation, out CustomMonsterAnimationInfo animation))
+                return animation;
+
+            return null;
+        }
+
+        private MirLibrary GetCurrentBodyLibrary()
+        {
+            if (UsingCustomVisual && CustomAnimationLibraryMap != null && CustomAnimationLibraryMap.TryGetValue(CurrentAnimation, out MirLibrary library) && library != null)
+                return library;
+
+            return BodyLibrary;
+        }
+
+        private Point GetCurrentCustomAnimationOffset()
+        {
+            CustomMonsterAnimationInfo animation = GetCurrentCustomAnimation();
+            return animation == null ? Point.Empty : new Point(animation.OffsetX, animation.OffsetY);
+        }
+
+        private int GetCustomActionTriggerFrame(CustomMonsterAnimationInfo animation)
+        {
+            int maxFrame = Math.Max(0, (CurrentFrame?.FrameCount ?? 1) - 1);
+
+            if (animation != null && animation.EffectTriggerFrame >= 0)
+                return Math.Min(maxFrame, animation.EffectTriggerFrame);
+
+            return CurrentAction switch
+            {
+                MirAction.Attack => Math.Min(maxFrame, 1),
+                MirAction.RangeAttack => Math.Min(maxFrame, 4),
+                MirAction.Spell => Math.Min(maxFrame, 1),
+                MirAction.Struck => 0,
+                MirAction.Die => 0,
+                MirAction.Show => 0,
+                MirAction.Hide => 0,
+                _ => 0,
+            };
+        }
+
+        private void PlayCustomActionSound(CustomMonsterAnimationInfo animation)
+        {
+            if (CurrentAction == MirAction.Struck && !GameScene.Game.StruckEnabled)
+                return;
+
+            SoundIndex sound = animation?.Sound ?? SoundIndex.None;
+
+            if (sound == SoundIndex.None)
+            {
+                sound = CurrentAction switch
+                {
+                    MirAction.Attack => CustomVisual?.AttackSound ?? SoundIndex.None,
+                    MirAction.RangeAttack => CustomVisual?.RangeAttackSound ?? CustomVisual?.AttackSound ?? SoundIndex.None,
+                    MirAction.Spell => CustomVisual?.MagicSound ?? CustomVisual?.AttackSound ?? SoundIndex.None,
+                    MirAction.Struck => CustomVisual?.StruckSound ?? SoundIndex.None,
+                    MirAction.Die => CustomVisual?.DieSound ?? SoundIndex.None,
+                    MirAction.Show => CustomVisual?.ShowSound ?? SoundIndex.None,
+                    MirAction.Hide => CustomVisual?.HideSound ?? SoundIndex.None,
+                    _ => SoundIndex.None,
+                };
+            }
+
+            if (sound != SoundIndex.None)
+                DXSoundManager.Play(sound);
+
+            if (CurrentAction == MirAction.Struck && GameScene.Game.StruckEnabled)
+                DXSoundManager.Play(SoundIndex.GenericStruckMonster);
+        }
+
+        private void CreateCustomAnimationEffect(CustomMonsterAnimationInfo animation)
+        {
+            if (animation?.EffectResource == null || !CEnvir.TryGetCustomLibrary(animation.EffectResource, out MirLibrary library))
+                return;
+
+            switch (animation.EffectTarget)
+            {
+                case CustomMonsterEffectTarget.CurrentTarget:
+                    CreateCustomAnimationEffect(animation, library, AttackTargets?.FirstOrDefault());
+                    break;
+                case CustomMonsterEffectTarget.AttackTargets:
+                    if (AttackTargets == null || AttackTargets.Count == 0)
+                        CreateCustomAnimationEffect(animation, library, this);
+                    else
+                        foreach (MapObject target in AttackTargets)
+                            CreateCustomAnimationEffect(animation, library, target);
+                    break;
+                case CustomMonsterEffectTarget.CurrentLocation:
+                    CreateCustomAnimationEffect(animation, library, CurrentLocation);
+                    break;
+                case CustomMonsterEffectTarget.MagicLocations:
+                    if (MagicLocations == null || MagicLocations.Count == 0)
+                        CreateCustomAnimationEffect(animation, library, CurrentLocation);
+                    else
+                        foreach (Point point in MagicLocations)
+                            CreateCustomAnimationEffect(animation, library, point);
+                    break;
+                case CustomMonsterEffectTarget.Self:
+                default:
+                    CreateCustomAnimationEffect(animation, library, this);
+                    break;
+            }
+        }
+
+        private void CreateCustomAnimationEffect(CustomMonsterAnimationInfo animation, MirLibrary library, MapObject target)
+        {
+            if (target == null) return;
+
+            MirEffect effect = BuildCustomAnimationEffect(animation, library);
+            effect.Target = target;
+            Effects.Add(effect);
+            effect.Process();
+        }
+
+        private void CreateCustomAnimationEffect(CustomMonsterAnimationInfo animation, MirLibrary library, Point target)
+        {
+            MirEffect effect = BuildCustomAnimationEffect(animation, library);
+            effect.MapTarget = target;
+            Effects.Add(effect);
+            effect.Process();
+        }
+
+        private static MirEffect BuildCustomAnimationEffect(CustomMonsterAnimationInfo animation, MirLibrary library)
+        {
+            int frameCount = animation.EffectFrameCount > 0
+                ? animation.EffectFrameCount
+                : Math.Max(1, animation.EffectEndIndex - animation.EffectStartIndex + 1);
+
+            ReportMissingCustomAnimationEffectFrames(animation, library, frameCount);
+
+            MirEffect effect = new(
+                animation.EffectStartIndex,
+                frameCount,
+                TimeSpan.FromMilliseconds(Math.Max(1, animation.EffectFrameDelay)),
+                library,
+                animation.EffectStartLight,
+                animation.EffectEndLight,
+                Globals.NoneColour)
+            {
+                AdditionalOffSet = new Point(animation.EffectOffsetX, animation.EffectOffsetY),
+                Blend = animation.EffectBlend,
+                Loop = animation.EffectLoop,
+                StartTime = CEnvir.Now.AddMilliseconds(Math.Max(0, animation.EffectStartDelay)),
+            };
+
+            if (animation.EffectDuration > 0)
+                effect.ExpireTime = effect.StartTime.AddMilliseconds(animation.EffectDuration);
+
+            return effect;
+        }
+
+        private static void ReportMissingCustomAnimationEffectFrames(CustomMonsterAnimationInfo animation, MirLibrary library, int frameCount)
+        {
+            if (animation == null || library == null || animation.EffectResource == null) return;
+
+            int startIndex = animation.EffectStartIndex;
+            int maxIndex = startIndex + Math.Max(1, frameCount) - 1;
+
+            if (library.HasImage(startIndex) && library.HasImage(maxIndex)) return;
+
+            CEnvir.AddDynamicLibraryDiagnostic(
+                $"自定义怪物动作特效帧缺失: Action={animation.Action} Variant={animation.Variant} Resource={GetCustomResourceName(animation.EffectResource)} Start={animation.EffectStartIndex} End={animation.EffectEndIndex} FrameCount={frameCount} MaxIndex={maxIndex}");
+        }
+
         public override void SetAction(ObjectAction action)
         {
+            if (UsingCustomVisual)
+            {
+                base.SetAction(action);
+                return;
+            }
+
             switch (Image)
             {
                 case MonsterImage.Shinsu:

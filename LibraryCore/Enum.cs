@@ -850,6 +850,8 @@ namespace Library
         PoisonousGolemLineAoE = 551,
         IgyuScorchedEarth = 552,
         IgyuCyclone = 553,
+
+        Custom = 10000,
     }
 
     public enum MagicProperty

@@ -1159,7 +1159,7 @@ namespace Client.Envir
             }
 
             if (TryGetMapObject(p.ObjectID, out MapObject ob))
-                ob.ActionQueue.Add(new ObjectAction(MirAction.Attack, p.Direction, p.Location, p.TargetID, p.AttackMagic, p.AttackElement));
+                ob.ActionQueue.Add(new ObjectAction(MirAction.Attack, p.Direction, p.Location, p.TargetID, p.AttackMagic, p.AttackElement, p.AnimationVariant));
         }
 
         public void Process(S.ObjectMining p)
@@ -1181,6 +1181,8 @@ namespace Client.Envir
         }
         public void Process(S.ObjectRangeAttack p)
         {
+            CEnvir.SyncClientCustomSkillOverride(p.MagicInfoIndex, p.CustomSkill);
+
             if (MapObject.User.ObjectID == p.ObjectID && !GameScene.Game.Observer)
             {
                 if (MapObject.User.CurrentLocation != p.Location || MapObject.User.Direction != p.Direction)
@@ -1191,10 +1193,12 @@ namespace Client.Envir
             }
 
             if (TryGetMapObject(p.ObjectID, out MapObject ob))
-                ob.ActionQueue.Add(new ObjectAction(MirAction.RangeAttack, p.Direction, p.Location, p.Targets, p.AttackMagic, p.AttackElement));
+                ob.ActionQueue.Add(new ObjectAction(MirAction.RangeAttack, p.Direction, p.Location, p.Targets, p.AttackMagic, p.AttackElement, p.MagicInfoIndex, p.AnimationVariant));
         }
         public void Process(S.ObjectMagic p)
         {
+            CEnvir.SyncClientCustomSkillOverride(p.MagicInfoIndex, p.CustomSkill);
+
             if (MapObject.User.ObjectID == p.ObjectID && !GameScene.Game.Observer)
             {
                 if (MapObject.User.CurrentLocation != p.CurrentLocation || MapObject.User.Direction != p.Direction)
@@ -1212,16 +1216,20 @@ namespace Client.Envir
 
                 MapObject.User.MagicLocations = p.Locations;
                 MapObject.User.MagicCast = p.Cast;
+                MapObject.User.MagicType = p.Type;
+                MapObject.User.MagicInfoIndex = p.MagicInfoIndex;
                 MapObject.User.NextActionTime += p.Slow;
                 MapObject.User.AttackElement = p.AttackElement;
                 return;
             }
 
             if (TryGetMapObject(p.ObjectID, out MapObject ob))
-                ob.ActionQueue.Add(new ObjectAction(MirAction.Spell, p.Direction, p.CurrentLocation, p.Type, p.Targets, p.Locations, p.Cast, p.AttackElement));
+                ob.ActionQueue.Add(new ObjectAction(MirAction.Spell, p.Direction, p.CurrentLocation, p.Type, p.Targets, p.Locations, p.Cast, p.AttackElement, p.MagicInfoIndex, p.AnimationVariant));
         }
         public void Process(S.ObjectProjectile p)
         {
+            CEnvir.SyncClientCustomSkillOverride(p.MagicInfoIndex, p.CustomSkill);
+
             if (!TryGetMapObject(p.ObjectID, out MapObject source)) return;
 
             var targets = new List<MapObject>();
@@ -1232,6 +1240,9 @@ namespace Client.Envir
                 if (TryGetMapObject(target, out MapObject attackTarget))
                     targets.Add(attackTarget);
             }
+
+            if (p.MagicInfoIndex > 0 && source.TryCreateCustomSkillProjectileEffects(p.MagicInfoIndex, targets, locations))
+                return;
 
             MirEffect spell;
 
@@ -1700,6 +1711,13 @@ namespace Client.Envir
 
         public void Process(S.NewMagic p)
         {
+            CEnvir.SyncClientCustomSkillOverride(p.Magic.InfoIndex, p.Magic.CustomSkill);
+            if (p.Magic.Info == null)
+            {
+                CEnvir.AddDynamicLibraryDiagnostic($"服务器下发了客户端本地不存在的新技能资料: InfoIndex={p.Magic.InfoIndex}");
+                return;
+            }
+
             MapObject.User.Magics[p.Magic.Info] = p.Magic;
 
             if (GameScene.Game.MagicBox.Magics.ContainsKey(p.Magic.Info))
@@ -1713,6 +1731,8 @@ namespace Client.Envir
 
         public void Process(S.MagicLeveled p)
         {
+            if (p.Info == null || !MapObject.User.Magics.ContainsKey(p.Info)) return;
+
             MapObject.User.Magics[p.Info].Level = p.Level;
             MapObject.User.Magics[p.Info].Experience = p.Experience;
 
@@ -1725,6 +1745,8 @@ namespace Client.Envir
 
         public void Process(S.MagicCooldown p)
         {
+            if (p.Info == null || !MapObject.User.Magics.ContainsKey(p.Info)) return;
+
             MapObject.User.Magics[p.Info].NextCast = CEnvir.Now.AddMilliseconds(p.Delay);
         }
         public void Process(S.MagicToggle p)
@@ -4442,6 +4464,8 @@ namespace Client.Envir
                 Location = p.CurrentLocation,
 
                 MonsterInfo = p.MonsterInfo,
+                CustomMonsterVisualIndex = p.CustomMonsterVisualIndex,
+                CustomMonsterVisual = p.CustomMonsterVisual,
 
                 Health = p.Health,
                 MaxHealth = p.Stats[Stat.Health],

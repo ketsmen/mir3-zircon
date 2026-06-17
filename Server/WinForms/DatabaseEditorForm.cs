@@ -205,6 +205,12 @@ namespace Server.WinForms
             AddButton(toolStrip, "验证文本 NPC", (_, _) => ValidateTextNpcs());
             AddButton(toolStrip, "导入文本 NPC", (_, _) => ImportTextNpcs());
             AddButton(toolStrip, "导出 NPC 文本", (_, _) => ExportTextNpcs());
+            AddButton(toolStrip, "验证自定义系统", (_, _) => ValidateCustomSystem());
+            AddButton(toolStrip, "导入自定义系统", (_, _) => ImportCustomSystem());
+            AddButton(toolStrip, "导出自定义系统", (_, _) => ExportCustomSystem());
+            AddButton(toolStrip, "自定义目录", (_, _) => OpenCustomSystemDirectory());
+            AddButton(toolStrip, "自定义帮助", (_, _) => ShowCustomSystemHelp());
+            AddButton(toolStrip, "AI迁移报告", (_, _) => ShowCustomAiMigrationReport());
             toolStrip.Items.Add(new ToolStripSeparator());
             _openMapButton = AddButton(toolStrip, "打开地图", (_, _) => OpenSelectedMap());
             _mapRegionButton = AddButton(toolStrip, "编辑地图区域", (_, _) => OpenSelectedMapRegion());
@@ -1483,6 +1489,231 @@ namespace Server.WinForms
             }
         }
 
+        private void ValidateCustomSystem()
+        {
+            using FolderBrowserDialog dialog = new FolderBrowserDialog
+            {
+                Description = "选择包含 Resources.txt、Monsters、Skills 的自定义系统目录",
+                UseDescriptionForTitle = true,
+                SelectedPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Envir", "Custom")
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.SelectedPath))
+                return;
+
+            try
+            {
+                CustomSystemDatabaseImporter importer = new CustomSystemDatabaseImporter(_session);
+                CustomSystemTextReport report = importer.Import(dialog.SelectedPath, CustomSystemImportMode.ValidateOnly);
+                string details = BuildCustomSystemDetails(report);
+                OpenDiagnosticsForm()?.ShowReport(details);
+
+                MessageBox.Show(this, details + "\r\n\r\n完整报告已在诊断窗口显示，可使用“复制报告”复制。", "验证自定义系统完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "验证自定义系统失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ImportCustomSystem()
+        {
+            if (_readOnly)
+            {
+                MessageBox.Show(this, "数据库当前以只读模式打开，不能导入自定义系统。", "导入自定义系统", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            using FolderBrowserDialog dialog = new FolderBrowserDialog
+            {
+                Description = "选择包含 Resources.txt、Monsters、Skills 的自定义系统目录",
+                UseDescriptionForTitle = true,
+                SelectedPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Envir", "Custom")
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.SelectedPath))
+                return;
+
+            DialogResult choice = MessageBox.Show(
+                this,
+                "请选择导入方式：\r\n\r\n是：覆盖匹配资源、怪物属性、怪物掉落、怪物视觉、怪物行为和技能配置。\r\n否：合并导入，保留未在文本中出现的旧配置；动作、规则、技能特效按名称或帧段更新，不会重复追加，掉落仍会追加。\r\n取消：只验证文本，不写入数据库。",
+                "导入自定义系统",
+                MessageBoxButtons.YesNoCancel,
+                MessageBoxIcon.Question);
+
+            CustomSystemImportMode mode = choice switch
+            {
+                DialogResult.Yes => CustomSystemImportMode.ReplaceExisting,
+                DialogResult.No => CustomSystemImportMode.Merge,
+                _ => CustomSystemImportMode.ValidateOnly
+            };
+
+            try
+            {
+                CustomSystemDatabaseImporter importer = new CustomSystemDatabaseImporter(_session);
+                CustomSystemTextReport report = importer.Import(dialog.SelectedPath, mode);
+
+                if (mode != CustomSystemImportMode.ValidateOnly && report.Failures.Count == 0)
+                    MarkDirty();
+
+                _rootGrid?.RefreshBinding();
+                UpdateVisibleTypeNodeCounts();
+                ShowChildLists(_rootGrid?.CurrentObject);
+
+                string details = BuildCustomSystemDetails(report);
+                if (_onlineMode && mode != CustomSystemImportMode.ValidateOnly)
+                    details += "\r\n\r\n在线模式已写入数据库对象；已刷出的怪物、已加载的技能和客户端资源缓存建议重启后完整生效。";
+
+                OpenDiagnosticsForm()?.ShowReport(details);
+                MessageBox.Show(this, details, "导入自定义系统完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "导入自定义系统失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ExportCustomSystem()
+        {
+            using FolderBrowserDialog dialog = new FolderBrowserDialog
+            {
+                Description = "请选择导出自定义资源、怪物和技能文本的输出目录",
+                UseDescriptionForTitle = true,
+                SelectedPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "CustomSystemExport")
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.SelectedPath))
+                return;
+
+            bool overwrite = MessageBox.Show(
+                this,
+                "是否覆盖输出目录中已有的 Resources.txt、怪物脚本和技能脚本？",
+                "导出自定义系统",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question) == DialogResult.Yes;
+
+            try
+            {
+                CustomSystemDatabaseExporter exporter = new CustomSystemDatabaseExporter(_session);
+                CustomSystemTextReport report = exporter.Export(dialog.SelectedPath, overwrite);
+                string details = BuildCustomSystemDetails(report);
+                OpenDiagnosticsForm()?.ShowReport(details);
+
+                MessageBox.Show(this, details + "\r\n\r\n完整报告已在诊断窗口显示，可使用“复制报告”复制。", "导出自定义系统完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "导出自定义系统失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void OpenCustomSystemDirectory()
+        {
+            string path = GetDefaultCustomSystemDirectory();
+            Directory.CreateDirectory(path);
+
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "打开自定义目录失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ShowCustomSystemHelp()
+        {
+            OpenDiagnosticsForm()?.ShowReport(
+                "自定义怪物和技能系统速查\r\n\r\n" +
+                $"默认目录: {GetDefaultCustomSystemDirectory()}\r\n\r\n" +
+                "推荐工作流:\r\n" +
+                "1. 导出自定义系统到文本。\r\n" +
+                "2. 在 Envir\\Custom\\Resources.txt、Monsters、Skills 中修改资源、动作、AI 和技能。\r\n" +
+                "3. 使用“验证自定义系统”检查缺资源、缺怪物、缺技能、规则引用和语法错误。\r\n" +
+                "4. 调试期可在游戏内使用 GM 命令 @RELOADCUSTOMSYSTEM 在线重载文本覆盖并重建怪物掉落表。\r\n" +
+                "5. 使用“导入自定义系统”写回数据库；稳定后可以删除文本目录或关闭文本覆盖。\r\n\r\n" +
+                "迁移旧 AI:\r\n" +
+                "- 使用“AI迁移报告”按 MonsterInfo.AI 统计当前数据库怪物，并查看建议模板和迁移优先级。\r\n" +
+                "- High 优先级一般可直接套用 Templates 中的 RuleSet；Medium 需要人工补技能参数或专属字段；Low 建议暂保留 C#。\r\n\r\n" +
+                "模板目录:\r\n" +
+                "- Monsters\\Templates 和 Skills\\Templates 保存完整可验证样板，只参与验证，不参与运行时覆盖或正式导入。\r\n" +
+                "- Examples 目录里的 .example 是片段说明，不参与校验。\r\n\r\n" +
+                "关键表:\r\n" +
+                "- CustomResourceLibraryInfo: 自定义 ZL 资源 Key、路径、版本和用途。\r\n" +
+                "- CustomMonsterVisualInfo / CustomMonsterAnimationInfo: 怪物资源、动作、帧段、方向、声音和特效。\r\n" +
+                "- CustomMonsterBehaviorInfo: 怪物行为模板、追击/攻击参数、拾取随从和 RuleSet。\r\n" +
+                "- CustomMonsterAiActionInfo / CustomMonsterAiRuleInfo: AI 动作、组合条件、阶段计数器、目标选择。\r\n" +
+                "- CustomSkillInfo / CustomSkillEffectInfo: 玩家和怪物共用技能模板、形状、多波、控制位移和自定义特效。\r\n\r\n" +
+                "新增常用字段:\r\n" +
+                "- AIRule.Conditions + ConditionJoin: 组合多个条件，例如 HealthBelow:50;CounterEquals:1:Phase。\r\n" +
+                "- AIAction.SetCounter / ChangeCounter: 保存 Boss 阶段或机制状态。\r\n" +
+                "- AIAction.MaxTargets / RandomTargetCount: 限制或随机选取集合目标。\r\n" +
+                "- Behavior.Passive / NeedHarvest / HarvestCount: 迁移被动采集怪。\r\n" +
+                "- Behavior.DisableMovement / DisableAttack: 迁移固定炮台、树、门、纯阻挡物。\r\n" +
+                "- Behavior.DisableRegen: 关闭自然回血，迁移 QuartzTree 等固定阶段召唤物。\r\n" +
+                "- Behavior.AlwaysActive: 附近没有玩家也保持激活，迁移传送门、陷阱、光环、全局事件功能怪。\r\n" +
+                "- Behavior.DamageProxy: 迁移 CursedDoll/替身娃娃，支持显现延迟、出生特效、显示名格式和受击转嫁伤害。\r\n" +
+                "- Behavior.IgnoreShield / IgnoreArmour: 迁移旧 C# 怪物对象上的特殊攻击标记。\r\n" +
+                "- Behavior.PoisonType / PoisonRate / PoisonTicks / PoisonFrequency: 迁移基础攻击命中附毒怪。\r\n" +
+                "- Behavior.PoisonStackable: 迁移强绿毒、持续叠毒类怪物。\r\n" +
+                "- Behavior.MaxMinions: 控制自定义召唤类怪物维护的召唤物上限。\r\n" +
+                "- Behavior.UseBaseFallback=False: RuleSet 完全接管行为，避免冷却时退回旧硬编码攻击。\r\n" +
+                "- AIAction.MoveAwayFromTarget: 迁移远程怪贴脸后撤、保持距离行为。\r\n" +
+                "- AIAction.TeleportNearTarget: 迁移瞬移到目标附近、偷袭和下一击强化行为。\r\n" +
+                "- AIAction.BroadcastMessage / TeleportTargetsToRegion / DespawnSelf: 迁移定时传送门，全服提示、周期区域传送和自毁都可配置。\r\n" +
+                "- AIAction.LineAttack + AIRule.TargetInLine: 迁移蜘蛛、声波蜥蜴、直线法师类物理直线攻击。\r\n" +
+                "- AIRule.TargetIsPlayer/TargetIsMonster/TargetIsPetMonster: 迁移按目标类型切换近战、远程、治疗或守卫逻辑。\r\n" +
+                "- AIRule.TargetClassWarrior/TargetClassWizard/TargetClassTaoist/TargetClassAssassin: 按玩家或英雄职业切换 Boss 行为。\r\n" +
+                "- AIAction.ScheduleAction + DelayActionTime/DelayMoveTime/DelayCellTime: 迁移出生延迟、显隐动画后再改状态、阶段动作排程。\r\n" +
+                "- AIAction.KillSelf + MassAreaDamage Options=AllowDead=True: 迁移自爆怪、死后爆炸和陷阱怪。\r\n" +
+                "- AIAction.HazardRoam: 迁移 Tornado、移动毒云、移动火墙这类非阻挡移动危险区。\r\n" +
+                "- AIRule.Trigger=OnMove: 坐标变化后执行，可清理旋转、蓄力、伏击等临时状态。\r\n" +
+                "- AIAction.MapEffect/ObjectEffect Options=Effect=SummonSkeleton: 迁移出生召唤、死亡、变身等表现特效。\r\n" +
+                "- AIAction.SpawnMinions Target=CurrentTarget/TargetRadius: 支持在目标附近生成召唤物。\r\n" +
+                "- AIAction.Target=Summoner/SummonerGroup: 召唤物可稳定选择主人、Master 或主人队伍，适合辅助宠物和拾取随从。\r\n" +
+                "- AIAction.SpawnMinions Target=ExperienceOwnerGroup Options=PerTarget=True,MaxTotal=12: 支持在经验归属玩家队伍附近生成召唤物。\r\n" +
+                "- AIAction.SwapRandomMinionLocations / KillMinions: 迁移本体和分身随机换位、死亡清理分身的镜像 Boss。\r\n" +
+                "- AIAction.CastSkill Options=PerTarget=True: 对集合目标逐个落地面技能，迁移多点 DeathCloud。\r\n" +
+                "- AIAction.Options=OnHitAction=动作名 / ActionChance=百分比: 命中后执行附加动作，迁移命中附毒、吸血、连锁状态。\r\n" +
+                "- AIAction.PullTarget / PushTarget 支持集合目标: 迁移全屏拉人、群体击退。\r\n" +
+                "- AIAction.Options=ClassPowerRates=Warrior:60|Wizard:70|Taoist:40|Assassin:80: 迁移按职业调整伤害的 Boss 技能。\r\n" +
+                "- AIAction.Options=NoDamage=True: 只播放攻击动作，不结算伤害，适合组合 AddBuff/SpawnMinions/ObjectEffect。\r\n" +
+                "- AIAction.Options=DrainMP=True: 按实际伤害额外扣除目标 MP，迁移扣蓝攻击怪。\r\n" +
+                "- ReviveSelf Options=HealthDecay=True: 复活生命随次数递减，迁移亡灵复活怪。\r\n" +
+                "- Skill.Shape: Circle、Line、Cone、Rectangle。\r\n" +
+                "- Skill.WaveCount / WaveInterval: 多段命中。\r\n" +
+                "- Skill.KnockbackDistance / PullDistance: 模板化击退和拉拽。\r\n" +
+                "- Skill.IgnoreShield / IgnoreArmour: 自定义玩家、英雄、怪物技能单独忽略护盾或防御。\r\n" +
+                "- Skill.Template=DamageProxy + SummonMonster: 生成配置了 Behavior.DamageProxy 的替身，迁移 CursedDoll 类技能。\r\n" +
+                "- 英雄 v1 自动使用敌对自定义技能: Direct/Projectile/Chain/Area/PersistentArea/Debuff/Control/Move；Move 会保守突进到目标附近空格。\r\n" +
+                "- 道士英雄支援循环支持自定义 Heal/Buff/Summon；Summon 使用 SummonMonster/MaxSummons/SummonDuration。\r\n\r\n" +
+                "示例目录:\r\n" +
+                Path.Combine(GetDefaultCustomSystemDirectory(), "Monsters", "Examples") + "\r\n" +
+                Path.Combine(GetDefaultCustomSystemDirectory(), "Skills", "Examples") + "\r\n\r\n" +
+                "可验证模板目录:\r\n" +
+                Path.Combine(GetDefaultCustomSystemDirectory(), "Monsters", "Templates") + "\r\n" +
+                Path.Combine(GetDefaultCustomSystemDirectory(), "Skills", "Templates"));
+        }
+
+        private void ShowCustomAiMigrationReport()
+        {
+            try
+            {
+                CustomMonsterAiMigrationReport report = CustomMonsterAiMigrationReportBuilder.Build(_session);
+                OpenDiagnosticsForm()?.ShowReport(report.ToDisplayText());
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "AI迁移报告失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private static string GetDefaultCustomSystemDirectory()
+        {
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Envir", "Custom");
+        }
+
         private static string BuildTextNpcImportDetails(TextNpcDatabaseImportReport report)
         {
             string details = report.ToDisplayText();
@@ -1501,6 +1732,30 @@ namespace Server.WinForms
                 details += "\r\n\r\n数据库映射错误示例:\r\n" + string.Join("\r\n", report.Failures.Take(20));
 
             return details;
+        }
+
+        private static string BuildCustomSystemDetails(CustomSystemTextReport report)
+        {
+            string details = report.ToDisplayText();
+
+            details = AppendCustomSystemDetails(details, "缺失资源完整列表", report.MissingResources.Distinct(StringComparer.OrdinalIgnoreCase));
+            details = AppendCustomSystemDetails(details, "缺失怪物完整列表", report.MissingMonsters.Distinct(StringComparer.OrdinalIgnoreCase));
+            details = AppendCustomSystemDetails(details, "缺失技能完整列表", report.MissingMagics.Distinct(StringComparer.OrdinalIgnoreCase));
+            details = AppendCustomSystemDetails(details, "缺失物品完整列表", report.MissingItems.Distinct(StringComparer.OrdinalIgnoreCase));
+            details = AppendCustomSystemDetails(details, "错误完整列表", report.Failures);
+
+            return details;
+        }
+
+        private static string AppendCustomSystemDetails(string details, string title, IEnumerable<string> values)
+        {
+            List<string> lines = values?
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList() ?? new List<string>();
+
+            if (lines.Count == 0) return details;
+
+            return details + "\r\n\r\n" + title + ":\r\n" + string.Join("\r\n", lines);
         }
 
         private string GetModeText()

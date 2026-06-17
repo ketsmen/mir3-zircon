@@ -1,0 +1,26 @@
+[Magic]
+Name="模板地面范围"
+Magic=Custom
+Class=Wizard
+School=Fire
+NeedLevel1=1
+Delay=3000
+Description="模板：范围怪和 Boss 使用的地面圆形范围技能。"
+
+[Skill]
+Enabled=True
+Template=AreaDamage
+TargetRule=EnemyOrGround
+Range=8
+Radius=3
+MaxTargets=8
+Shape=Circle
+Element=Fire
+PowerSource=MC
+FixedPower=0
+PowerRate=75
+CastDelay=600
+
+[Effect]
+Stage=Cast
+Sound=None

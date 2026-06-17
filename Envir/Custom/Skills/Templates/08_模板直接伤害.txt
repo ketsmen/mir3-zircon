@@ -1,0 +1,26 @@
+[Magic]
+Name="模板直接伤害"
+Magic=Custom
+Class=Warrior
+School=Physical
+NeedLevel1=1
+Delay=1600
+Description="模板：近战、怪物或 Boss 使用的单体直接伤害技能。"
+
+[Skill]
+Enabled=True
+Template=DirectDamage
+TargetRule=Enemy
+Range=2
+Radius=0
+MaxTargets=1
+Shape=Circle
+Element=None
+PowerSource=DC
+FixedPower=0
+PowerRate=120
+CastDelay=350
+
+[Effect]
+Stage=Hit
+Sound=None

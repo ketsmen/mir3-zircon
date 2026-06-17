@@ -3,6 +3,7 @@ using Library.SystemModels;
 using Server.DBModels;
 using Server.Envir;
 using Server.Models.Monsters;
+using System;
 using System.Drawing;
 using System.Linq;
 
@@ -57,13 +58,27 @@ namespace Server.Models.Magics
 
             if (target?.Node == null) return;
 
-            Doll ob = MonsterObject.GetMonster(info) as Doll;
+            MonsterObject ob = MonsterObject.GetMonster(info);
 
             if (ob == null) return;
 
-            ob.DollTarget = target;
-            ob.Caster = Player;
-            ob.AliveTime = SEnvir.Now.AddSeconds(10 + Magic.Level * 5);
+            TimeSpan duration = TimeSpan.FromSeconds(10 + Magic.Level * 5);
+
+            if (ob is Doll doll)
+            {
+                doll.DollTarget = target;
+                doll.Caster = Player;
+                doll.AliveTime = SEnvir.Now.Add(duration);
+            }
+            else if (ob is CustomMonsterObject customDoll)
+            {
+                if (!customDoll.ConfigureDamageProxy(Player, target, duration))
+                    return;
+            }
+            else
+            {
+                return;
+            }
 
             Cell cell = map.GetCell(location);
 

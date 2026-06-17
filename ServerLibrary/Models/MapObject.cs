@@ -1654,14 +1654,17 @@ namespace Server.Models
 
             if (SEnvir.Random.Next(100) < Stats[Stat.PoisonResistance]) return false;
 
-            foreach (Poison poison in PoisonList)
+            if (!p.Stackable)
             {
-                if (poison.Type != p.Type) continue;
+                foreach (Poison poison in PoisonList)
+                {
+                    if (poison.Type != p.Type) continue;
 
-                if (poison.Value > p.Value) return false;
+                    if (poison.Value > p.Value) return false;
 
-                PoisonList.Remove(poison);
-                break;
+                    PoisonList.Remove(poison);
+                    break;
+                }
             }
 
             //Check Pets target
@@ -1697,8 +1700,26 @@ namespace Server.Models
 
         public void Broadcast(Packet p)
         {
+            AttachRuntimeCustomSkill(p);
+
             foreach (PlayerObject player in SeenByPlayers)
                 player.Enqueue(p);
+        }
+
+        private static void AttachRuntimeCustomSkill(Packet p)
+        {
+            switch (p)
+            {
+                case S.ObjectRangeAttack rangeAttack when rangeAttack.CustomSkill == null:
+                    rangeAttack.CustomSkill = SEnvir.GetClientCustomSkillPacket(rangeAttack.MagicInfoIndex);
+                    break;
+                case S.ObjectMagic magic when magic.CustomSkill == null:
+                    magic.CustomSkill = SEnvir.GetClientCustomSkillPacket(magic.MagicInfoIndex);
+                    break;
+                case S.ObjectProjectile projectile when projectile.CustomSkill == null:
+                    projectile.CustomSkill = SEnvir.GetClientCustomSkillPacket(projectile.MagicInfoIndex);
+                    break;
+            }
         }
 
         public virtual int Pushed(MirDirection direction, int distance)
@@ -1866,5 +1887,6 @@ namespace Server.Models
         public DateTime TickTime;
         public object Extra, Extra1, Extra2;
         public bool CanKill;
+        public bool Stackable;
     }
 }

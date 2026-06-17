@@ -35,6 +35,15 @@ namespace Library
         public static DBCollection<HelpInfo> HelpInfoList;
         public static DBCollection<MilestoneInfo> MilestoneInfoList;
         public static DBCollection<MilestoneInfoTask> MilestoneTaskInfoList;
+        public static DBCollection<CustomResourceLibraryInfo> CustomResourceLibraryInfoList;
+        public static DBCollection<CustomMonsterVisualInfo> CustomMonsterVisualInfoList;
+        public static DBCollection<CustomMonsterAnimationInfo> CustomMonsterAnimationInfoList;
+        public static DBCollection<CustomMonsterBehaviorInfo> CustomMonsterBehaviorInfoList;
+        public static DBCollection<CustomMonsterSkillInfo> CustomMonsterSkillInfoList;
+        public static DBCollection<CustomMonsterAiRuleInfo> CustomMonsterAiRuleInfoList;
+        public static DBCollection<CustomMonsterAiActionInfo> CustomMonsterAiActionInfoList;
+        public static DBCollection<CustomSkillInfo> CustomSkillInfoList;
+        public static DBCollection<CustomSkillEffectInfo> CustomSkillEffectInfoList;
 
         public static Random Random = new Random();
 
@@ -878,6 +887,7 @@ namespace Library
         public bool ItemRequired { get; set; }
 
         public TimeSpan Cooldown { get; set; }
+        public Network.ServerPackets.ClientCustomSkillInfo CustomSkill { get; set; }
 
         public DateTime NextCast;
 
@@ -1159,6 +1169,8 @@ namespace Library
 
         //Guild/Group
         public MonsterInfo MonsterInfo;
+        public int CustomMonsterVisualIndex;
+        public Network.ServerPackets.ClientCustomMonsterVisualInfo CustomMonsterVisual;
         public ItemInfo ItemInfo;
 
         public string PetOwner;

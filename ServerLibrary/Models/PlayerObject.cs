@@ -249,20 +249,13 @@ namespace Server.Models
 
         public MagicObject SetupMagic(UserMagic userMagic)
         {
-            var type = userMagic.Info.Magic;
+            MagicObject magicObject = CreateMagicObject(userMagic);
 
-            var found = SEnvir.MagicTypes.FirstOrDefault(x => x.GetCustomAttribute<MagicTypeAttribute>().Type == type);
+            if (magicObject == null) return null;
 
-            if (found != null)
-            {
-                var magicObject = (MagicObject)Activator.CreateInstance(found, this, userMagic);
+            MagicObjects.Add(magicObject);
 
-                MagicObjects.Add(type, magicObject);
-
-                return magicObject;
-            }
-
-            return null;
+            return magicObject;
         }
 
         public void SetupMagic()
@@ -271,15 +264,22 @@ namespace Server.Models
             {
                 if (magic.Info.School == MagicSchool.None) continue;
 
-                var type = magic.Info.Magic;
+                MagicObject magicObject = CreateMagicObject(magic);
 
-                var found = SEnvir.MagicTypes.FirstOrDefault(x => x.GetCustomAttribute<MagicTypeAttribute>().Type == type);
-
-                if (found != null)
-                {
-                    MagicObjects.Add(magic.Info.Magic, (MagicObject)Activator.CreateInstance(found, this, magic));
-                }
+                if (magicObject != null)
+                    MagicObjects.Add(magicObject);
             }
+        }
+
+        private MagicObject CreateMagicObject(UserMagic userMagic)
+        {
+            if (SEnvir.CustomSystem.TryGetSkill(userMagic.Info, out CustomSkillInfo _))
+                return new CustomMagicObject(this, userMagic);
+
+            var type = userMagic.Info.Magic;
+            var found = SEnvir.MagicTypes.FirstOrDefault(x => x.GetCustomAttribute<MagicTypeAttribute>().Type == type);
+
+            return found == null ? null : (MagicObject)Activator.CreateInstance(found, this, userMagic);
         }
 
         private void AddDefaultCurrencies()
@@ -335,8 +335,8 @@ namespace Server.Models
             foreach (MonsterObject ob in clearList)
                 ob.EXPOwner = null;
 
-            foreach (MagicType type in MagicObjects.Keys)
-                MagicObjects[type].Process();
+            foreach (MagicObject magicObject in MagicObjects.OrderedObjects)
+                magicObject.Process();
 
             if (Dead && SEnvir.Now >= RevivalTime)
                 TownRevive();
@@ -399,7 +399,13 @@ namespace Server.Models
                     {
                         type = (MagicType)action.Data[0];
 
-                        if (GetMagic(type, out MagicObject magicObject))
+                        MagicObject magicObject;
+                        if (action.Data.Length > 1 && action.Data[1] is int magicInfoIndex)
+                            MagicObjects.TryGetByInfoIndex(magicInfoIndex, out magicObject);
+                        else
+                            GetMagic(type, out magicObject);
+
+                        if (magicObject != null && magicObject.CanUseMagic())
                         {
                             magicObject.MagicComplete(action.Data);
                         }
@@ -1078,10 +1084,8 @@ namespace Server.Models
             if (Level == 0)
                 NewCharacter();
 
-            foreach (var key in MagicObjects.Keys)
-            {
-                MagicObjects[key].RefreshToggle();
-            }
+            foreach (MagicObject magicObject in MagicObjects.OrderedObjects)
+                magicObject.RefreshToggle();
 
             List<ClientRefineInfo> refines = new List<ClientRefineInfo>();
 
@@ -2189,7 +2193,7 @@ namespace Server.Models
 
                     if (info != null && info.School != MagicSchool.None)
                     {
-                        if (!GetMagic(info.Magic, out MagicObject magicObject))
+                        if (!GetMagic(info, out MagicObject magicObject))
                         {
                             var magic = SEnvir.UserMagicList.CreateNewObject();
                             magic.Character = Character;
@@ -2234,10 +2238,8 @@ namespace Server.Models
                 }
             }
 
-            foreach (MagicType type in MagicObjects.Keys)
+            foreach (MagicObject magicObject in MagicObjects.OrderedObjects)
             {
-                var magicObject = MagicObjects[type];
-
                 if (!magicObject.CanUseMagic()) continue;
 
                 Stats.Add(magicObject.GetPassiveStats());
@@ -7353,7 +7355,7 @@ namespace Server.Models
 
                     if (info.School == MagicSchool.None) return;
 
-                    if (GetMagic(info.Magic, out MagicObject magicObject))
+                    if (GetMagic(info, out MagicObject magicObject))
                     {
                         var magic = magicObject.Magic;
 
@@ -14713,10 +14715,8 @@ namespace Server.Models
             MagicType validMagic = MagicType.None;
             List<MagicType> magics = new List<MagicType>();
 
-            foreach (var key in MagicObjects.OrderedKeys)
+            foreach (MagicObject magicObject in MagicObjects.OrderedObjects)
             {
-                var magicObject = MagicObjects[key];
-
                 if (magicObject.AttackSkill)
                 {
                     if (!magicObject.CanUseMagic())
@@ -14769,7 +14769,15 @@ namespace Server.Models
 
         public void Magic(C.Magic p)
         {
-            if (!GetMagic(p.Type, out MagicObject magicObject))
+            MagicObject magicObject = null;
+
+            if (p.MagicInfoIndex > 0)
+                MagicObjects.TryGetByInfoIndex(p.MagicInfoIndex, out magicObject);
+
+            if (magicObject == null)
+                GetMagic(p.Type, out magicObject);
+
+            if (magicObject == null || !magicObject.CanUseMagic())
             {
                 Enqueue(new S.UserLocation { Direction = Direction, Location = CurrentLocation });
                 return;
@@ -14867,7 +14875,8 @@ namespace Server.Models
                 ObjectID = ObjectID,
                 Direction = Direction,
                 CurrentLocation = CurrentLocation,
-                Type = p.Type,
+                Type = magicObject.Type,
+                MagicInfoIndex = magicObject.Magic.Info.Index,
                 Targets = targets,
                 Locations = locations,
                 Cast = cast,
@@ -15376,11 +15385,9 @@ namespace Server.Models
                 });
             }
 
-            foreach (var type in MagicObjects.Keys)
+            foreach (MagicObject magicObject in MagicObjects.OrderedObjects)
             {
-                var magicObject = MagicObjects[type];
-
-                if (types.Contains(type))
+                if (types.Contains(magicObject.Type))
                 {
                     magicObject.AttackComplete(ob);
                 }
@@ -15552,11 +15559,9 @@ namespace Server.Models
                 });
             }
 
-            foreach (var type in MagicObjects.Keys)
+            foreach (MagicObject magicObject in MagicObjects.OrderedObjects)
             {
-                var magicObject = MagicObjects[type];
-
-                if (types.Contains(type))
+                if (types.Contains(magicObject.Type))
                 {
                     magicObject.MagicAttackSuccess(ob, damage);
                 }
@@ -16095,6 +16100,24 @@ namespace Server.Models
 
             magic = null;
             return false;
+        }
+
+        public bool GetMagic(MagicInfo info, out MagicObject magic)
+        {
+            magic = null;
+
+            if (info == null) return false;
+
+            if (MagicObjects.TryGetByInfoIndex(info.Index, out magic) && magic.CanUseMagic())
+                return true;
+
+            if (info.Magic == MagicType.Custom)
+            {
+                magic = null;
+                return false;
+            }
+
+            return GetMagic(info.Magic, out magic);
         }
 
         public void LevelMagic(UserMagic magic)
@@ -17438,7 +17461,7 @@ namespace Server.Models
                 .OrderBy(x => x.NeedLevel1)
                 .Take(4);
 
-            var mInfo = mInfos.FirstOrDefault(x => x.NeedLevel1 <= nextLevel.RequiredLevel && !GetMagic(x.Magic, out MagicObject _));
+            var mInfo = mInfos.FirstOrDefault(x => x.NeedLevel1 <= nextLevel.RequiredLevel && !GetMagic(x, out MagicObject _));
 
             if (mInfo != null)
             {

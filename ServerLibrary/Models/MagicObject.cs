@@ -354,6 +354,8 @@ namespace Server.Models
     public class MagicList : Dictionary<MagicType, MagicObject>
     {
         private IEnumerable<MagicType> orderedKeys;
+        private IEnumerable<MagicObject> orderedObjects;
+        private readonly Dictionary<int, MagicObject> byInfoIndex = new();
 
         public IEnumerable<MagicType> OrderedKeys
         {
@@ -365,11 +367,102 @@ namespace Server.Models
             }
         }
 
+        public IEnumerable<MagicObject> OrderedObjects
+        {
+            get
+            {
+                orderedObjects ??= Values.Concat(byInfoIndex.Values)
+                    .Distinct()
+                    .OrderBy(x => x.Type)
+                    .ThenBy(x => x.Magic.Info.Index)
+                    .ToList();
+
+                return orderedObjects;
+            }
+        }
+
         public new void Add(MagicType key, MagicObject value)
         {
             orderedKeys = null;
+            orderedObjects = null;
+
+            if (key != MagicType.Custom && base.TryGetValue(key, out MagicObject oldValue) && oldValue?.Magic?.Info != null)
+                byInfoIndex.Remove(oldValue.Magic.Info.Index);
 
             base[key] = value;
+
+            if (value?.Magic?.Info != null)
+                byInfoIndex[value.Magic.Info.Index] = value;
+        }
+
+        public void Add(MagicObject value)
+        {
+            Add(value.Type, value);
+        }
+
+        public bool TryGetByInfoIndex(int infoIndex, out MagicObject value)
+        {
+            return byInfoIndex.TryGetValue(infoIndex, out value);
+        }
+
+        public bool RemoveByInfoIndex(int infoIndex)
+        {
+            if (!byInfoIndex.TryGetValue(infoIndex, out MagicObject value))
+                return false;
+
+            orderedKeys = null;
+            orderedObjects = null;
+            byInfoIndex.Remove(infoIndex);
+
+            if (!base.TryGetValue(value.Type, out MagicObject current) || !ReferenceEquals(current, value))
+                return true;
+
+            if (value.Type == MagicType.Custom)
+            {
+                MagicObject replacement = byInfoIndex.Values.LastOrDefault(x => x?.Type == MagicType.Custom);
+                if (replacement != null)
+                    base[value.Type] = replacement;
+                else
+                    base.Remove(value.Type);
+            }
+            else
+            {
+                base.Remove(value.Type);
+            }
+
+            return true;
+        }
+
+        public new bool Remove(MagicType key)
+        {
+            orderedKeys = null;
+            orderedObjects = null;
+
+            if (!base.TryGetValue(key, out MagicObject value))
+                return false;
+
+            bool removed = base.Remove(key);
+
+            if (key == MagicType.Custom)
+            {
+                foreach (int infoIndex in byInfoIndex.Where(x => x.Value?.Type == key).Select(x => x.Key).ToList())
+                    byInfoIndex.Remove(infoIndex);
+            }
+            else if (value?.Magic?.Info != null)
+            {
+                byInfoIndex.Remove(value.Magic.Info.Index);
+            }
+
+            return removed;
+        }
+
+        public new void Clear()
+        {
+            orderedKeys = null;
+            orderedObjects = null;
+            byInfoIndex.Clear();
+
+            base.Clear();
         }
     }
 

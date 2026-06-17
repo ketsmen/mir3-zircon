@@ -94,6 +94,63 @@ namespace Server.Envir
             return result;
         }
 
+        public Mir2DropImportReport ImportInline(MonsterInfo monster, IEnumerable<string> lines, bool replaceExisting)
+        {
+            if (monster == null) throw new ArgumentNullException(nameof(monster));
+
+            Mir2DropImportReport report = new();
+            report.MonstersVisited++;
+
+            if (replaceExisting)
+            {
+                ClearExistingDrops(monster);
+                report.MonstersCleared++;
+            }
+
+            foreach (Mir2DropNode node in ParseNodes(lines?.ToList() ?? [], monster.MonsterName, report))
+                ImportNode(monster, null, node, report);
+
+            report.MonstersImported++;
+            return report;
+        }
+
+        public Mir2DropOverrideLoadResult BuildCompiledInline(MonsterInfo monster, IEnumerable<string> lines)
+        {
+            if (monster == null) throw new ArgumentNullException(nameof(monster));
+
+            Mir2DropOverrideLoadResult result = new();
+            Mir2DropImportReport report = result.Report;
+            report.MonstersVisited++;
+
+            List<CompiledDropEntry> entries = [];
+            List<CompiledDropGroup> groups = [];
+
+            foreach (Mir2DropNode node in ParseNodes(lines?.ToList() ?? [], monster.MonsterName, report))
+            {
+                if (node.Children != null)
+                {
+                    CompiledDropGroup group = CompileGroup(node, report);
+                    if (group.HasDrops)
+                    {
+                        groups.Add(group);
+                        report.GroupsImported++;
+                    }
+
+                    continue;
+                }
+
+                CompiledDropEntry? entry = CompileEntry(node);
+                if (entry == null) continue;
+
+                entries.Add(entry.Value);
+                report.DropsImported++;
+            }
+
+            result.Overrides[monster] = new CompiledMonsterDrop(entries.ToArray(), groups.ToArray());
+            report.MonstersImported++;
+            return result;
+        }
+
         private void ImportFile(string dropDirectory, string file, string monsterName, bool replaceExisting, Mir2DropImportReport report)
         {
             if (!File.Exists(file))

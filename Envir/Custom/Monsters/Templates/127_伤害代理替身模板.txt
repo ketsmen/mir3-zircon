@@ -1,0 +1,38 @@
+[Monster]
+Name="模板伤害代理替身"
+Image=Phantom
+AI=0
+Flag=CursedDoll
+Level=1
+ViewRange=8
+Experience=0
+CanPush=False
+CanTame=False
+AttackDelay=0
+MoveDelay=0
+
+[Stats]
+Health=1
+
+[Behavior]
+Template=RuleSet
+UseBaseFallback=False
+AlwaysActive=True
+Passive=True
+DamageProxy=True
+DamageProxyRevealDelay=500
+DamageProxyRange=0
+DamageProxySpawnEffect=CursedDoll
+DamageProxyNameFormat="{Target} Doll"
+CanBeKilled=False
+CanAttackPlayers=False
+DisableMovement=True
+DisableAttack=True
+DisableRegen=True
+DisableBlocking=False
+AttackRange=0
+ChaseRange=0
+ReturnRange=0
+
+; 将数据库里 MonsterFlag=CursedDoll 的怪物套用此行为后，
+; CursedDoll 技能会生成 CustomMonsterObject 伤害代理，不再强制依赖 Doll C# 子类。

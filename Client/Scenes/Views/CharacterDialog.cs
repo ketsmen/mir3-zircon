@@ -3406,7 +3406,7 @@ namespace Client.Scenes.Views
 
             }
 
-            CEnvir.Enqueue(new C.MagicKey { Magic = magic.Info.Magic, Set1Key = magic.Set1Key, Set2Key = magic.Set2Key, Set3Key = magic.Set3Key, Set4Key = magic.Set4Key });
+            CEnvir.Enqueue(new C.MagicKey { Magic = magic.Info.Magic, MagicInfoIndex = magic.Info.Index, Set1Key = magic.Set1Key, Set2Key = magic.Set2Key, Set3Key = magic.Set3Key, Set4Key = magic.Set4Key });
             Refresh();
             GameScene.Game.MagicBarBox.UpdateIcons();
         }
@@ -3562,7 +3562,7 @@ namespace Client.Scenes.Views
                 }
             }
 
-            CEnvir.Enqueue(new C.MagicKey { Magic = magic.Info.Magic, Set1Key = magic.Set1Key, Set2Key = magic.Set2Key, Set3Key = magic.Set3Key, Set4Key = magic.Set4Key });
+            CEnvir.Enqueue(new C.MagicKey { Magic = magic.Info.Magic, MagicInfoIndex = magic.Info.Index, Set1Key = magic.Set1Key, Set2Key = magic.Set2Key, Set3Key = magic.Set3Key, Set4Key = magic.Set4Key });
             Refresh();
             GameScene.Game.MagicBarBox.UpdateIcons();
         }

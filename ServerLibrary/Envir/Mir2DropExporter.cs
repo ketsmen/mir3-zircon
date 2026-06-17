@@ -45,7 +45,7 @@ namespace Server.Envir
             return report;
         }
 
-        private List<string> BuildMonsterLines(MonsterInfo monster, Mir2DropExportReport report)
+        public List<string> BuildMonsterLines(MonsterInfo monster, Mir2DropExportReport report)
         {
             List<string> lines = [];
 

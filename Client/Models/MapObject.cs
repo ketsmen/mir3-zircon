@@ -76,6 +76,7 @@ namespace Client.Models
         public uint AttackerID;
 
         public MagicType MagicType;
+        public int MagicInfoIndex;
         public Element AttackElement;
         public List<MapObject> AttackTargets;
         public List<Point> MagicLocations;
@@ -728,9 +729,314 @@ namespace Client.Models
                     break;
                 default:
                     Interupt = false;
-                    break;
+                break;
             }
         }
+
+        private bool TryCreateCustomSkillEffects()
+        {
+            return TryCreateCustomSkillEffects(MagicInfoIndex, MagicCast, AttackTargets, MagicLocations);
+        }
+
+        public bool TryCreateCustomSkillEffects(
+            int magicInfoIndex,
+            bool magicCast,
+            IReadOnlyList<MapObject> attackTargets,
+            IReadOnlyList<Point> magicLocations)
+        {
+            return TryCreateCustomSkillEffects(magicInfoIndex, magicCast, attackTargets, magicLocations, null);
+        }
+
+        public bool TryCreateCustomSkillProjectileEffects(
+            int magicInfoIndex,
+            IReadOnlyList<MapObject> attackTargets,
+            IReadOnlyList<Point> magicLocations)
+        {
+            return TryCreateCustomSkillEffects(
+                magicInfoIndex,
+                true,
+                attackTargets,
+                magicLocations,
+                x => x.Stage is CustomSkillEffectStage.Projectile or CustomSkillEffectStage.Hit);
+        }
+
+        private bool TryCreateCustomSkillEffects(
+            int magicInfoIndex,
+            bool magicCast,
+            IReadOnlyList<MapObject> attackTargets,
+            IReadOnlyList<Point> magicLocations,
+            Func<CustomSkillEffectInfo, bool> effectFilter)
+        {
+            if (!magicCast || !CEnvir.TryGetCustomSkill(magicInfoIndex, out CustomSkillInfo skill))
+                return false;
+
+            bool created = false;
+            List<CustomSkillEffectInfo> effects = skill.Effects?
+                .Where(x => x != null)
+                .Where(x => effectFilter == null || effectFilter(x))
+                .OrderBy(x => x.Stage)
+                .ThenBy(x => x.Index)
+                .ToList() ?? new List<CustomSkillEffectInfo>();
+
+            CustomSkillEffectInfo hitTriggerProjectile = effects.FirstOrDefault(x => x.Stage == CustomSkillEffectStage.Projectile && TryGetCustomEffectLibrary(x, out _));
+            List<CustomSkillEffectInfo> deferredHitEffects = hitTriggerProjectile == null
+                ? new List<CustomSkillEffectInfo>()
+                : effects.Where(x => x.Stage == CustomSkillEffectStage.Hit).ToList();
+
+            foreach (CustomSkillEffectInfo effect in effects)
+            {
+                MirLibrary library = null;
+                bool hasVisual = TryGetCustomEffectLibrary(effect, out library);
+
+                if (!hasVisual && effect.Sound == SoundIndex.None)
+                    continue;
+
+                if (effect.Stage == CustomSkillEffectStage.Hit && hitTriggerProjectile != null)
+                    continue;
+
+                if (!hasVisual)
+                {
+                    PlayCustomEffectSound(effect);
+                    created = true;
+                    continue;
+                }
+
+                switch (effect.Stage)
+                {
+                    case CustomSkillEffectStage.Cast:
+                        CreateCustomEffect(effect, library, this);
+                        created = true;
+                        break;
+                    case CustomSkillEffectStage.Area:
+                        if (magicLocations == null || magicLocations.Count == 0)
+                        {
+                            CreateCustomEffect(effect, library, CurrentLocation);
+                        }
+                        else
+                        {
+                            foreach (Point point in magicLocations)
+                                CreateCustomEffect(effect, library, point);
+                        }
+
+                        created = true;
+                        break;
+                    case CustomSkillEffectStage.Projectile:
+                        bool triggersHit = ReferenceEquals(effect, hitTriggerProjectile);
+
+                        if (magicLocations?.Count > 0)
+                        {
+                            foreach (Point point in magicLocations)
+                                CreateCustomProjectile(effect, library, point, triggersHit ? deferredHitEffects : null);
+                        }
+                        else if (attackTargets == null || attackTargets.Count == 0)
+                        {
+                            CreateCustomProjectile(effect, library, CurrentLocation, triggersHit ? deferredHitEffects : null);
+                        }
+                        else
+                        {
+                            foreach (MapObject target in attackTargets)
+                                CreateCustomProjectile(effect, library, target, triggersHit ? deferredHitEffects : null);
+                        }
+
+                        created = true;
+                        break;
+                    case CustomSkillEffectStage.Hit:
+                    case CustomSkillEffectStage.Buff:
+                    case CustomSkillEffectStage.Tick:
+                        if (effect.Stage == CustomSkillEffectStage.Tick && magicLocations?.Count > 0)
+                        {
+                            foreach (Point point in magicLocations)
+                                CreateCustomEffect(effect, library, point);
+                        }
+                        else if (attackTargets == null || attackTargets.Count == 0)
+                        {
+                            CreateCustomEffect(effect, library, this);
+                        }
+                        else
+                        {
+                            foreach (MapObject target in attackTargets)
+                                CreateCustomEffect(effect, library, target);
+                        }
+
+                        created = true;
+                        break;
+                }
+            }
+
+            return created || skill.Magic?.Magic == MagicType.Custom;
+        }
+
+        private static bool TryGetCustomEffectLibrary(CustomSkillEffectInfo effectInfo, out MirLibrary library)
+        {
+            library = null;
+            return effectInfo?.Resource != null && CEnvir.TryGetCustomLibrary(effectInfo.Resource, out library);
+        }
+
+        private void CreateCustomEffect(CustomSkillEffectInfo effectInfo, MirLibrary library, MapObject target)
+        {
+            if (target == null) return;
+
+            MirEffect effect = BuildCustomEffect(effectInfo, library);
+            effect.AdditionalOffSet = new Point(effectInfo.OffsetX, effectInfo.OffsetY);
+
+            if (effectInfo.FollowTarget)
+                effect.Target = target;
+            else
+                effect.MapTarget = target.CurrentLocation;
+
+            Effects.Add(effect);
+            effect.Process();
+            PlayCustomEffectSound(effectInfo);
+        }
+
+        private void CreateCustomEffect(CustomSkillEffectInfo effectInfo, MirLibrary library, Point point)
+        {
+            MirEffect effect = BuildCustomEffect(effectInfo, library);
+            effect.AdditionalOffSet = new Point(effectInfo.OffsetX, effectInfo.OffsetY);
+            effect.MapTarget = point;
+            Effects.Add(effect);
+            effect.Process();
+            PlayCustomEffectSound(effectInfo);
+        }
+
+        private void CreateCustomProjectile(CustomSkillEffectInfo effectInfo, MirLibrary library, MapObject target, IReadOnlyList<CustomSkillEffectInfo> completedHitEffects = null)
+        {
+            if (target == null) return;
+
+            MirProjectile effect = BuildCustomProjectile(effectInfo, library);
+            effect.AdditionalOffSet = new Point(effectInfo.OffsetX, effectInfo.OffsetY);
+
+            if (effectInfo.FollowTarget)
+                effect.Target = target;
+            else
+                effect.MapTarget = target.CurrentLocation;
+
+            if (completedHitEffects?.Count > 0)
+                effect.CompleteAction += () => CreateCompletedHitEffects(completedHitEffects, target);
+
+            Effects.Add(effect);
+            effect.Process();
+            PlayCustomEffectSound(effectInfo);
+        }
+
+        private void CreateCustomProjectile(CustomSkillEffectInfo effectInfo, MirLibrary library, Point point, IReadOnlyList<CustomSkillEffectInfo> completedHitEffects = null)
+        {
+            MirProjectile effect = BuildCustomProjectile(effectInfo, library);
+            effect.AdditionalOffSet = new Point(effectInfo.OffsetX, effectInfo.OffsetY);
+            effect.MapTarget = point;
+
+            if (completedHitEffects?.Count > 0)
+                effect.CompleteAction += () => CreateCompletedHitEffects(completedHitEffects, point);
+
+            Effects.Add(effect);
+            effect.Process();
+            PlayCustomEffectSound(effectInfo);
+        }
+
+        private void CreateCompletedHitEffects(IEnumerable<CustomSkillEffectInfo> hitEffects, MapObject target)
+        {
+            foreach (CustomSkillEffectInfo hitEffect in hitEffects)
+            {
+                if (TryGetCustomEffectLibrary(hitEffect, out MirLibrary library))
+                    CreateCustomEffect(hitEffect, library, target);
+                else
+                    PlayCustomEffectSound(hitEffect);
+            }
+        }
+
+        private void CreateCompletedHitEffects(IEnumerable<CustomSkillEffectInfo> hitEffects, Point point)
+        {
+            foreach (CustomSkillEffectInfo hitEffect in hitEffects)
+            {
+                if (TryGetCustomEffectLibrary(hitEffect, out MirLibrary library))
+                    CreateCustomEffect(hitEffect, library, point);
+                else
+                    PlayCustomEffectSound(hitEffect);
+            }
+        }
+
+        private static void PlayCustomEffectSound(CustomSkillEffectInfo effectInfo)
+        {
+            if (effectInfo?.Sound != SoundIndex.None)
+                DXSoundManager.Play(effectInfo.Sound);
+        }
+
+        private static MirEffect BuildCustomEffect(CustomSkillEffectInfo effectInfo, MirLibrary library)
+        {
+            int frameCount = effectInfo.FrameCount > 0
+                ? effectInfo.FrameCount
+                : Math.Max(1, effectInfo.EndIndex - effectInfo.StartIndex + 1);
+
+            ReportMissingCustomSkillEffectFrames(effectInfo, library, frameCount);
+
+            MirEffect effect = new(
+                effectInfo.StartIndex,
+                frameCount,
+                TimeSpan.FromMilliseconds(Math.Max(1, effectInfo.FrameDelay)),
+                library,
+                effectInfo.StartLight,
+                effectInfo.EndLight,
+                Globals.NoneColour)
+            {
+                Blend = effectInfo.Blend,
+                Loop = effectInfo.Loop,
+            };
+
+            if (effectInfo.Duration > 0)
+                effect.ExpireTime = effect.StartTime.AddMilliseconds(effectInfo.Duration);
+
+            return effect;
+        }
+
+        private MirProjectile BuildCustomProjectile(CustomSkillEffectInfo effectInfo, MirLibrary library)
+        {
+            int frameCount = effectInfo.FrameCount > 0
+                ? effectInfo.FrameCount
+                : Math.Max(1, effectInfo.EndIndex - effectInfo.StartIndex + 1);
+
+            ReportMissingCustomSkillEffectFrames(effectInfo, library, frameCount);
+
+            MirProjectile effect = new(
+                effectInfo.StartIndex,
+                frameCount,
+                TimeSpan.FromMilliseconds(Math.Max(1, effectInfo.FrameDelay)),
+                library,
+                effectInfo.StartLight,
+                effectInfo.EndLight,
+                Globals.NoneColour,
+                CurrentLocation)
+            {
+                Blend = effectInfo.Blend,
+                Loop = effectInfo.Loop,
+            };
+
+            if (effectInfo.Duration > 0)
+                effect.ExpireTime = effect.StartTime.AddMilliseconds(effectInfo.Duration);
+
+            return effect;
+        }
+
+        private static void ReportMissingCustomSkillEffectFrames(CustomSkillEffectInfo effectInfo, MirLibrary library, int frameCount)
+        {
+            if (effectInfo == null || library == null) return;
+
+            int startIndex = effectInfo.StartIndex;
+            int maxIndex = startIndex + Math.Max(1, frameCount) - 1;
+
+            if (library.HasImage(startIndex) && library.HasImage(maxIndex)) return;
+
+            CEnvir.AddDynamicLibraryDiagnostic(
+                $"自定义技能特效帧缺失: Skill={effectInfo.Skill?.Magic?.Name ?? effectInfo.Skill?.Magic?.Magic.ToString() ?? "未绑定"} Stage={effectInfo.Stage} Resource={GetCustomResourceName(effectInfo.Resource)} Start={effectInfo.StartIndex} End={effectInfo.EndIndex} FrameCount={frameCount} MaxIndex={maxIndex}");
+        }
+
+        private static string GetCustomResourceName(CustomResourceLibraryInfo resource)
+        {
+            if (resource == null) return "未配置";
+            if (!string.IsNullOrWhiteSpace(resource.Key)) return resource.Key;
+            if (resource.LibraryFile != LibraryFile.None) return resource.LibraryFile.ToString();
+            return string.IsNullOrWhiteSpace(resource.RelativePath) ? $"#{resource.Index}" : resource.RelativePath;
+        }
+
         public virtual void SetAction(ObjectAction action)
         {
             MirEffect spell;
@@ -3295,7 +3601,13 @@ namespace Client.Models
 
                     if (targets.Count < 1) return;
 
-                    if (action.Extra[1] is MagicType magicType && magicType == MagicType.Shuriken)
+                    MagicType = action.Extra.Length > 1 && action.Extra[1] is MagicType magicType ? magicType : MagicType.None;
+                    AttackElement = action.Extra.Length > 2 && action.Extra[2] is Element rangeElement ? rangeElement : Element.None;
+                    MagicInfoIndex = action.Extra.Length > 3 && action.Extra[3] is int rangeMagicInfoIndex ? rangeMagicInfoIndex : 0;
+                    MagicCast = true;
+                    MagicLocations = new List<Point>();
+
+                    if (MagicType == MagicType.Shuriken)
                     {
 
                         foreach (uint target in targets)
@@ -3322,6 +3634,10 @@ namespace Client.Models
                         if (GameScene.Game.MapControl.TryGetObject(target, out MapObject attackTarget))
                             AttackTargets.Add(attackTarget);
                     }
+
+                    if (MagicInfoIndex > 0 && TryCreateCustomSkillEffects())
+                        break;
+
                     break;
                 case MirAction.Struck:
 
@@ -3609,8 +3925,12 @@ namespace Client.Models
                     MagicLocations = (List<Point>)action.Extra[2];
                     MagicCast = (bool)action.Extra[3];
                     AttackElement = (Element)action.Extra[4];
+                    MagicInfoIndex = action.Extra.Length > 5 && action.Extra[5] is int infoIndex ? infoIndex : 0;
 
                     attackColour = Functions.GetElementColour(AttackElement);
+
+                    if (MagicInfoIndex > 0 && TryCreateCustomSkillEffects())
+                        break;
 
                     Point location;
                     switch (MagicType)

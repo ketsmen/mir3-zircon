@@ -53,6 +53,7 @@ namespace MirDB
         protected DBObject()
         {
             ThisType = GetType();
+            CreateBindings();
         }
 
         internal void Load(DBMapping mapping)
@@ -314,6 +315,9 @@ namespace MirDB
         public event PropertyChangedEventHandler PropertyChanged;
         protected internal virtual void OnChanged(object oldValue, object newValue, string propertyName)
         {
+            if (Collection == null)
+                return;
+
             if (Collection.Session.Relationships == null)
                 IsModified = true;
 

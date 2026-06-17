@@ -3827,6 +3827,12 @@ namespace Client.Scenes
             MapObject target = null;
             MirDirection direction = MapControl.MouseDirection();
 
+            if (CEnvir.TryGetCustomSkill(magic.Info.Index, out CustomSkillInfo customSkill))
+            {
+                TryUseCustomMagic(magic, customSkill, direction);
+                return;
+            }
+
             switch (magic.Info.Magic)
             {
                 case MagicType.ShoulderDash:
@@ -3835,7 +3841,7 @@ namespace Client.Scenes
 
                     User.ServerTime = CEnvir.Now.AddSeconds(5);
                     User.NextMagicTime = CEnvir.Now + Globals.MagicDelay;
-                    CEnvir.Enqueue(new C.Magic { Direction = direction, Action = MirAction.Spell, Type = magic.Info.Magic });
+                    CEnvir.Enqueue(new C.Magic { Direction = direction, Action = MirAction.Spell, Type = magic.Info.Magic, MagicInfoIndex = magic.Info.Index });
                     return;
 
                 case MagicType.DanceOfSwallow:
@@ -3859,7 +3865,7 @@ namespace Client.Scenes
                     MapObject.TargetObject = target;
                     MapObject.MagicObject = target;
 
-                    CEnvir.Enqueue(new C.Magic { Action = MirAction.Spell, Type = magic.Info.Magic, Target = target.ObjectID });
+                    CEnvir.Enqueue(new C.Magic { Action = MirAction.Spell, Type = magic.Info.Magic, MagicInfoIndex = magic.Info.Index, Target = target.ObjectID });
                     return;
 
                 case MagicType.FireBall:
@@ -4140,7 +4146,105 @@ namespace Client.Scenes
             if (MouseObject != null && MouseObject.Race == ObjectType.Monster)
                 FocusObject = (MonsterObject)MouseObject;
 
-            User.MagicAction = new ObjectAction(MirAction.Spell, direction, MapObject.User.CurrentLocation, magic.Info.Magic, new List<uint> { targetID }, new List<Point> { targetLocation }, false, Element.None);
+            User.MagicAction = new ObjectAction(MirAction.Spell, direction, MapObject.User.CurrentLocation, magic.Info.Magic, new List<uint> { targetID }, new List<Point> { targetLocation }, false, Element.None, magic.Info.Index);
+        }
+
+        private bool TryUseCustomMagic(ClientUserMagic magic, CustomSkillInfo customSkill, MirDirection direction)
+        {
+            MapObject target = null;
+            Point targetLocation = MapControl.MapLocation;
+
+            switch (customSkill.TargetRule)
+            {
+                case CustomSkillTargetRule.Self:
+                    target = User;
+                    targetLocation = User.CurrentLocation;
+                    break;
+                case CustomSkillTargetRule.Ally:
+                    if (!CanHelpTarget(MouseObject)) return false;
+                    target = MouseObject;
+                    targetLocation = target.CurrentLocation;
+                    break;
+                case CustomSkillTargetRule.AllyOrSelf:
+                    target = CanHelpTarget(MouseObject) ? MouseObject : User;
+                    targetLocation = target.CurrentLocation;
+                    break;
+                case CustomSkillTargetRule.Enemy:
+                    if (CanAttackTarget(MouseObject))
+                        target = MouseObject;
+                    else if (CanAttackTarget(MapObject.MagicObject))
+                        target = MapObject.MagicObject;
+
+                    if (target == null) return false;
+                    targetLocation = target.CurrentLocation;
+                    break;
+                case CustomSkillTargetRule.Ground:
+                    break;
+                case CustomSkillTargetRule.EnemyOrGround:
+                    if (CanAttackTarget(MouseObject))
+                        target = MouseObject;
+                    else if (CanAttackTarget(MapObject.MagicObject))
+                        target = MapObject.MagicObject;
+
+                    if (target != null)
+                        targetLocation = target.CurrentLocation;
+                    break;
+                default:
+                    return false;
+            }
+
+            int range = customSkill.Range > 0 ? customSkill.Range : Globals.MagicRange;
+            if (target != null && target != User)
+            {
+                if (!Functions.InRange(target.CurrentLocation, User.CurrentLocation, range))
+                {
+                    if (CEnvir.Now >= OutputTime)
+                    {
+                        OutputTime = CEnvir.Now.AddSeconds(1);
+                        ReceiveChat(string.Format(CEnvir.Language.GameSceneCastTooFar, magic.Info.Name), MessageType.Hint);
+                    }
+
+                    return false;
+                }
+
+                direction = Functions.DirectionFromPoint(User.CurrentLocation, target.CurrentLocation);
+            }
+            else if (target == null && !Functions.InRange(targetLocation, User.CurrentLocation, range))
+            {
+                if (CEnvir.Now >= OutputTime)
+                {
+                    OutputTime = CEnvir.Now.AddSeconds(1);
+                    ReceiveChat(string.Format(CEnvir.Language.GameSceneCastTooFar, magic.Info.Name), MessageType.Hint);
+                }
+
+                return false;
+            }
+
+            if (target?.Race == ObjectType.Monster)
+                FocusObject = (MonsterObject)target;
+
+            uint targetID = target?.ObjectID ?? 0;
+
+            User.MagicAction = new ObjectAction(
+                MirAction.Spell,
+                direction,
+                MapObject.User.CurrentLocation,
+                magic.Info.Magic,
+                new List<uint> { targetID },
+                new List<Point> { targetLocation },
+                false,
+                customSkill.Element,
+                magic.Info.Index);
+
+            return true;
+        }
+
+        private bool CanHelpTarget(MapObject ob)
+        {
+            if (ob == null || ob.Dead || !ob.Visible) return false;
+            if (ob == User) return true;
+
+            return ob.Race is ObjectType.Player or ObjectType.Hero && IsAlly(ob.ObjectID);
         }
 
         private bool CanAttackTarget(MapObject ob)
