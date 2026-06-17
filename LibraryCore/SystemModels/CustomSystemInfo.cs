@@ -189,7 +189,8 @@ namespace Library.SystemModels
         HazardRoam,
         BroadcastMessage,
         TeleportTargetsToRegion,
-        DespawnSelf
+        DespawnSelf,
+        SpawnSpellObject
     }
 
     public enum CustomAiPowerSource
@@ -3147,6 +3148,21 @@ namespace Library.SystemModels
             }
         }
         private int _Duration;
+
+        public int DurationPowerRate
+        {
+            get { return _DurationPowerRate; }
+            set
+            {
+                if (_DurationPowerRate == value) return;
+
+                var oldValue = _DurationPowerRate;
+                _DurationPowerRate = value;
+
+                OnChanged(oldValue, value, "DurationPowerRate");
+            }
+        }
+        private int _DurationPowerRate;
 
         public int TickRate
         {

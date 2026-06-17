@@ -134,6 +134,14 @@ namespace Server.Envir
             "IgnoreSafeZone",
             "IncludeSelf",
             "Despawn",
+            "DecreaseAliveCount",
+            "VisibleOriginOnly",
+            "BroadcastMagic",
+            "SearchAllies",
+            "SearchCanHelp",
+            "IgnoreMaxMinions",
+            "PreserveBoss",
+            "PreserveBossMinions",
         };
 
         private static readonly HashSet<string> KnownActionOptions = new(StringComparer.OrdinalIgnoreCase)
@@ -147,6 +155,7 @@ namespace Server.Envir
             "AttackCurrentCell",
             "AttackWhenBlocked",
             "Attempts",
+            "BuffStatsFromSelf",
             "BuffStatsFromTarget",
             "CellTime",
             "ClassPowerRates",
@@ -154,7 +163,9 @@ namespace Server.Envir
             "CollisionAction",
             "CollisionRadius",
             "CullMissingMinions",
+            "DecreaseAliveCount",
             "DrainMP",
+            "DurationRandom",
             "Effect",
             "EnterEffect",
             "ExtendOnly",
@@ -175,6 +186,7 @@ namespace Server.Envir
             "MessageType",
             "MinionLeashRadius",
             "MonsterFlag",
+            "MonsterFlags",
             "Monsters",
             "MoveTime",
             "NoDamage",
@@ -188,6 +200,10 @@ namespace Server.Envir
             "Players",
             "Pets",
             "PerTarget",
+            "PreserveBoss",
+            "PreserveBossMinions",
+            "PushDistance",
+            "PushDirection",
             "RangePacket",
             "RecallOutsideRadius",
             "Region",
@@ -203,8 +219,12 @@ namespace Server.Envir
             "ReviveHealthDecay",
             "Repeat",
             "SearchAlternate",
+            "SearchAllies",
+            "SearchCanHelp",
             "Scope",
             "SpecialRegion",
+            "SpellEffect",
+            "SpawnPool",
             "Stackable",
             "StateOnly",
             "SuppressDrops",
@@ -221,6 +241,10 @@ namespace Server.Envir
             "IncludeWildMonsters",
             "IgnoreSafeZone",
             "Despawn",
+            "DecreaseAliveCount",
+            "VisibleOriginOnly",
+            "BroadcastMagic",
+            "IgnoreMaxMinions",
         };
 
         private static readonly HashSet<string> DynamicDirectionOptions = new(StringComparer.OrdinalIgnoreCase)
@@ -1420,6 +1444,18 @@ namespace Server.Envir
                     report.Failures.Add($"{source}: AIAction `{action.Name}` 的 {action.Action} Effect `{effectName}` 不是有效 Effect 枚举。");
             }
 
+            if (action.Action == CustomAiActionType.SpawnSpellObject)
+            {
+                string effectName = GetActionOptionValue(action.Options, "SpellEffect");
+                if (string.IsNullOrWhiteSpace(effectName))
+                    effectName = GetActionOptionValue(action.Options, "Effect");
+
+                if (string.IsNullOrWhiteSpace(effectName))
+                    report.Failures.Add($"{source}: AIAction `{action.Name}` 使用 SpawnSpellObject 时必须在 Options 中配置 SpellEffect 或 Effect。");
+                else if (!Enum.TryParse(effectName, true, out SpellEffect parsed) || parsed == SpellEffect.None)
+                    report.Failures.Add($"{source}: AIAction `{action.Name}` 的 SpellEffect `{effectName}` 不是有效 SpellEffect 枚举。");
+            }
+
             if (action.Action == CustomAiActionType.BroadcastMessage)
                 ValidateBroadcastMessageAction(action, report, source);
 
@@ -1442,6 +1478,8 @@ namespace Server.Envir
             ValidateNonNegativeActionOption(action, "OffsetDistance", report, source);
             ValidateNonNegativeActionOption(action, "CollisionRadius", report, source);
             ValidateNonNegativeActionOption(action, "MaxTotal", report, source);
+            ValidateNonNegativeActionOption(action, "DurationRandom", report, source);
+            ValidateNonNegativeActionOption(action, "PushDistance", report, source);
             ValidateNonNegativeActionOption(action, "RegionIndex", report, source);
             ValidateNonNegativeActionOption(action, "Repeat", report, source);
             ValidatePercentActionOption(action, "ForwardChance", report, source);
@@ -1475,6 +1513,10 @@ namespace Server.Envir
             ValidatePowerSourceActionOption(action, "TargetHealthPower", report, source);
             ValidateDirectionActionOption(action, "OriginDirection", report, source);
             ValidateDirectionActionOption(action, "OffsetDirection", report, source);
+            ValidateDirectionActionOption(action, "PushDirection", report, source);
+            ValidateMonsterFlagActionOption(action, report, source);
+            ValidateMonsterFlagPoolActionOption(action, "MonsterFlags", report, source);
+            ValidateMonsterFlagPoolActionOption(action, "SpawnPool", report, source);
         }
 
         private static void ValidateKnownAiActionOptionNames(CustomMonsterAiActionInfo action, CustomSystemTextReport report, string source)
@@ -1644,6 +1686,35 @@ namespace Server.Envir
             if (Enum.TryParse(value, true, out MirDirection _)) return;
 
             report.Failures.Add($"{source}: AIAction `{action.Name}` 的 {optionName} `{value}` 不是有效方向。可用 MirDirection、Target、CurrentTarget、AwayFromTarget。");
+        }
+
+        private static void ValidateMonsterFlagActionOption(CustomMonsterAiActionInfo action, CustomSystemTextReport report, string source)
+        {
+            string flagName = GetActionOptionValue(action.Options, "MonsterFlag");
+            if (string.IsNullOrWhiteSpace(flagName))
+                flagName = GetActionOptionValue(action.Options, "Flag");
+
+            if (!string.IsNullOrWhiteSpace(flagName) && !Enum.TryParse(flagName, true, out MonsterFlag _))
+                report.Failures.Add($"{source}: AIAction `{action.Name}` 的 MonsterFlag `{flagName}` 不是有效 MonsterFlag 枚举。");
+        }
+
+        private static void ValidateMonsterFlagPoolActionOption(CustomMonsterAiActionInfo action, string optionName, CustomSystemTextReport report, string source)
+        {
+            string value = GetActionOptionValue(action.Options, optionName);
+            if (string.IsNullOrWhiteSpace(value)) return;
+
+            foreach (string token in value.Split(['|', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                string[] parts = token.Split(':', 2, StringSplitOptions.TrimEntries);
+                if (!Enum.TryParse(parts[0], true, out MonsterFlag flag) || flag == MonsterFlag.None)
+                {
+                    report.Failures.Add($"{source}: AIAction `{action.Name}` 的 {optionName} 项 `{token}` 不是有效 MonsterFlag 枚举。");
+                    continue;
+                }
+
+                if (parts.Length == 2 && (!int.TryParse(parts[1], out int weight) || weight <= 0))
+                    report.Failures.Add($"{source}: AIAction `{action.Name}` 的 {optionName} 项 `{token}` 权重必须大于 0。");
+            }
         }
 
         private static void ValidateBroadcastMessageAction(CustomMonsterAiActionInfo action, CustomSystemTextReport report, string source)
@@ -1970,6 +2041,7 @@ namespace Server.Envir
             skill.FixedPower = GetInt(values, "FixedPower", skill.FixedPower);
             skill.PowerRate = GetInt(values, "PowerRate", skill.PowerRate == 0 ? 100 : skill.PowerRate);
             skill.Duration = GetInt(values, "Duration", skill.Duration);
+            skill.DurationPowerRate = GetInt(values, "DurationPowerRate", skill.DurationPowerRate);
             skill.TickRate = GetInt(values, "TickRate", skill.TickRate == 0 ? 1000 : skill.TickRate);
             skill.BuffType = GetEnum(values, "BuffType", skill.BuffType, report, source);
             skill.PoisonType = GetEnum(values, "PoisonType", skill.PoisonType, report, source);
@@ -2733,6 +2805,26 @@ namespace Server.Envir
             return report;
         }
 
+        public CustomSystemTextReport ExportAllDatabaseMonstersAndSkills(string directory, bool overwrite)
+        {
+            if (string.IsNullOrWhiteSpace(directory))
+                throw new ArgumentException("输出目录不能为空。", nameof(directory));
+
+            Directory.CreateDirectory(directory);
+            Directory.CreateDirectory(Path.Combine(directory, "Monsters"));
+            Directory.CreateDirectory(Path.Combine(directory, "Skills"));
+
+            CustomSystemTextReport report = new();
+            report.Mode = CustomSystemImportMode.Export;
+            report.TodoDetails.Add("本报告由全量数据库怪物/技能导出生成。没有 CustomMonsterBehaviorInfo 或 CustomSkillInfo 的旧数据只导出可编辑骨架；旧 C# AI 和旧 MagicObject 逻辑需要继续按 TODO 迁移。");
+
+            ExportResources(Path.Combine(directory, "Resources.txt"), overwrite, report);
+            ExportMonsters(Path.Combine(directory, "Monsters"), overwrite, report, includeAllDatabaseMonsters: true);
+            ExportSkills(Path.Combine(directory, "Skills"), overwrite, report, includeAllDatabaseSkills: true);
+            ExportTodoReport(Path.Combine(directory, "TODO报告.txt"), overwrite, report);
+            return report;
+        }
+
         private void ExportResources(string path, bool overwrite, CustomSystemTextReport report)
         {
             if (File.Exists(path) && !overwrite)
@@ -2765,7 +2857,7 @@ namespace Server.Envir
             File.WriteAllLines(path, lines, new UTF8Encoding(false));
         }
 
-        private void ExportMonsters(string directory, bool overwrite, CustomSystemTextReport report)
+        private void ExportMonsters(string directory, bool overwrite, CustomSystemTextReport report, bool includeAllDatabaseMonsters = false)
         {
             Dictionary<int, CustomMonsterVisualInfo> visuals = _session.GetCollection<CustomMonsterVisualInfo>().Binding
                 .Where(x => x?.Monster != null)
@@ -2777,14 +2869,24 @@ namespace Server.Envir
                 .GroupBy(x => x.Monster.Index)
                 .ToDictionary(x => x.Key, x => x.First());
 
-            foreach (MonsterInfo monster in visuals.Values.Select(x => x.Monster)
-                         .Concat(behaviors.Values.Select(x => x.Monster))
-                         .Where(x => x != null)
-                         .GroupBy(x => x.Index)
-                         .Select(x => x.First())
-                         .OrderBy(x => x.MonsterName))
+            Dictionary<int, CustomMonsterAiMigrationRow> aiSuggestions = includeAllDatabaseMonsters
+                ? CustomMonsterAiMigrationReportBuilder.Build(_session).Rows.ToDictionary(x => x.AI, x => x)
+                : [];
+
+            IEnumerable<MonsterInfo> monsters = includeAllDatabaseMonsters
+                ? _session.GetCollection<MonsterInfo>().Binding.Where(x => x != null)
+                : visuals.Values.Select(x => x.Monster)
+                    .Concat(behaviors.Values.Select(x => x.Monster))
+                    .Where(x => x != null)
+                    .GroupBy(x => x.Index)
+                    .Select(x => x.First());
+
+            HashSet<string> usedFileNames = new(StringComparer.OrdinalIgnoreCase);
+
+            foreach (MonsterInfo monster in monsters.OrderBy(x => x.MonsterName).ThenBy(x => x.Index))
             {
-                string path = Path.Combine(directory, SafeFileName(monster.MonsterName) + ".txt");
+                string fileName = GetUniqueFileName(SafeFileName(monster.MonsterName), monster.Index, usedFileNames);
+                string path = Path.Combine(directory, fileName + ".txt");
                 if (File.Exists(path) && !overwrite)
                 {
                     report.Failures.Add($"已存在怪物文本，未覆盖: {path}");
@@ -2793,23 +2895,26 @@ namespace Server.Envir
 
                 visuals.TryGetValue(monster.Index, out CustomMonsterVisualInfo visual);
                 behaviors.TryGetValue(monster.Index, out CustomMonsterBehaviorInfo behavior);
+                aiSuggestions.TryGetValue(monster.AI, out CustomMonsterAiMigrationRow migration);
 
                 Mir2DropExportReport dropReport = new();
                 List<string> dropLines = new Mir2DropExporter(_session).BuildMonsterLines(monster, dropReport);
 
-                File.WriteAllText(path, BuildMonsterText(monster, visual, behavior, dropLines), new UTF8Encoding(false));
+                File.WriteAllText(path, BuildMonsterText(monster, visual, behavior, dropLines, migration, includeAllDatabaseMonsters), new UTF8Encoding(false));
                 report.MonstersExported++;
                 if (visual != null)
                     report.MonsterVisualsExported++;
                 if (behavior != null)
                     report.MonsterBehaviorsExported++;
+                if (includeAllDatabaseMonsters)
+                    AddMonsterExportTodo(report, monster, visual, behavior, migration, fileName);
                 report.MonsterStatsExported += monster.MonsterInfoStats?.Count(x => x != null && x.Stat != Stat.None && x.Amount != 0) ?? 0;
                 report.MonsterDropEntriesExported += dropReport.DropLines + dropReport.GroupItemLines;
                 report.MonsterDropGroupsExported += dropReport.GroupLines;
             }
         }
 
-        private static string BuildMonsterText(MonsterInfo monster, CustomMonsterVisualInfo visual, CustomMonsterBehaviorInfo behavior, List<string> dropLines)
+        private static string BuildMonsterText(MonsterInfo monster, CustomMonsterVisualInfo visual, CustomMonsterBehaviorInfo behavior, List<string> dropLines, CustomMonsterAiMigrationRow migration = null, bool includeFallbackBehavior = false)
         {
             StringBuilder sb = new();
             sb.AppendLine("[Monster]");
@@ -2829,6 +2934,17 @@ namespace Server.Envir
             sb.AppendLine($"IsBoss={monster.IsBoss}");
             sb.AppendLine($"Flag={monster.Flag}");
             sb.AppendLine($"FaceImage={monster.FaceImage}");
+            bool autoMigratedBehavior = includeFallbackBehavior && IsAutoMigratedBasicBehavior(monster.AI);
+            if (autoMigratedBehavior)
+            {
+                sb.AppendLine($"; AutoMigrated [AI] 原 AI {monster.AI} 已转换为基础 RuleSet 行为。");
+            }
+            else if (includeFallbackBehavior && migration != null)
+            {
+                sb.AppendLine($"; TODO [AI] 原 AI {monster.AI}: {migration.CurrentImplementation}");
+                sb.AppendLine($"; TODO [AI] 建议迁移: {migration.SuggestedTemplate}");
+                sb.AppendLine($"; TODO [AI] 优先级: {migration.Priority}; {migration.Notes}");
+            }
 
             List<MonsterInfoStat> stats = monster.MonsterInfoStats?
                 .Where(x => x != null && x.Stat != Stat.None && x.Amount != 0)
@@ -2870,7 +2986,7 @@ namespace Server.Envir
                 sb.AppendLine($"ShowSound={visual.ShowSound}");
                 sb.AppendLine($"HideSound={visual.HideSound}");
 
-                foreach (CustomMonsterAnimationInfo animation in visual.Animations.OrderBy(x => x.Priority).ThenBy(x => x.Action).ThenBy(x => x.Variant))
+                foreach (CustomMonsterAnimationInfo animation in (visual.Animations?.Where(x => x != null) ?? Enumerable.Empty<CustomMonsterAnimationInfo>()).OrderBy(x => x.Priority).ThenBy(x => x.Action).ThenBy(x => x.Variant))
                 {
                     sb.AppendLine();
                     sb.AppendLine("[Animation]");
@@ -2905,6 +3021,11 @@ namespace Server.Envir
                     sb.AppendLine($"EffectBlend={animation.EffectBlend}");
                     sb.AppendLine($"EffectLoop={animation.EffectLoop}");
                 }
+            }
+            else if (includeFallbackBehavior)
+            {
+                sb.AppendLine();
+                sb.AppendLine("; TODO [Visual] 数据库没有 CustomMonsterVisualInfo。当前仍依赖客户端硬编码 MonsterImage；如需完全自定义，请补 [Visual] 和 [Animation] 资源帧段。");
             }
 
             if (behavior != null)
@@ -2954,7 +3075,7 @@ namespace Server.Envir
                 sb.AppendLine($"RoamDelay={behavior.RoamDelay}");
                 sb.AppendLine($"UseBaseFallback={behavior.UseBaseFallback}");
 
-                foreach (CustomMonsterSkillInfo skill in behavior.Skills.OrderBy(x => x.Index))
+                foreach (CustomMonsterSkillInfo skill in (behavior.Skills?.Where(x => x != null) ?? Enumerable.Empty<CustomMonsterSkillInfo>()).OrderBy(x => x.Index))
                 {
                     sb.AppendLine();
                     sb.AppendLine("[Skill]");
@@ -3039,22 +3160,3883 @@ namespace Server.Envir
                     }
                 }
             }
+            else if (includeFallbackBehavior)
+            {
+                AppendFallbackBehavior(sb, monster, migration);
+            }
 
             return sb.ToString();
         }
 
-        private void ExportSkills(string directory, bool overwrite, CustomSystemTextReport report)
+        private static void AppendFallbackBehavior(StringBuilder sb, MonsterInfo monster, CustomMonsterAiMigrationRow migration)
         {
-            foreach (CustomSkillInfo skill in _session.GetCollection<CustomSkillInfo>().Binding.Where(x => x?.Magic != null).OrderBy(x => x.Magic.Name))
+            bool passive = IsPassiveAi(monster.AI);
+            bool passiveDamage = IsAutoPassiveDamageAi(monster.AI);
+            bool noAttack = IsAutoNoAttackAi(monster.AI);
+            bool fixedObject = IsFixedAi(monster.AI);
+            bool damageProxy = IsAutoDamageProxyAi(monster.AI);
+            bool harvest = TryGetHarvestCount(monster.AI, out int harvestCount);
+            CustomMonsterBehaviorTemplate template = InferFallbackTemplate(monster, migration);
+            ApplyAutoPoison(monster.AI, out PoisonType poisonType, out int poisonRate, out int poisonTicks, out int poisonFrequency);
+            bool ignoreShield = IsAutoIgnoreShield(monster.AI);
+
+            sb.AppendLine();
+            sb.AppendLine("[Behavior]");
+            bool autoMigrated = IsAutoMigratedBasicBehavior(monster.AI);
+            if (autoMigrated)
             {
-                string path = Path.Combine(directory, SafeFileName(skill.Magic.Name) + ".txt");
+                sb.AppendLine($"; AutoMigrated [Behavior] 原 AI {monster.AI} 已按旧 C# 行为分组生成自定义 RuleSet。");
+                template = monster.AI == -1 ? CustomMonsterBehaviorTemplate.Guard : CustomMonsterBehaviorTemplate.RuleSet;
+            }
+            else
+            {
+                sb.AppendLine($"; TODO [Behavior] 这是根据 MonsterInfo 自动生成的迁移骨架，不是旧 C# AI 的完整等价实现。");
+                if (migration != null)
+                    sb.AppendLine($"; TODO [Behavior] 推荐参考: {migration.SuggestedTemplate}");
+                sb.AppendLine("; TODO [Behavior] Template=None 表示导入数据库后继续走旧 C# AI；完成迁移后再改成 RuleSet/其他模板。");
+                template = CustomMonsterBehaviorTemplate.None;
+            }
+
+            sb.AppendLine($"Template={template}");
+            sb.AppendLine($"CanBeKilled={!IsAutoInvulnerableAi(monster.AI)}");
+            sb.AppendLine($"CanAttackPlayers={!noAttack && (!passive || passiveDamage)}");
+            sb.AppendLine($"CanBeTamed={monster.CanTame}");
+            sb.AppendLine("IsPickupCompanion=False");
+            sb.AppendLine($"Passive={passive}");
+            sb.AppendLine($"AlwaysActive={IsAlwaysActiveAi(monster.AI)}");
+            sb.AppendLine($"DamageProxy={damageProxy}");
+            sb.AppendLine($"DamageProxyRevealDelay={(damageProxy ? 500 : 0)}");
+            sb.AppendLine($"DamageProxyRange=0");
+            sb.AppendLine($"DamageProxySpawnEffect={(damageProxy ? Effect.CursedDoll.ToString() : "0")}");
+            sb.AppendLine($"DamageProxyNameFormat={Quote(damageProxy ? "{Target} Doll" : string.Empty)}");
+            sb.AppendLine($"NeedHarvest={harvest}");
+            sb.AppendLine($"HarvestCount={harvestCount}");
+            sb.AppendLine($"AvoidFireWall={IsAutoAvoidFireWall(monster.AI)}");
+            sb.AppendLine($"IgnoreShield={ignoreShield}");
+            sb.AppendLine($"IgnoreArmour={IsAutoIgnoreArmour(monster.AI)}");
+            sb.AppendLine($"PoisonType={poisonType}");
+            sb.AppendLine("PoisonValue=0");
+            sb.AppendLine($"PoisonRate={poisonRate}");
+            sb.AppendLine($"PoisonTicks={poisonTicks}");
+            sb.AppendLine($"PoisonFrequency={poisonFrequency}");
+            sb.AppendLine("PoisonCanKill=False");
+            sb.AppendLine($"PoisonStackable={IsAutoPoisonStackable(monster.AI)}");
+            sb.AppendLine($"DisableMovement={fixedObject}");
+            sb.AppendLine($"DisableAttack={noAttack || passive && !passiveDamage}");
+            sb.AppendLine($"DisableRegen={IsAutoDisableRegenAi(monster.AI)}");
+            sb.AppendLine($"DisableBlocking={IsAutoNoBlockingAi(monster.AI)}");
+            bool hiddenAi = IsAutoHiddenAi(monster.AI);
+            sb.AppendLine($"HiddenBlocks={!hiddenAi}");
+            sb.AppendLine($"HiddenCanAttack={!hiddenAi}");
+            sb.AppendLine($"HiddenCanBeAttacked={!hiddenAi}");
+            sb.AppendLine($"ProtectedByMonsterFlag={GetAutoProtectedByMonsterFlag(monster.AI)}");
+            sb.AppendLine($"ProtectedByMonsterFlags={Quote(GetAutoProtectedByMonsterFlags(monster.AI))}");
+            sb.AppendLine($"ProtectionRadius={GetAutoProtectionRadius(monster.AI)}");
+            sb.AppendLine("ProtectionCheckInterval=1000");
+            int attackRange = GetAutoAttackRange(monster, template);
+            sb.AppendLine($"AttackRange={attackRange}");
+            sb.AppendLine($"ChaseRange={Math.Max(12, monster.ViewRange + 4)}");
+            sb.AppendLine($"ReturnRange={Math.Max(16, monster.ViewRange + 8)}");
+            sb.AppendLine($"MaxMinions={GetAutoMaxMinions(monster.AI)}");
+            sb.AppendLine("SkillChance=25");
+            sb.AppendLine("RoamDelay=2000");
+            sb.AppendLine($"UseBaseFallback={!autoMigrated}");
+
+            if (autoMigrated && template == CustomMonsterBehaviorTemplate.RuleSet)
+            {
+                if (TryGetAutoSelfDestructRange(monster.AI, out int selfDestructRange))
+                    AppendSelfDestructRuleSet(sb, selfDestructRange);
+                else if (IsAutoHiddenSpawnAi(monster.AI))
+                    AppendSpawnAppearRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoHiddenWakeAi(monster.AI))
+                    AppendHiddenWakeRuleSet(sb, monster.AI == 132, monster.AttackDelay);
+                else if (IsAutoPlantAmbushAi(monster.AI))
+                    AppendPlantAmbushRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoReviveAi(monster.AI))
+                    AppendReviveMeleeRuleSet(sb, monster.AttackDelay);
+                else if (TryGetAutoBossRange(monster.AI, out int bossRange))
+                    AppendBossRangeRuleSet(sb, bossRange, monster.AttackDelay);
+                else if (TryGetAutoSamaProfile(monster.AI, out Element samaElement, out MagicType samaProjectile, out MagicType samaLine, out MagicType samaArea, out MagicType samaBurst, out MagicType samaEmpowered))
+                    AppendSamaGuardianRuleSet(sb, samaElement, samaProjectile, samaLine, samaArea, samaBurst, samaEmpowered, monster.AttackDelay);
+                else if (TryGetAutoIcySpiritProfile(monster.AI, out bool drainMp))
+                    AppendIcySpiritRuleSet(sb, drainMp, monster.AttackDelay);
+                else if (IsAutoGhostMageAi(monster.AI))
+                    AppendGhostMageRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoWedgeMothLarvaAi(monster.AI))
+                    AppendWedgeMothLarvaRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoArachnidGrazerAi(monster.AI))
+                    AppendArachnidGrazerRuleSet(sb, monster.AttackDelay, monster.AI == 144 ? MonsterFlag.SuperLarva : MonsterFlag.Larva, monster.AI == 144 ? 3 : 1);
+                else if (IsAutoTornadoAi(monster.AI))
+                    AppendTornadoRuleSet(sb);
+                else if (TryGetAutoPortalProfile(monster.AI, out string specialRegion, out bool includeMonsters, out string openMessage, out string closeMessage))
+                    AppendPortalRuleSet(sb, specialRegion, includeMonsters, openMessage, closeMessage, monster.ViewRange);
+                else if (IsAutoBanyoLordGuzakAi(monster.AI))
+                    AppendBanyoLordGuzakRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoBanyoCaptainAi(monster.AI))
+                    AppendBanyoCaptainRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoEscortCommanderAi(monster.AI))
+                    AppendEscortCommanderRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoWingedHorrorAi(monster.AI))
+                    AppendWingedHorrorRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoChaosKnightAi(monster.AI))
+                    AppendChaosKnightRuleSet(sb, monster.AttackDelay);
+                else if (TryGetAutoJinchonDevilProfile(monster.AI, out int deathCloudCooldown, out int deathCloudDuration, out int deathCloudDurationRandom))
+                    AppendJinchonDevilRuleSet(sb, monster.AttackDelay, deathCloudCooldown, deathCloudDuration, deathCloudDurationRandom);
+                else if (IsAutoSamaScorcerAi(monster.AI))
+                    AppendSamaScorcerRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoSamaProphetAi(monster.AI))
+                    AppendSamaProphetRuleSet(sb, monster.AttackDelay, monster.ViewRange);
+                else if (IsAutoQueenOfDawnAi(monster.AI))
+                    AppendQueenOfDawnRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoQuartzTurtleSubAi(monster.AI))
+                    AppendQuartzTurtleSubRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoMonasteryBossAi(monster.AI))
+                    AppendMonasteryBossRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoHealerAntAi(monster.AI))
+                    AppendHealerAntRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoLordNiJaeAi(monster.AI))
+                    AppendLordNiJaeRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoFrostLordHwaAi(monster.AI))
+                    AppendFrostLordHwaRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoSunFeralWarriorAi(monster.AI))
+                    AppendSunFeralWarriorRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoFerociousIceTigerAi(monster.AI))
+                    AppendFerociousIceTigerRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoDragonQueenAi(monster.AI))
+                    AppendDragonQueenRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoDragonLordAi(monster.AI))
+                    AppendDragonLordRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoArchLichTaeduAi(monster.AI))
+                    AppendArchLichTaeduRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoEnragedArchLichTaeduAi(monster.AI))
+                    AppendEnragedArchLichTaeduRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoZumaKingAi(monster.AI))
+                    AppendZumaKingRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoEnragedLordNiJaeAi(monster.AI))
+                    AppendEnragedLordNiJaeRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoQuartzTreeAi(monster.AI))
+                    AppendQuartzTreeRuleSet(sb);
+                else if (IsAutoDoomClawAi(monster.AI))
+                    AppendDoomClawRuleSet(sb, monster.AttackDelay);
+                else if (IsAutoDamageProxyAi(monster.AI))
+                    AppendDamageProxyRuleSet(sb);
+                else if (TryGetAutoSimpleCaster(monster.AI, out MagicType casterMagic, out Element casterElement, out bool casterTravel))
+                    AppendSimpleCasterRuleSet(sb, casterMagic, casterElement, casterTravel, monster.AttackDelay);
+                else if (TryGetAutoLightningChoiceCaster(monster.AI))
+                    AppendLightningChoiceCasterRuleSet(sb, monster.AttackDelay);
+                else if (TryGetAutoFixedMassRange(monster.AI, out int fixedRange, out MagicType fixedMagic, out Element fixedElement))
+                    AppendFixedMassRangeRuleSet(sb, fixedRange, fixedMagic, fixedElement, monster.AttackDelay);
+                else if (TryGetAutoLineAoEProfile(monster.AI, out int aoeDistance, out int minOffset, out int maxOffset, out MagicType aoeMagic, out Element aoeElement))
+                    AppendLineAoERuleSet(sb, aoeDistance, minOffset, maxOffset, aoeMagic, aoeElement, monster.AttackDelay);
+                else if (IsAutoDeathSelfSpawnAi(monster.AI))
+                    AppendDeathSelfSpawnRuleSet(sb, monster.MonsterName, monster.AttackDelay);
+                else if (monster.AI == 53)
+                    AppendShinsuRuleSet(sb, monster.AttackDelay);
+                else if (monster.AI == 133)
+                    AppendTerracottaSubRuleSet(sb, monster.AttackDelay);
+                else if (monster.AI == 134)
+                    AppendTerracottaBossRuleSet(sb, monster.AttackDelay);
+                else if (TryGetAutoTeleportMelee(monster.AI, out bool bonusDamage, out int teleportCooldown))
+                    AppendTeleportMeleeRuleSet(sb, bonusDamage, teleportCooldown, monster.AttackDelay);
+                else if (TryGetAutoRangedDistance(monster.AI, out int rangedDistance))
+                    AppendRangedKiteRuleSet(sb, rangedDistance, monster.AttackDelay, monster.AI == 20);
+                else if (TryGetAutoLineDistance(monster.AI, out int lineAttackDistance))
+                    AppendLineAttackRuleSet(sb, lineAttackDistance);
+                else if (TryGetAutoRangeSwitchDistance(monster.AI, out int rangeSwitchDistance))
+                    AppendRangeSwitchRuleSet(sb, rangeSwitchDistance, GetAutoRangeCooldown(monster.AI));
+                else if (TryGetAutoAreaMelee(monster.AI, out int areaRadius, out bool areaPoison))
+                    AppendAreaMeleeRuleSet(sb, areaRadius, areaPoison, monster.AttackDelay);
+                else if (IsAutoMagicWeaknessAi(monster.AI))
+                    AppendMagicWeaknessRuleSet(sb, monster.AttackDelay);
+                else
+                    AppendBasicMeleeRuleSet(sb);
+            }
+        }
+
+        private static void AddMonsterExportTodo(CustomSystemTextReport report, MonsterInfo monster, CustomMonsterVisualInfo visual, CustomMonsterBehaviorInfo behavior, CustomMonsterAiMigrationRow migration, string fileName)
+        {
+            string path = $"Monsters\\{fileName}.txt";
+
+            if (visual == null)
+                report.TodoDetails.Add($"怪物 `{monster.MonsterName}` -> {path}: 没有 CustomMonsterVisualInfo，仍依赖 MonsterImage={monster.Image} 的旧客户端硬编码模型；如需完全自定义 ZL 帧段，请补 [Visual]/[Animation]。");
+
+            if (behavior == null && !IsAutoMigratedBasicBehavior(monster.AI))
+            {
+                string suggestion = migration == null
+                    ? "当前没有 AI 迁移建议。"
+                    : $"建议 `{migration.SuggestedTemplate}`，优先级 {migration.Priority}，当前实现 `{migration.CurrentImplementation}`。";
+                report.TodoDetails.Add($"怪物 `{monster.MonsterName}` -> {path}: 没有 CustomMonsterBehaviorInfo，已生成 Template=None 的惰性迁移骨架；导入后仍走旧 C# AI，原 AI={monster.AI} 尚未无损迁移。{suggestion}");
+            }
+        }
+
+        private static void AppendBasicMeleeRuleSet(StringBuilder sb)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MoveToTarget");
+            sb.AppendLine("Type=MoveToTarget");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=StepAway");
+            sb.AppendLine("Type=RandomStepWhenSameCell");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MeleeHit");
+            sb.AppendLine("Type=MeleeAttack");
+            sb.AppendLine("Distance=1");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=StepWhenStacked");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=SameCellAsTarget");
+            sb.AppendLine("Action=StepAway");
+            sb.AppendLine("Priority=10");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=MoveWhenFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetOutOfAttackRange");
+            sb.AppendLine("Action=MoveToTarget");
+            sb.AppendLine("Priority=20");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=AttackWhenNear");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetInAttackRange");
+            sb.AppendLine("Action=MeleeHit");
+            sb.AppendLine("Priority=30");
+        }
+
+        private static void AppendRangedKiteRuleSet(StringBuilder sb, int range, int attackDelay, bool fearPause)
+        {
+            int keepDistance = Math.Max(2, range - 1);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MoveToTarget");
+            sb.AppendLine("Type=MoveToTarget");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=KeepDistance");
+            sb.AppendLine("Type=MoveAwayFromTarget");
+            sb.AppendLine("Target=CurrentTarget");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=Shoot");
+            sb.AppendLine("Type=RangeAttack");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine($"Distance={range}");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("Travel=True");
+            sb.AppendLine("Options=RangePacket=True");
+
+            if (fearPause)
+            {
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine("Name=FearPause");
+                sb.AppendLine("Type=DelayActionTime");
+                sb.AppendLine("Delay=3000");
+                sb.AppendLine("Options=ActionChance=17");
+
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine("Name=ShootAndMaybePause");
+                sb.AppendLine("Type=Sequence");
+                sb.AppendLine("Options=Shoot:1,FearPause:1");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=KeepDistanceWhenClose");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceBelow");
+            sb.AppendLine($"Value={keepDistance}");
+            sb.AppendLine("Action=KeepDistance");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Cooldown=500");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=ShootWhenInRange");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceBelow");
+            sb.AppendLine($"Value={range}");
+            sb.AppendLine($"Action={(fearPause ? "ShootAndMaybePause" : "Shoot")}");
+            sb.AppendLine("Priority=20");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=MoveWhenFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceAbove");
+            sb.AppendLine($"Value={range}");
+            sb.AppendLine("Action=MoveToTarget");
+            sb.AppendLine("Priority=30");
+        }
+
+        private static void AppendSelfDestructRuleSet(StringBuilder sb, int range)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MoveToTarget");
+            sb.AppendLine("Type=MoveToTarget");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=KillSelf");
+            sb.AppendLine("Type=KillSelf");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=DeathBurst");
+            sb.AppendLine("Type=MassAreaDamage");
+            sb.AppendLine("Target=SelfRadius");
+            sb.AppendLine($"Radius={range}");
+            sb.AppendLine("Delay=800");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("Options=AllowDead=True,IgnoreAttackCooldown=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=DieWithoutTarget");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetMissing");
+            sb.AppendLine("Action=KillSelf");
+            sb.AppendLine("Priority=5");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=ExplodeWhenClose");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceBelow");
+            sb.AppendLine($"Value={range}");
+            sb.AppendLine("Action=KillSelf");
+            sb.AppendLine("Priority=10");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=MoveWhenFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceAbove");
+            sb.AppendLine($"Value={range}");
+            sb.AppendLine("Action=MoveToTarget");
+            sb.AppendLine("Priority=20");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=BurstOnDeath");
+            sb.AppendLine("Trigger=OnDeath");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=DeathBurst");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+        }
+
+        private static void AppendSpawnAppearRuleSet(StringBuilder sb, int attackDelay)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=StartHidden");
+            sb.AppendLine("Type=Hide");
+            sb.AppendLine("Options=StateOnly=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpawnEffect");
+            sb.AppendLine("Type=MapEffect");
+            sb.AppendLine("Target=Self");
+            sb.AppendLine("Options=Effect=SummonSkeleton");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=Appear");
+            sb.AppendLine("Type=Show");
+            sb.AppendLine("Options=ForcePacket=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ScheduleAppear");
+            sb.AppendLine("Type=ScheduleAction");
+            sb.AppendLine("Delay=1000");
+            sb.AppendLine("Options=Appear:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpawnSequence");
+            sb.AppendLine("Type=Sequence");
+            sb.AppendLine("Options=StartHidden:1,SpawnEffect:1,ScheduleAppear:1");
+
+            AppendMeleeMovementActions(sb, includeStepAway: false);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=SpawnVisual");
+            sb.AppendLine("Trigger=OnSpawn");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=SpawnSequence");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+
+            AppendVisibleMeleeRules(sb, attackDelay);
+        }
+
+        private static void AppendHiddenWakeRuleSet(StringBuilder sb, bool canPhase, int attackDelay)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=StartHidden");
+            sb.AppendLine("Type=Hide");
+            sb.AppendLine("Options=StateOnly=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=WakeGroup");
+            sb.AppendLine("Type=WakeNearby");
+            sb.AppendLine("Radius=7");
+
+            if (canPhase)
+            {
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine("Name=PhaseHidePacket");
+                sb.AppendLine("Type=Hide");
+                sb.AppendLine("Options=PacketOnly=True");
+
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine("Name=PhaseHideState");
+                sb.AppendLine("Type=Hide");
+                sb.AppendLine("Options=StateOnly=True");
+
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine("Name=SchedulePhaseHideState");
+                sb.AppendLine("Type=ScheduleAction");
+                sb.AppendLine("Delay=900");
+                sb.AppendLine("Options=PhaseHideState:1");
+
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine("Name=PhaseOut");
+                sb.AppendLine("Type=Sequence");
+                sb.AppendLine("Options=PhaseHidePacket:1,SchedulePhaseHideState:1");
+            }
+
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=HideOnSpawn");
+            sb.AppendLine("Trigger=OnSpawn");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=StartHidden");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=WakeWhenClose");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=Hidden");
+            sb.AppendLine("Conditions=TargetDistanceBelow:3");
+            sb.AppendLine("Action=WakeGroup");
+            sb.AppendLine("Priority=10");
+
+            if (canPhase)
+            {
+                sb.AppendLine();
+                sb.AppendLine("[AIRule]");
+                sb.AppendLine("Name=PhaseOutWhenFar");
+                sb.AppendLine("Trigger=OnTargetTick");
+                sb.AppendLine("Condition=Visible");
+                sb.AppendLine("Conditions=TargetDistanceAbove:4");
+                sb.AppendLine("Action=PhaseOut");
+                sb.AppendLine("Priority=15");
+                sb.AppendLine("Chance=3");
+                sb.AppendLine("Cooldown=5000");
+            }
+
+            AppendVisibleMeleeRules(sb, attackDelay);
+        }
+
+        private static void AppendPlantAmbushRuleSet(StringBuilder sb, int attackDelay)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=StartHidden");
+            sb.AppendLine("Type=Hide");
+            sb.AppendLine("Options=StateOnly=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ShowSelf");
+            sb.AppendLine("Type=Show");
+            sb.AppendLine("Options=ForcePacket=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=HideSelf");
+            sb.AppendLine("Type=Hide");
+            sb.AppendLine("Options=ForcePacket=True");
+
+            AppendMeleeMovementActions(sb, includeStepAway: false);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=HideOnSpawn");
+            sb.AppendLine("Trigger=OnSpawn");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=StartHidden");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=ShowWhenClose");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=Hidden");
+            sb.AppendLine("Conditions=TargetDistanceBelow:1");
+            sb.AppendLine("Action=ShowSelf");
+            sb.AppendLine("Priority=10");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=HideWhenFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=Visible");
+            sb.AppendLine("Conditions=TargetDistanceAbove:5");
+            sb.AppendLine("Action=HideSelf");
+            sb.AppendLine("Priority=15");
+            sb.AppendLine("Cooldown=4000");
+
+            AppendVisibleMeleeRules(sb, attackDelay);
+        }
+
+        private static void AppendReviveMeleeRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendBasicMeleeRuleSet(sb);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=Revive");
+            sb.AppendLine("Type=ReviveSelf");
+            sb.AppendLine("RandomCount=3");
+            sb.AppendLine("Delay=3000");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("Options=HealthDecay=True,SuppressDrops=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=ReviveAfterDeath");
+            sb.AppendLine("Trigger=OnDeath");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=Revive");
+            sb.AppendLine("Priority=1");
+        }
+
+        private static void AppendBossRangeRuleSet(StringBuilder sb, int range, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=TargetAreaHit");
+            sb.AppendLine("Type=RangeAttack");
+            sb.AppendLine("Target=TargetRadius");
+            sb.AppendLine("Radius=2");
+            sb.AppendLine("MaxTargets=8");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("Options=RangePacket=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MassCyclone");
+            sb.AppendLine("Type=MassAreaDamage");
+            sb.AppendLine("Magic=Cyclone");
+            sb.AppendLine($"Radius={range}");
+            sb.AppendLine("MaxTargets=10");
+            sb.AppendLine("TargetChance=75");
+            sb.AppendLine("EmptyLocationChance=3");
+            sb.AppendLine("Delay=500");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("Element=Wind");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=RangeChoice");
+            sb.AppendLine("Type=WeightedChoice");
+            sb.AppendLine("Options=MassCyclone:1,TargetAreaHit:2");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=OutOfRangeTryRange");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetOutOfAttackRange");
+            sb.AppendLine("Action=RangeChoice");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Chance=33");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=SameCellStepAway");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=SameCellAsTarget");
+            sb.AppendLine("Action=StepAway");
+            sb.AppendLine("Priority=20");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=OutOfRangeMove");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetOutOfAttackRange");
+            sb.AppendLine("Action=MoveToTarget");
+            sb.AppendLine("Priority=30");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=InRangeMelee");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetInAttackRange");
+            sb.AppendLine("Action=MeleeHit");
+            sb.AppendLine("Priority=40");
+            sb.AppendLine("Chance=80");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=CanAttackTryRange");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=CanAttack");
+            sb.AppendLine("Action=RangeChoice");
+            sb.AppendLine("Priority=50");
+            sb.AppendLine("Chance=20");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+        }
+
+        private static void AppendTeleportMeleeRuleSet(StringBuilder sb, bool bonusDamage, int teleportCooldown, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=TeleportNearTarget");
+            sb.AppendLine("Type=TeleportNearTarget");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("MinOffset=1");
+            sb.AppendLine("Radius=1");
+
+            if (bonusDamage)
+            {
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine("Name=SetBonus");
+                sb.AppendLine("Type=SetCounter");
+                sb.AppendLine("CounterName=Bonus");
+                sb.AppendLine("FixedCount=1");
+
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine("Name=ClearBonus");
+                sb.AppendLine("Type=SetCounter");
+                sb.AppendLine("CounterName=Bonus");
+                sb.AppendLine("FixedCount=0");
+
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine("Name=BonusMelee");
+                sb.AppendLine("Type=MeleeAttack");
+                sb.AppendLine("Distance=1");
+                sb.AppendLine("Delay=400");
+                sb.AppendLine("Power=DC");
+                sb.AppendLine("PowerRate=200");
+
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine("Name=BonusHitAndClear");
+                sb.AppendLine("Type=Sequence");
+                sb.AppendLine("Options=BonusMelee:1,ClearBonus:1");
+
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine("Name=TeleportAndPrime");
+                sb.AppendLine("Type=Sequence");
+                sb.AppendLine("Options=TeleportNearTarget:1,SetBonus:1");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=TryTeleportWhenFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceAbove");
+            sb.AppendLine("Value=1");
+            sb.AppendLine($"Action={(bonusDamage ? "TeleportAndPrime" : "TeleportNearTarget")}");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Chance=14");
+            sb.AppendLine($"Cooldown={Math.Max(1000, teleportCooldown)}");
+
+            if (bonusDamage)
+            {
+                sb.AppendLine();
+                sb.AppendLine("[AIRule]");
+                sb.AppendLine("Name=UseBonusMelee");
+                sb.AppendLine("Trigger=OnTargetTick");
+                sb.AppendLine("Condition=CounterEquals");
+                sb.AppendLine("CounterName=Bonus");
+                sb.AppendLine("Value=1");
+                sb.AppendLine("Conditions=TargetInAttackRange");
+                sb.AppendLine("Action=BonusHitAndClear");
+                sb.AppendLine("Priority=15");
+                sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+            }
+
+            AppendStandardMeleeRules(sb, attackDelay, bonusDamage ? 20 : 15);
+        }
+
+        private static void AppendAreaMeleeRuleSet(StringBuilder sb, int radius, bool applyPoison, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            if (applyPoison)
+            {
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine("Name=ApplyGreenPoison");
+                sb.AppendLine("Type=ApplyPoison");
+                sb.AppendLine("Target=TargetRadius");
+                sb.AppendLine($"Radius={radius}");
+                sb.AppendLine("PoisonType=Green");
+                sb.AppendLine("Power=SC");
+                sb.AppendLine("TickRate=2000");
+                sb.AppendLine("Duration=20000");
+                sb.AppendLine("Options=OnHitChance=100");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=AreaHit");
+            sb.AppendLine("Type=MassAreaDamage");
+            sb.AppendLine("Target=SelfRadius");
+            sb.AppendLine($"Radius={radius}");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine(applyPoison ? "Options=OnHitAction=ApplyGreenPoison" : "Options=RangePacket=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=AreaWhenClose");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceBelow");
+            sb.AppendLine($"Value={radius}");
+            sb.AppendLine("Action=AreaHit");
+            sb.AppendLine("Priority=15");
+            sb.AppendLine(applyPoison ? "Chance=17" : "Chance=100");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+        }
+
+        private static void AppendMagicWeaknessRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendBasicMeleeRuleSet(sb);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ApplyMagicWeakness");
+            sb.AppendLine("Type=AddBuff");
+            sb.AppendLine("Target=SelfRadius");
+            sb.AppendLine("Radius=3");
+            sb.AppendLine("BuffType=MagicWeakness");
+            sb.AppendLine("Duration=10000");
+            sb.AppendLine("TickRate=0");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=DebuffNearby");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=CanAttack");
+            sb.AppendLine("Action=ApplyMagicWeakness");
+            sb.AppendLine("Priority=5");
+            sb.AppendLine($"Cooldown={Math.Max(10000, attackDelay)}");
+        }
+
+        private static void AppendSimpleCasterRuleSet(StringBuilder sb, MagicType magic, Element element, bool travel, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=CastAttack");
+            sb.AppendLine("Type=AttackMagic");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("Distance=9");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine($"Magic={magic}");
+            sb.AppendLine($"Element={element}");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine($"Travel={travel}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=CastWhenFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceAbove");
+            sb.AppendLine("Value=1");
+            sb.AppendLine("Conditions=TargetDistanceBelow:9;CanAttack");
+            sb.AppendLine("ConditionJoin=And");
+            sb.AppendLine("Action=CastAttack");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Chance=50");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+        }
+
+        private static void AppendLightningChoiceCasterRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=LightningBall");
+            sb.AppendLine("Type=AttackMagic");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("Distance=9");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Magic=LightningBall");
+            sb.AppendLine("Element=Lightning");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=67");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ThunderBolt");
+            sb.AppendLine("Type=AttackMagic");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("Distance=9");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Magic=ThunderBolt");
+            sb.AppendLine("Element=Lightning");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=LightningWave");
+            sb.AppendLine("Type=AttackAoE");
+            sb.AppendLine("Target=TargetRadius");
+            sb.AppendLine("Radius=1");
+            sb.AppendLine("Distance=9");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Magic=LightningWave");
+            sb.AppendLine("Element=Lightning");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=67");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=LightningChoice");
+            sb.AppendLine("Type=WeightedChoice");
+            sb.AppendLine("Options=LightningBall:1,ThunderBolt:1,LightningWave:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=CastLightningChoice");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceAbove");
+            sb.AppendLine("Value=1");
+            sb.AppendLine("Conditions=TargetDistanceBelow:9;CanAttack");
+            sb.AppendLine("ConditionJoin=And");
+            sb.AppendLine("Action=LightningChoice");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Chance=50");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+        }
+
+        private static void AppendSamaGuardianRuleSet(StringBuilder sb, Element element, MagicType projectile, MagicType line, MagicType area, MagicType burst, MagicType empowered, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=Projectile");
+            sb.AppendLine("Type=AttackMagic");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("Distance=10");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine($"Magic={projectile}");
+            sb.AppendLine($"Element={element}");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine($"Travel={projectile is MagicType.AdamantineFireBall or MagicType.IceBlades}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=LineSkill");
+            sb.AppendLine("Type=LineAoE");
+            sb.AppendLine("Distance=10");
+            sb.AppendLine("MinOffset=-2");
+            sb.AppendLine("MaxOffset=2");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine($"Magic={line}");
+            sb.AppendLine($"Element={element}");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SmallArea");
+            sb.AppendLine("Type=AttackAoE");
+            sb.AppendLine("Target=TargetRadius");
+            sb.AppendLine("Radius=2");
+            sb.AppendLine("Distance=10");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine($"Magic={area}");
+            sb.AppendLine($"Element={element}");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=BurstArea");
+            sb.AppendLine("Type=AttackAoE");
+            sb.AppendLine("Target=TargetRadius");
+            sb.AppendLine("Radius=3");
+            sb.AppendLine("Distance=10");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine($"Magic={burst}");
+            sb.AppendLine($"Element={element}");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            string options = "Projectile:1,LineSkill:1,SmallArea:1,BurstArea:1";
+            if (empowered != MagicType.None)
+            {
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine("Name=EmpoweredArea");
+                sb.AppendLine("Type=AttackAoE");
+                sb.AppendLine("Target=TargetRadius");
+                sb.AppendLine("Radius=3");
+                sb.AppendLine("Distance=10");
+                sb.AppendLine("Delay=400");
+                sb.AppendLine($"Magic={empowered}");
+                sb.AppendLine($"Element={element}");
+                sb.AppendLine("Power=DC");
+                sb.AppendLine("PowerRate=200");
+                options += ",EmpoweredArea:1";
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ElementChoice");
+            sb.AppendLine("Type=WeightedChoice");
+            sb.AppendLine($"Options={options}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=UseElementSkill");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=CanAttack");
+            sb.AppendLine("Conditions=TargetDistanceBelow:10");
+            sb.AppendLine("ConditionJoin=And");
+            sb.AppendLine("Action=ElementChoice");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Chance=20");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+        }
+
+        private static void AppendIcySpiritRuleSet(StringBuilder sb, bool drainMp, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=IceRange");
+            sb.AppendLine("Type=RangeAttack");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("Distance=8");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine($"Element={(drainMp ? Element.Dark : Element.Ice)}");
+            sb.AppendLine($"Options=RangePacket=True{(drainMp ? ",DrainMP=True,IgnoreShield=True" : string.Empty)}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=IceBurst");
+            sb.AppendLine("Type=AttackAoE");
+            sb.AppendLine("Target=TargetRadius");
+            sb.AppendLine("Radius=1");
+            sb.AppendLine("Distance=8");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Magic=MonsterIceStorm");
+            sb.AppendLine("Element=Ice");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=IceChoice");
+            sb.AppendLine("Type=WeightedChoice");
+            sb.AppendLine("Options=IceRange:1,IceBurst:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=UseIceWhenInRange");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceBelow");
+            sb.AppendLine("Value=8");
+            sb.AppendLine("Action=IceChoice");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+        }
+
+        private static void AppendFixedMassRangeRuleSet(StringBuilder sb, int range, MagicType magic, Element element, int attackDelay)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MassHit");
+            sb.AppendLine("Type=MassAreaDamage");
+            sb.AppendLine("Target=AllInView");
+            sb.AppendLine($"Radius={range}");
+            sb.AppendLine("Delay=500");
+            sb.AppendLine($"Magic={magic}");
+            sb.AppendLine($"Element={element}");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("MaxTargets=12");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=MassHitWhenTargetExists");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetExists");
+            sb.AppendLine("Action=MassHit");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+        }
+
+        private static void AppendDeathSelfSpawnRuleSet(StringBuilder sb, string monsterName, int attackDelay)
+        {
+            AppendBasicMeleeRuleSet(sb);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpawnSelfOnDeath");
+            sb.AppendLine("Type=SpawnMinions");
+            sb.AppendLine($"SpawnMonster={Quote(monsterName)}");
+            sb.AppendLine("FixedCount=20");
+            sb.AppendLine("Radius=10");
+            sb.AppendLine("MaxTargets=20");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=SpawnSelfOnDeath");
+            sb.AppendLine("Trigger=OnDeath");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=SpawnSelfOnDeath");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+        }
+
+        private static void AppendGhostMageRuleSet(StringBuilder sb, int attackDelay)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=StartHidden");
+            sb.AppendLine("Type=Hide");
+            sb.AppendLine("Options=StateOnly=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=WakeEffect");
+            sb.AppendLine("Type=MapEffect");
+            sb.AppendLine("Target=Self");
+            sb.AppendLine("Options=Effect=SummonSkeleton");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ShowSelf");
+            sb.AppendLine("Type=Show");
+            sb.AppendLine("Options=ForcePacket=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=WakeSequence");
+            sb.AppendLine("Type=Sequence");
+            sb.AppendLine("Options=WakeEffect:1,ShowSelf:1");
+
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=HideOnSpawn");
+            sb.AppendLine("Trigger=OnSpawn");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=StartHidden");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=WakeWhenNear");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=Hidden");
+            sb.AppendLine("Conditions=TargetDistanceBelow:5");
+            sb.AppendLine("ConditionJoin=And");
+            sb.AppendLine("Action=WakeSequence");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Cooldown=3000");
+
+            AppendVisibleMeleeRules(sb, attackDelay);
+        }
+
+        private static void AppendWedgeMothLarvaRuleSet(StringBuilder sb, int attackDelay)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=FaceTarget");
+            sb.AppendLine("Type=FaceTarget");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpawnLesserWedgeMoth");
+            sb.AppendLine("Type=SpawnMinions");
+            sb.AppendLine("FixedCount=1");
+            sb.AppendLine("Radius=1");
+            sb.AppendLine("Options=MonsterFlag=LesserWedgeMoth");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=AttackSequence");
+            sb.AppendLine("Type=Sequence");
+            sb.AppendLine("Options=FaceTarget:1,SpawnLesserWedgeMoth:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=SpawnWhenTargetExists");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetExists");
+            sb.AppendLine("Action=AttackSequence");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+        }
+
+        private static void AppendArachnidGrazerRuleSet(StringBuilder sb, int attackDelay, MonsterFlag spawnFlag, int spawnCount)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=FaceTarget");
+            sb.AppendLine("Type=FaceTarget");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpawnLarva");
+            sb.AppendLine("Type=SpawnMinions");
+            sb.AppendLine($"FixedCount={Math.Max(1, spawnCount)}");
+            sb.AppendLine("Radius=3");
+            sb.AppendLine($"Options=MonsterFlag={spawnFlag}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=AttackSequence");
+            sb.AppendLine("Type=Sequence");
+            sb.AppendLine("Options=FaceTarget:1,SpawnLarva:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=SpawnWhenTargetExists");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetExists");
+            sb.AppendLine("Action=AttackSequence");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+        }
+
+        private static void AppendTornadoRuleSet(StringBuilder sb)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=CollisionHit");
+            sb.AppendLine("Type=MassAreaDamage");
+            sb.AppendLine("Target=SelfRadius");
+            sb.AppendLine("Radius=1");
+            sb.AppendLine("Delay=100");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("Options=IgnoreAttackCooldown=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=RoamHazard");
+            sb.AppendLine("Type=HazardRoam");
+            sb.AppendLine("Options=ForwardChance=80,AttackWhenBlocked=True,AttackCurrentCell=True,AttackBlockedCell=False,CollisionAction=CollisionHit,TurnWhenBlocked=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=Expire");
+            sb.AppendLine("Type=DespawnSelf");
+            sb.AppendLine("Options=DecreaseAliveCount=False");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ScheduleExpire");
+            sb.AppendLine("Type=ScheduleAction");
+            sb.AppendLine("Delay=10000");
+            sb.AppendLine("Options=Expire:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=ScheduleExpireOnSpawn");
+            sb.AppendLine("Trigger=OnSpawn");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=ScheduleExpire");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=RoamEveryTick");
+            sb.AppendLine("Trigger=OnTick");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=RoamHazard");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Cooldown=1000");
+        }
+
+        private static void AppendPortalRuleSet(StringBuilder sb, string specialRegion, bool includeMonsters, string openMessage, string closeMessage, int viewRange)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=OpenMessage");
+            sb.AppendLine("Type=BroadcastMessage");
+            sb.AppendLine($"Options=Scope=Map,Message={Quote(openMessage)}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=CloseMessage");
+            sb.AppendLine("Type=BroadcastMessage");
+            sb.AppendLine($"Options=Scope=Map,Message={Quote(closeMessage)}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=TeleportNearby");
+            sb.AppendLine("Type=TeleportTargetsToRegion");
+            sb.AppendLine($"Radius={Math.Max(1, viewRange)}");
+            sb.AppendLine($"Options=SpecialRegion={specialRegion},Players=True,Monsters={includeMonsters},IncludeMonsters={includeMonsters},WildMonsters={includeMonsters},IncludeWildMonsters={includeMonsters},Pets={includeMonsters}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=DespawnPortal");
+            sb.AppendLine("Type=DespawnSelf");
+            sb.AppendLine("Options=DecreaseAliveCount=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=CloseAndDespawn");
+            sb.AppendLine("Type=Sequence");
+            sb.AppendLine("Options=CloseMessage:1,DespawnPortal:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ScheduleClose");
+            sb.AppendLine("Type=ScheduleAction");
+            sb.AppendLine("Delay=1200000");
+            sb.AppendLine("Options=CloseAndDespawn:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=OpenSequence");
+            sb.AppendLine("Type=Sequence");
+            sb.AppendLine("Options=OpenMessage:1,ScheduleClose:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=OpenOnSpawn");
+            sb.AppendLine("Trigger=OnSpawn");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=OpenSequence");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=TeleportNearbyTargets");
+            sb.AppendLine("Trigger=OnTick");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=TeleportNearby");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Cooldown=3000");
+        }
+
+        private static void AppendBanyoLordGuzakRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=TeleportNearTarget");
+            sb.AppendLine("Type=TeleportNearTarget");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("Radius=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=PurifyTargets");
+            sb.AppendLine("Type=PurifyTargets");
+            sb.AppendLine("Target=AllInView");
+            sb.AppendLine($"Radius={Config.MaxViewRange}");
+            sb.AppendLine("Delay=500");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpawnBanyoCaptains");
+            sb.AppendLine("Type=SpawnMinions");
+            sb.AppendLine("FixedCount=5");
+            sb.AppendLine("Radius=10");
+            sb.AppendLine("Options=MonsterFlag=BanyoCaptain,LeashRadius=10");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=PurifyEveryTwentySeconds");
+            sb.AppendLine("Trigger=OnTick");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=PurifyTargets");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Cooldown=20000");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=SpawnCaptains");
+            sb.AppendLine("Trigger=OnTick");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=SpawnBanyoCaptains");
+            sb.AppendLine("Priority=20");
+            sb.AppendLine("Cooldown=45000");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=TeleportWhenFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceAbove");
+            sb.AppendLine("Value=1");
+            sb.AppendLine("Action=TeleportNearTarget");
+            sb.AppendLine("Priority=30");
+            sb.AppendLine("Chance=14");
+            sb.AppendLine("Cooldown=5000");
+
+            AppendStandardMeleeRules(sb, attackDelay, 40);
+        }
+
+        private static void AppendBanyoCaptainRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=HeavyMelee");
+            sb.AppendLine("Type=MeleeAttack");
+            sb.AppendLine("Distance=1");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=200");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MeleeChoice");
+            sb.AppendLine("Type=WeightedChoice");
+            sb.AppendLine("Options=MeleeHit:9,HeavyMelee:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ThunderBolt");
+            sb.AppendLine("Type=AttackMagic");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("Distance=9");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Magic=ThunderBolt");
+            sb.AppendLine("Element=Lightning");
+            sb.AppendLine("Power=Fixed");
+            sb.AppendLine("FixedPower=150");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=PurifyTarget");
+            sb.AppendLine("Type=PurifyTargets");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("Distance=9");
+            sb.AppendLine("Delay=500");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=CastChoice");
+            sb.AppendLine("Type=WeightedChoice");
+            sb.AppendLine("Options=ThunderBolt:4,PurifyTarget:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=CastPeriodic");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceBelow");
+            sb.AppendLine("Value=9");
+            sb.AppendLine("Action=CastChoice");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Cooldown=3000");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=UseMeleeChoiceWhenNear");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetInAttackRange");
+            sb.AppendLine("Action=MeleeChoice");
+            sb.AppendLine("Priority=35");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+        }
+
+        private static void AppendEscortCommanderRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ThunderBolt");
+            sb.AppendLine("Type=AttackMagic");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("Distance=9");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Magic=ThunderBolt");
+            sb.AppendLine("Element=Lightning");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ThunderStorm");
+            sb.AppendLine("Type=MassAreaDamage");
+            sb.AppendLine("Target=SelfRadius");
+            sb.AppendLine("Radius=2");
+            sb.AppendLine("Delay=500");
+            sb.AppendLine("Magic=MonsterThunderStorm");
+            sb.AppendLine("Element=Lightning");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=CloseThunderChoice");
+            sb.AppendLine("Type=WeightedChoice");
+            sb.AppendLine("Options=ThunderStorm:1,ThunderBolt:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=CloseThunder");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceBelow");
+            sb.AppendLine("Value=2");
+            sb.AppendLine("Action=CloseThunderChoice");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Chance=50");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=FarThunder");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceBelow");
+            sb.AppendLine("Value=9");
+            sb.AppendLine("Action=ThunderBolt");
+            sb.AppendLine("Priority=20");
+            sb.AppendLine("Chance=50");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 30);
+        }
+
+        private static void AppendWingedHorrorRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MassLightningBall");
+            sb.AppendLine("Type=MassAreaDamage");
+            sb.AppendLine("Target=AllInView");
+            sb.AppendLine($"Radius={Config.MaxViewRange}");
+            sb.AppendLine("Delay=500");
+            sb.AppendLine("Magic=LightningBall");
+            sb.AppendLine("Element=Lightning");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=LightningBeam");
+            sb.AppendLine("Type=LineAoE");
+            sb.AppendLine("Distance=10");
+            sb.AppendLine("MinOffset=0");
+            sb.AppendLine("MaxOffset=8");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Magic=LightningBeam");
+            sb.AppendLine("Element=Lightning");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MassThunderBolt");
+            sb.AppendLine("Type=MassAreaDamage");
+            sb.AppendLine("Target=AllInView");
+            sb.AppendLine($"Radius={Config.MaxViewRange}");
+            sb.AppendLine("Delay=500");
+            sb.AppendLine("Magic=ThunderBolt");
+            sb.AppendLine("Element=Lightning");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("TargetChance=50");
+            sb.AppendLine("EmptyLocationChance=2");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=RangeChoice");
+            sb.AppendLine("Type=WeightedChoice");
+            sb.AppendLine("Options=MassLightningBall:1,LightningBeam:1,MassThunderBolt:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=UseRangeChoice");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=CanAttack");
+            sb.AppendLine("Action=RangeChoice");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Chance=50");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+        }
+
+        private static void AppendChaosKnightRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=PoisonousCloud");
+            sb.AppendLine("Type=SpawnSpellObject");
+            sb.AppendLine("Target=SelfRadius");
+            sb.AppendLine("Radius=2");
+            sb.AppendLine("Magic=PoisonousCloud");
+            sb.AppendLine("FixedCount=1");
+            sb.AppendLine("FixedPower=20");
+            sb.AppendLine("TickRate=20000");
+            sb.AppendLine("Options=Effect=PoisonousCloud,VisibleOriginOnly=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=CastPoisonousCloud");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetInAttackRange");
+            sb.AppendLine("Action=PoisonousCloud");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Cooldown=20000");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+        }
+
+        private static void AppendJinchonDevilRuleSet(StringBuilder sb, int attackDelay, int deathCloudCooldown, int deathCloudDuration, int deathCloudDurationRandom)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=DeathCloud");
+            sb.AppendLine("Type=SpawnSpellObject");
+            sb.AppendLine("Target=AllInView");
+            sb.AppendLine("Radius=2");
+            sb.AppendLine("Duration=" + deathCloudDuration);
+            sb.AppendLine("Magic=None");
+            sb.AppendLine("Options=Effect=MonsterDeathCloud,VisibleOriginOnly=True,BroadcastMagic=True,PerTarget=True" + (deathCloudDurationRandom > 0 ? $",DurationRandom={deathCloudDurationRandom}" : string.Empty));
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=LineHit");
+            sb.AppendLine("Type=LineAttack");
+            sb.AppendLine("Distance=3");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=CloseLineChoice");
+            sb.AppendLine("Type=WeightedChoice");
+            sb.AppendLine("Options=LineHit:1,MeleeHit:2");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=CastDeathCloud");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=CanAttack");
+            sb.AppendLine("Action=DeathCloud");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine($"Cooldown={deathCloudCooldown}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=LineWhenAligned");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetInLine");
+            sb.AppendLine("Value=3");
+            sb.AppendLine("Action=CloseLineChoice");
+            sb.AppendLine("Priority=20");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 30);
+        }
+
+        private static void AppendSamaScorcerRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=TeleportTargetNearSelf");
+            sb.AppendLine("Type=TeleportTarget");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("Radius=2");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=PullDistantTarget");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceAbove");
+            sb.AppendLine("Value=5");
+            sb.AppendLine("Action=TeleportTargetNearSelf");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Chance=20");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+        }
+
+        private static void AppendSamaProphetRuleSet(StringBuilder sb, int attackDelay, int viewRange)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpawnSamaScorcer");
+            sb.AppendLine("Type=SpawnMinions");
+            sb.AppendLine("FixedCount=1");
+            sb.AppendLine("Radius=4");
+            sb.AppendLine("Options=MonsterFlag=SamaSorcerer,OriginDirection=DownLeft,OriginDistance=5");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=RecallSamaScorcer");
+            sb.AppendLine("Type=RecallMonstersByFlag");
+            sb.AppendLine("Radius=1");
+            sb.AppendLine($"Distance={Math.Max(1, viewRange - 3)}");
+            sb.AppendLine("Options=MonsterFlag=SamaSorcerer,OriginDirection=DownLeft,OriginDistance=2");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=TeleportTargetNearGuard");
+            sb.AppendLine("Type=TeleportTarget");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("Radius=1");
+            sb.AppendLine("Options=OriginDirection=DownLeft,OriginDistance=2");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ProphetFire");
+            sb.AppendLine("Type=AttackAoE");
+            sb.AppendLine("Target=CurrentTargetLocation");
+            sb.AppendLine("Radius=1");
+            sb.AppendLine("Distance=15");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Magic=SamaProphetFire");
+            sb.AppendLine("Element=Fire");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ProphetWind");
+            sb.AppendLine("Type=AttackAoE");
+            sb.AppendLine("Target=CurrentTargetLocation");
+            sb.AppendLine("Radius=1");
+            sb.AppendLine("Distance=15");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Magic=SamaProphetWind");
+            sb.AppendLine("Element=Ice");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ProphetLightning");
+            sb.AppendLine("Type=AttackAoE");
+            sb.AppendLine("Target=CurrentTargetLocation");
+            sb.AppendLine("Radius=1");
+            sb.AppendLine("Distance=15");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Magic=SamaProphetLightning");
+            sb.AppendLine("Element=Lightning");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ProphetChoice");
+            sb.AppendLine("Type=WeightedChoice");
+            sb.AppendLine("Options=ProphetFire:1,ProphetWind:1,ProphetLightning:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=SpawnGuardOnSpawn");
+            sb.AppendLine("Trigger=OnSpawn");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=SpawnSamaScorcer");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=RecallGuard");
+            sb.AppendLine("Trigger=OnTick");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=RecallSamaScorcer");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Cooldown=10000");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=PullDistantTarget");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceAbove");
+            sb.AppendLine("Value=5");
+            sb.AppendLine("Action=TeleportTargetNearGuard");
+            sb.AppendLine("Priority=20");
+            sb.AppendLine("Chance=20");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=CastProphetSkill");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceBelow");
+            sb.AppendLine("Value=15");
+            sb.AppendLine("Action=ProphetChoice");
+            sb.AppendLine("Priority=30");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+        }
+
+        private static void AppendQueenOfDawnRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=TeleportAllTargetsRandom");
+            sb.AppendLine("Type=TeleportTargetsRandom");
+            sb.AppendLine("Options=AllMap=True,Attempts=25");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=TeleportNearTarget");
+            sb.AppendLine("Type=TeleportNearTarget");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("Radius=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=CloseAreaHit");
+            sb.AppendLine("Type=MassAreaDamage");
+            sb.AppendLine("Target=SelfRadius");
+            sb.AppendLine("Radius=2");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=AttackChoice");
+            sb.AppendLine("Type=WeightedChoice");
+            sb.AppendLine("Options=MeleeHit:4,CloseAreaHit:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=TeleportAllTargetsEveryMinute");
+            sb.AppendLine("Trigger=OnTick");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=TeleportAllTargetsRandom");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Cooldown=60000");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=TeleportNearTargetWhenFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceAbove");
+            sb.AppendLine("Value=1");
+            sb.AppendLine("Action=TeleportNearTarget");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Chance=10");
+            sb.AppendLine("Cooldown=1000");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=UseAttackChoice");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetInAttackRange");
+            sb.AppendLine("Action=AttackChoice");
+            sb.AppendLine("Priority=20");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 30);
+        }
+
+        private static void AppendQuartzTurtleSubRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpawnQuartzMiniTurtles");
+            sb.AppendLine("Type=SpawnMinions");
+            sb.AppendLine("FixedCount=10");
+            sb.AppendLine("Radius=10");
+            sb.AppendLine("Options=MonsterFlag=QuartzMiniTurtle");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=SpawnMiniTurtles");
+            sb.AppendLine("Trigger=OnTick");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=SpawnQuartzMiniTurtles");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Cooldown=20000");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+        }
+
+        private static void AppendMonasteryBossRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=GreenSludgeBall");
+            sb.AppendLine("Type=AttackMagic");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("Distance=9");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Magic=GreenSludgeBall");
+            sb.AppendLine("Element=Wind");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("Travel=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpawnSacrificeOnDeath");
+            sb.AppendLine("Type=SpawnMinions");
+            sb.AppendLine("FixedCount=1");
+            sb.AppendLine("Radius=6");
+            sb.AppendLine("Options=MonsterFlag=Sacrifice");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=CastGreenSludgeBall");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceBelow");
+            sb.AppendLine("Value=9");
+            sb.AppendLine("Action=GreenSludgeBall");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=SpawnSacrificeOnDeath");
+            sb.AppendLine("Trigger=OnDeath");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=SpawnSacrificeOnDeath");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+        }
+
+        private static void AppendShinsuRuleSet(StringBuilder sb, int attackDelay)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=StartHidden");
+            sb.AppendLine("Type=Hide");
+            sb.AppendLine("Options=StateOnly=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpawnEffect");
+            sb.AppendLine("Type=MapEffect");
+            sb.AppendLine("Target=Self");
+            sb.AppendLine("Options=Effect=SummonShinsu");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=Appear");
+            sb.AppendLine("Type=Show");
+            sb.AppendLine("Options=ForcePacket=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ScheduleAppear");
+            sb.AppendLine("Type=ScheduleAction");
+            sb.AppendLine("Delay=1000");
+            sb.AppendLine("Options=Appear:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpawnSequence");
+            sb.AppendLine("Type=Sequence");
+            sb.AppendLine("Options=StartHidden:1,SpawnEffect:1,ScheduleAppear:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MoveToTarget");
+            sb.AppendLine("Type=MoveToTarget");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=LineHit");
+            sb.AppendLine("Type=LineAttack");
+            sb.AppendLine("Distance=2");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=SpawnVisual");
+            sb.AppendLine("Trigger=OnSpawn");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=SpawnSequence");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=LineWhenAligned");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=Visible");
+            sb.AppendLine("Conditions=TargetInLine:2");
+            sb.AppendLine("ConditionJoin=And");
+            sb.AppendLine("Action=LineHit");
+            sb.AppendLine("Priority=20");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=MoveWhenNotAligned");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=Visible");
+            sb.AppendLine("Conditions=TargetOutOfLine:2");
+            sb.AppendLine("ConditionJoin=And");
+            sb.AppendLine("Action=MoveToTarget");
+            sb.AppendLine("Priority=30");
+        }
+
+        private static void AppendTerracottaSubRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendHiddenWakeRuleSet(sb, canPhase: true, attackDelay);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ConeHit");
+            sb.AppendLine("Type=LineAttack");
+            sb.AppendLine("Distance=2");
+            sb.AppendLine("MinOffset=-1");
+            sb.AppendLine("MaxOffset=1");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=ConeWhenVisibleClose");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=Visible");
+            sb.AppendLine("Conditions=TargetDistanceBelow:2");
+            sb.AppendLine("ConditionJoin=And");
+            sb.AppendLine("Action=ConeHit");
+            sb.AppendLine("Priority=35");
+            sb.AppendLine("Chance=50");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+        }
+
+        private static void AppendTerracottaBossRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=DarkLine");
+            sb.AppendLine("Type=LineAoE");
+            sb.AppendLine("Distance=12");
+            sb.AppendLine("MinOffset=1");
+            sb.AppendLine("MaxOffset=1");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Magic=None");
+            sb.AppendLine("Element=Dark");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MeleeArea");
+            sb.AppendLine("Type=MassAreaDamage");
+            sb.AppendLine("Target=TargetRadius");
+            sb.AppendLine("Radius=2");
+            sb.AppendLine("Distance=3");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=MC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=AttackChoice");
+            sb.AppendLine("Type=WeightedChoice");
+            sb.AppendLine("Options=DarkLine:4,MeleeArea:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=AttackWhenInRange");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceBelow");
+            sb.AppendLine("Value=11");
+            sb.AppendLine("Action=AttackChoice");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+        }
+
+        private static void AppendLineAoERuleSet(StringBuilder sb, int distance, int minOffset, int maxOffset, MagicType magic, Element element, int attackDelay)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=LineAoE");
+            sb.AppendLine("Type=LineAoE");
+            sb.AppendLine($"Distance={distance}");
+            sb.AppendLine($"MinOffset={minOffset}");
+            sb.AppendLine($"MaxOffset={maxOffset}");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine($"Magic={magic}");
+            sb.AppendLine($"Element={element}");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=LineAoEWhenTargetExists");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetExists");
+            sb.AppendLine("Action=LineAoE");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+        }
+
+        private static void AppendHealerAntRuleSet(StringBuilder sb, int attackDelay)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SearchInjuredAlly");
+            sb.AppendLine("Type=SearchTarget");
+            sb.AppendLine("Target=LowestHealthAllyInView");
+            sb.AppendLine($"Radius={Globals.MagicRange}");
+            sb.AppendLine("Options=SearchAllies=True,RequireInjured=True,RequireMissingBuff=Heal");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MoveToTarget");
+            sb.AppendLine("Type=MoveToTarget");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=HealAlly");
+            sb.AppendLine("Type=AddBuff");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("BuffType=Heal");
+            sb.AppendLine("Duration=86400000");
+            sb.AppendLine("TickRate=1000");
+            sb.AppendLine("Options=RequireInjured=True,RequireMissingBuff=Heal,BuffStatsFromSelf=Healing:Healing:100|HealingCap:HealingCap:100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ClearTarget");
+            sb.AppendLine("Type=ClearTarget");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=HealAndClear");
+            sb.AppendLine("Type=Sequence");
+            sb.AppendLine("Options=HealAlly:1,ClearTarget:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=FindAllyWhenIdle");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetMissing");
+            sb.AppendLine("Action=SearchInjuredAlly");
+            sb.AppendLine("Priority=10");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=MoveToAlly");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetOutOfAttackRange");
+            sb.AppendLine("Action=MoveToTarget");
+            sb.AppendLine("Priority=20");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=HealWhenInRange");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetInAttackRange");
+            sb.AppendLine("Action=HealAndClear");
+            sb.AppendLine("Priority=30");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+        }
+
+        private static void AppendLordNiJaeRuleSet(StringBuilder sb, int attackDelay)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=StartHidden");
+            sb.AppendLine("Type=Hide");
+            sb.AppendLine("Options=StateOnly=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ShowSelf");
+            sb.AppendLine("Type=Show");
+            sb.AppendLine("Options=ForcePacket=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=HideSelf");
+            sb.AppendLine("Type=Hide");
+            sb.AppendLine("Options=ForcePacket=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=GreenPoison");
+            sb.AppendLine("Type=ApplyPoison");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("PoisonType=Green");
+            sb.AppendLine("Power=SC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("Duration=20000");
+            sb.AppendLine("TickRate=2000");
+            sb.AppendLine("Options=ActionChance=20");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ParalysisPoison");
+            sb.AppendLine("Type=ApplyPoison");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("PoisonType=Paralysis");
+            sb.AppendLine("Duration=5000");
+            sb.AppendLine("TickRate=5000");
+            sb.AppendLine("Options=ActionChance=10");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=HitPoisons");
+            sb.AppendLine("Type=Sequence");
+            sb.AppendLine("Options=GreenPoison:1,ParalysisPoison:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MassStrike");
+            sb.AppendLine("Type=MassAreaDamage");
+            sb.AppendLine("Target=AllInView");
+            sb.AppendLine($"Radius={Globals.MagicRange}");
+            sb.AppendLine("Delay=500");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("Options=OnHitAction=HitPoisons");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=HideOnSpawn");
+            sb.AppendLine("Trigger=OnSpawn");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=StartHidden");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=ShowWhenTargetClose");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=Hidden");
+            sb.AppendLine("Conditions=TargetDistanceBelow:5");
+            sb.AppendLine("Action=ShowSelf");
+            sb.AppendLine("Priority=10");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=HideWhenTargetFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=Visible");
+            sb.AppendLine("Conditions=TargetDistanceAbove:5");
+            sb.AppendLine("Action=HideSelf");
+            sb.AppendLine("Priority=15");
+            sb.AppendLine("Cooldown=4000");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=MassStrikeWhenVisible");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=Visible");
+            sb.AppendLine("Conditions=TargetExists");
+            sb.AppendLine("Action=MassStrike");
+            sb.AppendLine("Priority=20");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+        }
+
+        private static void AppendFrostLordHwaRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=TeleportNearTarget");
+            sb.AppendLine("Type=TeleportNearTarget");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine("Radius=1");
+            sb.AppendLine($"Distance={Config.MaxViewRange}");
+
+            foreach (PoisonType poison in new[] { PoisonType.Abyss, PoisonType.Silenced, PoisonType.Red, PoisonType.WraithGrip })
+            {
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine($"Name=Apply{poison}");
+                sb.AppendLine("Type=ApplyPoison");
+                sb.AppendLine("Target=AllInView");
+                sb.AppendLine($"Radius={Config.MaxViewRange}");
+                sb.AppendLine($"PoisonType={poison}");
+                sb.AppendLine("Duration=10000");
+                sb.AppendLine(poison == PoisonType.WraithGrip ? "TickRate=5000" : "TickRate=10000");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=PullTargets");
+            sb.AppendLine("Type=TeleportTargetsRandom");
+            sb.AppendLine("Target=AllInView");
+            sb.AppendLine($"Radius={Config.MaxViewRange}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=FullControl");
+            sb.AppendLine("Type=Sequence");
+            sb.AppendLine("Options=PullTargets:1,ApplyAbyss:1,ApplySilenced:1,ApplyRed:1,ApplyWraithGrip:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=TeleportWhenFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceAbove");
+            sb.AppendLine("Value=3");
+            sb.AppendLine("Action=TeleportNearTarget");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Cooldown=5000");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=MinuteControl");
+            sb.AppendLine("Trigger=OnTick");
+            sb.AppendLine("Condition=TargetCountAtLeast");
+            sb.AppendLine("Value=1");
+            sb.AppendLine($"Radius={Config.MaxViewRange}");
+            sb.AppendLine("Action=FullControl");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("Cooldown=60000");
+        }
+
+        private static void AppendSunFeralWarriorRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpawnFlames");
+            sb.AppendLine("Type=SpawnMinions");
+            sb.AppendLine("FixedCount=2");
+            sb.AppendLine("RandomCount=6");
+            sb.AppendLine("Radius=6");
+            sb.AppendLine("Options=MonsterFlags=FerociousFlameDemon:5|FlameDemon:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=FireBall");
+            sb.AppendLine("Type=AttackMagic");
+            sb.AppendLine("Magic=FireBall");
+            sb.AppendLine("Element=Fire");
+            sb.AppendLine($"Distance={Globals.MagicRange}");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("Travel=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=FireStorm");
+            sb.AppendLine("Type=AttackAoE");
+            sb.AppendLine("Target=TargetRadius");
+            sb.AppendLine("Radius=1");
+            sb.AppendLine($"Distance={Globals.MagicRange}");
+            sb.AppendLine("Magic=FireStorm");
+            sb.AppendLine("Element=Fire");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=RangeChoice");
+            sb.AppendLine("Type=WeightedChoice");
+            sb.AppendLine("Options=FireBall:1,FireStorm:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=SpawnOnFirstStruck");
+            sb.AppendLine("Trigger=OnStruck");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=SpawnFlames");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=RangeWhenFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceAbove");
+            sb.AppendLine("Value=1");
+            sb.AppendLine("Action=RangeChoice");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Chance=50");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=RangeWhenClose");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetInAttackRange");
+            sb.AppendLine("Action=RangeChoice");
+            sb.AppendLine("Priority=15");
+            sb.AppendLine("Chance=20");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+        }
+
+        private static void AppendFerociousIceTigerRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ClearSpin");
+            sb.AppendLine("Type=SetCounter");
+            sb.AppendLine("CounterName=Spinning");
+            sb.AppendLine("FixedCount=0");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SetSpin");
+            sb.AppendLine("Type=SetCounter");
+            sb.AppendLine("CounterName=Spinning");
+            sb.AppendLine("FixedCount=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpinHit");
+            sb.AppendLine("Type=MassAreaDamage");
+            sb.AppendLine("Target=SelfRadius");
+            sb.AppendLine("Radius=3");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("Options=ClassPowerRates=Warrior:80");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpinSequence");
+            sb.AppendLine("Type=Sequence");
+            sb.AppendLine("Options=SpinHit:1,SetSpin:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=LungeHit");
+            sb.AppendLine("Type=AttackAoE");
+            sb.AppendLine("Target=TargetRadius");
+            sb.AppendLine("Radius=3");
+            sb.AppendLine("Distance=3");
+            sb.AppendLine("Delay=600");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=50");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=ClearSpinOnMove");
+            sb.AppendLine("Trigger=OnMove");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=ClearSpin");
+            sb.AppendLine("Priority=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=ContinueSpin");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=CounterEquals");
+            sb.AppendLine("CounterName=Spinning");
+            sb.AppendLine("Value=1");
+            sb.AppendLine("Action=SpinSequence");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=RandomSpin");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetInAttackRange");
+            sb.AppendLine("Action=SpinSequence");
+            sb.AppendLine("Priority=20");
+            sb.AppendLine("Chance=20");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=LungeWhenInRange");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetInAttackRange");
+            sb.AppendLine("Action=LungeHit");
+            sb.AppendLine("Priority=30");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=MoveWhenFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetOutOfAttackRange");
+            sb.AppendLine("Action=MoveToTarget");
+            sb.AppendLine("Priority=40");
+        }
+
+        private static void AppendDragonQueenRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendYumgonStyleRules(sb, attackDelay, Element.None);
+            AppendPeriodicSpawnRule(sb, "SpawnDragonQueenGuards", "OYoungBeast:2|YumgonWitch:2|MaWarden:2|MaWarlord:2|JinhwanSpirit:2|JinhwanGuardian:2|OyoungGeneral:2|YumgonGeneral:2", 10, 0, 10, 15, 15000, priority: 1);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpawnDragonLordOnDeath");
+            sb.AppendLine("Type=SpawnMinions");
+            sb.AppendLine("FixedCount=1");
+            sb.AppendLine("Radius=3");
+            sb.AppendLine("Options=MonsterFlag=DragonLord,IgnoreMaxMinions=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=SpawnDragonLordOnDeath");
+            sb.AppendLine("Trigger=OnDeath");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine("Action=SpawnDragonLordOnDeath");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+        }
+
+        private static void AppendDragonLordRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=DragonBreath");
+            sb.AppendLine("Type=RangeAttack");
+            sb.AppendLine("Target=AllInView");
+            sb.AppendLine("Radius=12");
+            sb.AppendLine("Delay=1000");
+            sb.AppendLine("TargetChance=40");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("Options=RangePacket=True");
+
+            AppendPeriodicSpawnRule(sb, "SpawnDragonLordGuards", "OYoungBeast:10000|YumgonWitch:10000|MaWarden:10000|MaWarlord:10000|JinhwanSpirit:10000|JinhwanGuardian:10000|OyoungGeneral:10000|YumgonGeneral:10000|DragonLord:1", 10, 0, 10, 15, 15000, priority: 1, preserveBoss: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=BreathWhenInRange");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetInAttackRange");
+            sb.AppendLine("Action=DragonBreath");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+        }
+
+        private static void AppendArchLichTaeduRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+            AppendRangeShootAction(sb, "BoneBolt", range: 7);
+            AppendStageSpawnRules(sb, "StageBoneSpawn", "BoneArcher:90|BoneSoldier:15|BoneBladesman:15|BoneCaptain:15|SkeletonEnforcer:1", 20, 5, 6);
+            AppendMixedMeleeRangeRules(sb, "BoneBolt", attackDelay, rangeChance: 20);
+        }
+
+        private static void AppendEnragedArchLichTaeduRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+            AppendRangeShootAction(sb, "GoruBolt", range: 7);
+            AppendStageSpawnRules(sb, "StageGoruSpawn", "GoruArcher:10|GoruGeneral:5|GoruSpearman:5", 5, 5, 6);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=HalfHealthBlink");
+            sb.AppendLine("Type=TeleportSelf");
+            sb.AppendLine("MinOffset=7");
+            sb.AppendLine("Radius=12");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=TeleportStrike");
+            sb.AppendLine("Type=TeleportNearTarget");
+            sb.AppendLine("Radius=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=BonusHit");
+            sb.AppendLine("Type=MeleeAttack");
+            sb.AppendLine("Distance=1");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=200");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=TeleportStrikeSequence");
+            sb.AppendLine("Type=Sequence");
+            sb.AppendLine("Options=TeleportStrike:1,BonusHit:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=BlinkBelowHalf");
+            sb.AppendLine("Trigger=OnStruck");
+            sb.AppendLine("Condition=HealthBelow");
+            sb.AppendLine("Value=50");
+            sb.AppendLine("Action=HalfHealthBlink");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=RandomTeleportStrike");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceAbove");
+            sb.AppendLine("Value=1");
+            sb.AppendLine("Action=TeleportStrikeSequence");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Chance=14");
+            sb.AppendLine("Cooldown=1000");
+
+            AppendMixedMeleeRangeRules(sb, "GoruBolt", attackDelay, rangeChance: 20, priorityBase: 20);
+        }
+
+        private static void AppendZumaKingRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendHiddenWakeRuleSet(sb, canPhase: false, attackDelay);
+            AppendStageSpawnRules(sb, "StageZumaSpawn", "ZumaArcherMonster:50|ZumaFanaticMonster:25|ZumaGuardianMonster:25|ZumaKeeperMonster:1", 4, 8, 6);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ZumaFireLine");
+            sb.AppendLine("Type=LineAoE");
+            sb.AppendLine("Distance=12");
+            sb.AppendLine("MinOffset=-2");
+            sb.AppendLine("MaxOffset=2");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Magic=MonsterScortchedEarth");
+            sb.AppendLine("Element=Fire");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=FireLineWhenVisible");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=Visible");
+            sb.AppendLine("Conditions=TargetExists");
+            sb.AppendLine("Action=ZumaFireLine");
+            sb.AppendLine("Priority=18");
+            sb.AppendLine("Chance=20");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+        }
+
+        private static void AppendEnragedLordNiJaeRuleSet(StringBuilder sb, int attackDelay)
+        {
+            AppendLordNiJaeRuleSet(sb, attackDelay);
+            AppendPeriodicSpawnRule(sb, "SpawnMillipedes", "Millipede:1", 5, 0, 10, 10, 30000, priority: 1);
+        }
+
+        private static void AppendQuartzTreeRuleSet(StringBuilder sb)
+        {
+            AppendPeriodicSpawnRule(sb, "SpawnQuartzAdds", "QuartzBlueBat:20|QuartzPinkBat:20|QuartzBlueCrystal:20|QuartzRedHood:2", 10, 0, 5, 30, 60000, priority: 10);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=SpawnQuartzSubBoss");
+            sb.AppendLine("Type=SpawnMinions");
+            sb.AppendLine("FixedCount=1");
+            sb.AppendLine("Radius=5");
+            sb.AppendLine("Options=MonsterFlag=QuartzTurtleSub,IgnoreMaxMinions=True");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=SpawnSubBossBelowQuarter");
+            sb.AppendLine("Trigger=OnTick");
+            sb.AppendLine("Condition=HealthBelow");
+            sb.AppendLine("Value=25");
+            sb.AppendLine("Action=SpawnQuartzSubBoss");
+            sb.AppendLine("Priority=1");
+            sb.AppendLine("MaxExecutions=1");
+        }
+
+        private static void AppendDoomClawRuleSet(StringBuilder sb, int attackDelay)
+        {
+            const string rates = "Warrior:60|Wizard:70|Taoist:40|Assassin:80";
+
+            AppendDoomClawAction(sb, "Wave", MagicType.DoomClawWave, pushDirection: "DownRight", pushDistance: 15, rates);
+            AppendDoomClawAction(sb, "Spit", MagicType.DoomClawSpit, pushDirection: null, pushDistance: 0, rates);
+            AppendDoomClawAction(sb, "RightPinch", MagicType.DoomClawRightPinch, pushDirection: null, pushDistance: 0, rates);
+            AppendDoomClawAction(sb, "RightSwipe", MagicType.DoomClawRightSwipe, pushDirection: "DownLeft", pushDistance: 5, rates);
+            AppendDoomClawAction(sb, "LeftPinch", MagicType.DoomClawLeftPinch, pushDirection: null, pushDistance: 0, rates);
+            AppendDoomClawAction(sb, "LeftSwipe", MagicType.DoomClawLeftSwipe, pushDirection: "UpRight", pushDistance: 5, rates);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=ClawChoice");
+            sb.AppendLine("Type=WeightedChoice");
+            sb.AppendLine("Options=Spit:6,RightPinch:9,RightSwipe:1,LeftPinch:9,LeftSwipe:1");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=WaveSometimes");
+            sb.AppendLine("Trigger=OnTick");
+            sb.AppendLine("Condition=TargetCountAtLeast");
+            sb.AppendLine("Value=1");
+            sb.AppendLine($"Radius={Config.MaxViewRange}");
+            sb.AppendLine("Action=Wave");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Chance=5");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=ClawAttack");
+            sb.AppendLine("Trigger=OnTick");
+            sb.AppendLine("Condition=TargetCountAtLeast");
+            sb.AppendLine("Value=1");
+            sb.AppendLine($"Radius={Config.MaxViewRange}");
+            sb.AppendLine("Action=ClawChoice");
+            sb.AppendLine("Priority=20");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+        }
+
+        private static void AppendDamageProxyRuleSet(StringBuilder sb)
+        {
+            sb.AppendLine();
+            sb.AppendLine("; DamageProxy=True 的怪物由 DamageProxy 技能绑定施法者和目标后驱动，不需要额外 AI 规则。");
+        }
+
+        private static void AppendYumgonStyleRules(StringBuilder sb, int attackDelay, Element areaElement)
+        {
+            AppendMeleeMovementActions(sb, includeStepAway: true);
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=CloseArea");
+            sb.AppendLine("Type=MassAreaDamage");
+            sb.AppendLine("Target=SelfRadius");
+            sb.AppendLine("Radius=3");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine($"Element={areaElement}");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=CloseAreaChance");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceBelow");
+            sb.AppendLine("Value=3");
+            sb.AppendLine("Action=CloseArea");
+            sb.AppendLine("Priority=10");
+            sb.AppendLine("Chance=20");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, 20);
+        }
+
+        private static void AppendRangeShootAction(StringBuilder sb, string name, int range)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine($"Name={name}");
+            sb.AppendLine("Type=RangeAttack");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine($"Distance={range}");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+            sb.AppendLine("Options=RangePacket=True");
+        }
+
+        private static void AppendMixedMeleeRangeRules(StringBuilder sb, string rangeAction, int attackDelay, int rangeChance, int priorityBase = 10)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine($"Name={rangeAction}WhenFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetOutOfAttackRange");
+            sb.AppendLine($"Action={rangeAction}");
+            sb.AppendLine($"Priority={priorityBase}");
+            sb.AppendLine($"Chance={rangeChance}");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+
+            AppendStandardMeleeRules(sb, attackDelay, priorityBase + 10);
+        }
+
+        private static void AppendStageSpawnRules(StringBuilder sb, string actionName, string spawnPool, int fixedCount, int randomCount, int radius)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine($"Name={actionName}");
+            sb.AppendLine("Type=SpawnMinions");
+            sb.AppendLine($"FixedCount={fixedCount}");
+            sb.AppendLine($"RandomCount={randomCount}");
+            sb.AppendLine($"Radius={radius}");
+            sb.AppendLine($"Options=MonsterFlags={spawnPool}");
+
+            int[] thresholds = { 85, 71, 57, 42, 28, 14, 1 };
+            for (int i = 0; i < thresholds.Length; i++)
+            {
+                sb.AppendLine();
+                sb.AppendLine("[AIRule]");
+                sb.AppendLine($"Name={actionName}{i + 1}");
+                sb.AppendLine("Trigger=OnTick");
+                sb.AppendLine("Condition=HealthBelow");
+                sb.AppendLine($"Value={thresholds[i]}");
+                sb.AppendLine($"Action={actionName}");
+                sb.AppendLine($"Priority={10 + i}");
+                sb.AppendLine("MaxExecutions=1");
+            }
+        }
+
+        private static void AppendPeriodicSpawnRule(StringBuilder sb, string actionName, string spawnPool, int fixedCount, int randomCount, int radius, int leashRadius, int cooldown, int priority, bool preserveBoss = false)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine($"Name={actionName}");
+            sb.AppendLine("Type=SpawnMinions");
+            sb.AppendLine($"FixedCount={fixedCount}");
+            sb.AppendLine($"RandomCount={randomCount}");
+            sb.AppendLine($"Radius={radius}");
+            string options = $"MonsterFlags={spawnPool},LeashRadius={leashRadius},MaxTotal={fixedCount}";
+            if (preserveBoss)
+                options += ",PreserveBossMinions=True";
+            sb.AppendLine($"Options={options}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine($"Name={actionName}");
+            sb.AppendLine("Trigger=OnTick");
+            sb.AppendLine("Condition=Always");
+            sb.AppendLine($"Action={actionName}");
+            sb.AppendLine($"Priority={priority}");
+            sb.AppendLine($"Cooldown={cooldown}");
+        }
+
+        private static void AppendDoomClawAction(StringBuilder sb, string name, MagicType magic, string pushDirection, int pushDistance, string classPowerRates)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine($"Name={name}");
+            sb.AppendLine("Type=MassAreaDamage");
+            sb.AppendLine("Target=AllInView");
+            sb.AppendLine($"Radius={Config.MaxViewRange}");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine($"Magic={magic}");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            string options = $"ClassPowerRates={classPowerRates}";
+            if (pushDistance > 0 && !string.IsNullOrWhiteSpace(pushDirection))
+                options += $",PushDirection={pushDirection},PushDistance={pushDistance}";
+            sb.AppendLine($"Options={options}");
+        }
+
+        private static void AppendMeleeMovementActions(StringBuilder sb, bool includeStepAway)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MoveToTarget");
+            sb.AppendLine("Type=MoveToTarget");
+
+            if (includeStepAway)
+            {
+                sb.AppendLine();
+                sb.AppendLine("[AIAction]");
+                sb.AppendLine("Name=StepAway");
+                sb.AppendLine("Type=RandomStepWhenSameCell");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MeleeHit");
+            sb.AppendLine("Type=MeleeAttack");
+            sb.AppendLine("Distance=1");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+        }
+
+        private static void AppendVisibleMeleeRules(StringBuilder sb, int attackDelay)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=MoveWhenVisibleFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=Visible");
+            sb.AppendLine("Conditions=TargetOutOfAttackRange");
+            sb.AppendLine("ConditionJoin=And");
+            sb.AppendLine("Action=MoveToTarget");
+            sb.AppendLine("Priority=30");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=AttackWhenVisibleNear");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=Visible");
+            sb.AppendLine("Conditions=TargetInAttackRange");
+            sb.AppendLine("ConditionJoin=And");
+            sb.AppendLine("Action=MeleeHit");
+            sb.AppendLine("Priority=40");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+        }
+
+        private static void AppendStandardMeleeRules(StringBuilder sb, int attackDelay, int priorityBase)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=StepWhenStacked");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=SameCellAsTarget");
+            sb.AppendLine("Action=StepAway");
+            sb.AppendLine($"Priority={priorityBase}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=MoveWhenFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetOutOfAttackRange");
+            sb.AppendLine("Action=MoveToTarget");
+            sb.AppendLine($"Priority={priorityBase + 10}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=AttackWhenNear");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetInAttackRange");
+            sb.AppendLine("Action=MeleeHit");
+            sb.AppendLine($"Priority={priorityBase + 20}");
+            sb.AppendLine($"Cooldown={Math.Max(500, attackDelay)}");
+        }
+
+        private static bool IsAutoMigratedBasicBehavior(int ai)
+        {
+            return ai is
+                -2 or -1 or 0 or 1 or 2 or 3 or 4 or 5 or
+                6 or 7 or 8 or 9 or 10 or 11 or 12 or 13 or 14 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 22 or 23 or 24 or 25 or 26 or 27 or 28 or
+                29 or 30 or 31 or 33 or 34 or 35 or 36 or 37 or 38 or 39 or 40 or 41 or 42 or 43 or 44 or 45 or 46 or 47 or 48 or 49 or 50 or
+                52 or 53 or 54 or 56 or 57 or 58 or 59 or 60 or 61 or 62 or 63 or 64 or 65 or 66 or 67 or 68 or 69 or 70 or 71 or 72 or 74 or 77 or 78 or 79 or 80 or 81 or 82 or 83 or 84 or 85 or 86 or 87 or 88 or 89 or 90 or 91 or
+                92 or 93 or 94 or 95 or 96 or 97 or 98 or 99 or 100 or 101 or 102 or 103 or 104 or 105 or 106 or 107 or 108 or 109 or 110 or 111 or 112 or 113 or 114 or 115 or 116 or 117 or 118 or 119 or 120 or 121 or 122 or 123 or 124 or 125 or 126 or 128 or 130 or 131 or 132 or 133 or 134 or
+                127 or 129 or 143 or 144 or 146 or 147 or 149 or 150 or 151 or 152 or 153 or 154 or 156 or 159 or 999 or 1000;
+        }
+
+        private static void AppendLineAttackRuleSet(StringBuilder sb, int distance)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MoveToTarget");
+            sb.AppendLine("Type=MoveToTarget");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=StepAway");
+            sb.AppendLine("Type=RandomStepWhenSameCell");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=LineHit");
+            sb.AppendLine("Type=LineAttack");
+            sb.AppendLine($"Distance={distance}");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=StepWhenStacked");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=SameCellAsTarget");
+            sb.AppendLine("Action=StepAway");
+            sb.AppendLine("Priority=10");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=LineWhenAligned");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetInLine");
+            sb.AppendLine($"Value={distance}");
+            sb.AppendLine("Action=LineHit");
+            sb.AppendLine("Priority=20");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=MoveWhenNotAligned");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetOutOfLine");
+            sb.AppendLine($"Value={distance}");
+            sb.AppendLine("Action=MoveToTarget");
+            sb.AppendLine("Priority=30");
+        }
+
+        private static bool TryGetAutoLineDistance(int ai, out int distance)
+        {
+            distance = ai switch
+            {
+                6 or 14 or 42 or 46 or 47 => 2,
+                9 or 62 => 6,
+                31 => 3,
+                48 => 3,
+                88 => 2,
+                97 => 5,
+                156 => 5,
+                _ => 0,
+            };
+
+            return distance > 0;
+        }
+
+        private static void AppendRangeSwitchRuleSet(StringBuilder sb, int range, int cooldown)
+        {
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MoveToTarget");
+            sb.AppendLine("Type=MoveToTarget");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=StepAway");
+            sb.AppendLine("Type=RandomStepWhenSameCell");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=MeleeHit");
+            sb.AppendLine("Type=MeleeAttack");
+            sb.AppendLine("Distance=1");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIAction]");
+            sb.AppendLine("Name=RangeHit");
+            sb.AppendLine("Type=RangeAttack");
+            sb.AppendLine("Target=CurrentTarget");
+            sb.AppendLine($"Distance={range}");
+            sb.AppendLine("Delay=400");
+            sb.AppendLine("Power=DC");
+            sb.AppendLine("PowerRate=100");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=StepWhenStacked");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=SameCellAsTarget");
+            sb.AppendLine("Action=StepAway");
+            sb.AppendLine("Priority=10");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=MeleeWhenClose");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetDistanceBelow");
+            sb.AppendLine("Value=1");
+            sb.AppendLine("Action=MeleeHit");
+            sb.AppendLine("Priority=20");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=RangeWhenInRange");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetInAttackRange");
+            sb.AppendLine("Action=RangeHit");
+            sb.AppendLine("Priority=30");
+            if (cooldown > 0)
+                sb.AppendLine($"Cooldown={cooldown}");
+
+            sb.AppendLine();
+            sb.AppendLine("[AIRule]");
+            sb.AppendLine("Name=MoveWhenFar");
+            sb.AppendLine("Trigger=OnTargetTick");
+            sb.AppendLine("Condition=TargetOutOfAttackRange");
+            sb.AppendLine("Action=MoveToTarget");
+            sb.AppendLine("Priority=40");
+        }
+
+        private static bool TryGetAutoRangeSwitchDistance(int ai, out int distance)
+        {
+            distance = ai switch
+            {
+                23 or 24 or 64 => 2,
+                45 => 3,
+                33 or 92 => 9,
+                105 => 5,
+                49 or 50 or 79 or 106 => ai == 79 ? 10 : 8,
+                94 or 95 => 8,
+                98 or 100 => 8,
+                103 => 5,
+                151 => 7,
+                152 => 5,
+                154 or 159 or 999 => 7,
+                _ => 0,
+            };
+
+            return distance > 0;
+        }
+
+        private static int GetAutoRangeCooldown(int ai)
+        {
+            return ai is 54 or 79 ? 5000 : 0;
+        }
+
+        private static bool IsAutoIgnoreShield(int ai)
+        {
+            return ai is 33 or 48 or 56 or 67 or 68 or 97 or 105 or 143 or 146;
+        }
+
+        private static bool IsAutoIgnoreArmour(int ai)
+        {
+            return ai is 143 or 146;
+        }
+
+        private static bool IsAutoPoisonStackable(int ai)
+        {
+            return ai is 146;
+        }
+
+        private static bool IsAutoAvoidFireWall(int ai)
+        {
+            return ai is 21;
+        }
+
+        private static bool IsAlwaysActiveAi(int ai)
+        {
+            return ai is 30 or 69 or 129;
+        }
+
+        private static bool IsAutoHiddenAi(int ai)
+        {
+            return IsAutoHiddenSpawnAi(ai) || IsAutoHiddenWakeAi(ai) || IsAutoPlantAmbushAi(ai) || IsAutoGhostMageAi(ai);
+        }
+
+        private static bool IsAutoPassiveDamageAi(int ai)
+        {
+            return ai is 86 or 129;
+        }
+
+        private static bool IsAutoNoBlockingAi(int ai)
+        {
+            return ai is 129;
+        }
+
+        private static bool IsAutoNoAttackAi(int ai)
+        {
+            return ai is 12 or 30 or 69 or 124 or 128;
+        }
+
+        private static bool IsAutoInvulnerableAi(int ai)
+        {
+            return ai is 30 or 69;
+        }
+
+        private static bool IsAutoGhostMageAi(int ai)
+        {
+            return ai is 10 or 27;
+        }
+
+        private static bool IsAutoWedgeMothLarvaAi(int ai)
+        {
+            return ai is 44;
+        }
+
+        private static bool IsAutoArachnidGrazerAi(int ai)
+        {
+            return ai is 17 or 144;
+        }
+
+        private static bool IsAutoTornadoAi(int ai)
+        {
+            return ai is 129;
+        }
+
+        private static bool IsAutoBanyoCaptainAi(int ai)
+        {
+            return ai is 72;
+        }
+
+        private static bool IsAutoBanyoLordGuzakAi(int ai)
+        {
+            return ai is 74;
+        }
+
+        private static bool IsAutoEscortCommanderAi(int ai)
+        {
+            return ai is 93;
+        }
+
+        private static bool IsAutoWingedHorrorAi(int ai)
+        {
+            return ai is 84;
+        }
+
+        private static bool IsAutoChaosKnightAi(int ai)
+        {
+            return ai is 60;
+        }
+
+        private static bool TryGetAutoJinchonDevilProfile(int ai, out int cooldown, out int duration, out int durationRandom)
+        {
+            cooldown = 0;
+            duration = 0;
+            durationRandom = 0;
+
+            switch (ai)
+            {
+                case 78:
+                    cooldown = 15000;
+                    duration = 4000;
+                    return true;
+                case 127:
+                    cooldown = 8000;
+                    duration = 2000;
+                    durationRandom = 5000;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool TryGetAutoPortalProfile(int ai, out string specialRegion, out bool includeMonsters, out string openMessage, out string closeMessage)
+        {
+            specialRegion = null;
+            includeMonsters = false;
+            openMessage = null;
+            closeMessage = null;
+
+            switch (ai)
+            {
+                case 30:
+                    specialRegion = "MysteryShip";
+                    includeMonsters = true;
+                    openMessage = "异界之门已开启。";
+                    closeMessage = "异界之门已关闭。";
+                    return true;
+                case 69:
+                    specialRegion = "Lair";
+                    openMessage = "赤龙石门已开启。";
+                    closeMessage = "赤龙石门已关闭。";
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool IsAutoSamaProphetAi(int ai)
+        {
+            return ai is 115;
+        }
+
+        private static bool IsAutoSamaScorcerAi(int ai)
+        {
+            return ai is 116;
+        }
+
+        private static bool IsAutoQueenOfDawnAi(int ai)
+        {
+            return ai is 96;
+        }
+
+        private static bool IsAutoQuartzTurtleSubAi(int ai)
+        {
+            return ai is 122;
+        }
+
+        private static bool IsAutoMonasteryBossAi(int ai)
+        {
+            return ai is 126;
+        }
+
+        private static bool IsAutoHealerAntAi(int ai) => ai is 12;
+
+        private static bool IsAutoLordNiJaeAi(int ai) => ai is 13;
+
+        private static bool IsAutoZumaKingAi(int ai) => ai is 22;
+
+        private static bool IsAutoFrostLordHwaAi(int ai) => ai is 70;
+
+        private static bool IsAutoEnragedLordNiJaeAi(int ai) => ai is 77;
+
+        private static bool IsAutoSunFeralWarriorAi(int ai) => ai is 80;
+
+        private static bool IsAutoArchLichTaeduAi(int ai) => ai is 43;
+
+        private static bool IsAutoEnragedArchLichTaeduAi(int ai) => ai is 91;
+
+        private static bool IsAutoDragonQueenAi(int ai) => ai is 101;
+
+        private static bool IsAutoDragonLordAi(int ai) => ai is 102;
+
+        private static bool IsAutoFerociousIceTigerAi(int ai) => ai is 104;
+
+        private static bool IsAutoDoomClawAi(int ai) => ai is 120;
+
+        private static bool IsAutoQuartzTreeAi(int ai) => ai is 124;
+
+        private static bool IsAutoDamageProxyAi(int ai) => ai is 128;
+
+        private static bool IsAutoDisableRegenAi(int ai) => ai is 124;
+
+        private static MonsterFlag GetAutoProtectedByMonsterFlag(int ai)
+        {
+            return ai switch
+            {
+                116 => MonsterFlag.BloodStone,
+                _ => MonsterFlag.None,
+            };
+        }
+
+        private static string GetAutoProtectedByMonsterFlags(int ai)
+        {
+            return ai switch
+            {
+                115 => "BloodStone|SamaSorcerer",
+                _ => string.Empty,
+            };
+        }
+
+        private static int GetAutoProtectionRadius(int ai)
+        {
+            return ai is 115 or 116 ? 0 : 12;
+        }
+
+        private static bool IsAutoHiddenSpawnAi(int ai)
+        {
+            return ai is 52 or 130;
+        }
+
+        private static bool IsAutoHiddenWakeAi(int ai)
+        {
+            return ai is 21 or 131 or 132;
+        }
+
+        private static bool IsAutoPlantAmbushAi(int ai)
+        {
+            return ai is 5 or 65 or 125;
+        }
+
+        private static bool IsAutoReviveAi(int ai)
+        {
+            return ai is 11;
+        }
+
+        private static bool IsAutoMagicWeaknessAi(int ai)
+        {
+            return ai is 59;
+        }
+
+        private static bool TryGetAutoRangedDistance(int ai, out int distance)
+        {
+            distance = ai switch
+            {
+                7 or 20 or 29 or 89 => 7,
+                28 => 7,
+                34 => 9,
+                63 or 94 or 95 => 9,
+                121 => 7,
+                _ => 0,
+            };
+
+            return distance > 0;
+        }
+
+        private static bool TryGetAutoSelfDestructRange(int ai, out int range)
+        {
+            range = ai switch
+            {
+                18 => 1,
+                123 => 3,
+                _ => 0,
+            };
+
+            return range > 0;
+        }
+
+        private static bool TryGetAutoBossRange(int ai, out int range)
+        {
+            range = ai switch
+            {
+                16 => 8,
+                41 or 85 => 8,
+                _ => 0,
+            };
+
+            return range > 0;
+        }
+
+        private static bool TryGetAutoTeleportMelee(int ai, out bool bonusDamage, out int cooldown)
+        {
+            bonusDamage = ai is 71 or 81 or 87 or 88 or 89 or 90 or 117;
+            cooldown = ai switch
+            {
+                56 or 57 => 5000,
+                61 => 5000,
+                71 or 81 or 87 or 88 or 89 or 90 or 117 => 1000,
+                147 => 1000,
+                _ => 0,
+            };
+
+            return ai is 56 or 57 or 61 or 71 or 81 or 87 or 88 or 89 or 90 or 117 or 147;
+        }
+
+        private static bool TryGetAutoSimpleCaster(int ai, out MagicType magic, out Element element, out bool travel)
+        {
+            magic = ai switch
+            {
+                26 or 36 => MagicType.ThunderBolt,
+                38 => MagicType.FireBall,
+                _ => MagicType.None,
+            };
+            element = ai switch
+            {
+                38 => Element.Fire,
+                _ => Element.Lightning,
+            };
+            travel = ai is 38;
+
+            return magic != MagicType.None;
+        }
+
+        private static bool TryGetAutoLightningChoiceCaster(int ai)
+        {
+            return ai is 118;
+        }
+
+        private static bool TryGetAutoSamaProfile(
+            int ai,
+            out Element element,
+            out MagicType projectile,
+            out MagicType line,
+            out MagicType area,
+            out MagicType burst,
+            out MagicType empowered)
+        {
+            element = Element.None;
+            projectile = MagicType.None;
+            line = MagicType.None;
+            area = MagicType.None;
+            burst = MagicType.None;
+            empowered = MagicType.None;
+
+            switch (ai)
+            {
+                case 107:
+                    element = Element.Fire;
+                    projectile = MagicType.AdamantineFireBall;
+                    line = MagicType.ScortchedEarth;
+                    area = MagicType.FireStorm;
+                    burst = MagicType.SamaGuardianFire;
+                    return true;
+                case 108:
+                    element = Element.Ice;
+                    projectile = MagicType.IceBlades;
+                    line = MagicType.GreaterFrozenEarth;
+                    area = MagicType.IceStorm;
+                    burst = MagicType.SamaGuardianIce;
+                    return true;
+                case 109:
+                    element = Element.Lightning;
+                    projectile = MagicType.ThunderBolt;
+                    line = MagicType.LightningBeam;
+                    area = MagicType.LightningWave;
+                    burst = MagicType.SamaGuardianLightning;
+                    return true;
+                case 110:
+                    element = Element.Wind;
+                    projectile = MagicType.Cyclone;
+                    line = MagicType.BlowEarth;
+                    area = MagicType.DragonTornado;
+                    burst = MagicType.SamaGuardianWind;
+                    return true;
+                case 111:
+                    element = Element.Fire;
+                    projectile = MagicType.AdamantineFireBall;
+                    line = MagicType.ScortchedEarth;
+                    area = MagicType.FireStorm;
+                    burst = MagicType.SamaGuardianFire;
+                    empowered = MagicType.SamaPhoenixFire;
+                    return true;
+                case 112:
+                    element = Element.Ice;
+                    projectile = MagicType.IceBlades;
+                    line = MagicType.GreaterFrozenEarth;
+                    area = MagicType.IceStorm;
+                    burst = MagicType.SamaGuardianIce;
+                    empowered = MagicType.SamaBlackIce;
+                    return true;
+                case 113:
+                    element = Element.Lightning;
+                    projectile = MagicType.ThunderBolt;
+                    line = MagicType.LightningBeam;
+                    area = MagicType.LightningWave;
+                    burst = MagicType.SamaGuardianLightning;
+                    empowered = MagicType.SamaBlueLightning;
+                    return true;
+                case 114:
+                    element = Element.Wind;
+                    projectile = MagicType.Cyclone;
+                    line = MagicType.BlowEarth;
+                    area = MagicType.DragonTornado;
+                    burst = MagicType.SamaGuardianWind;
+                    empowered = MagicType.SamaWhiteWind;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool TryGetAutoFixedMassRange(int ai, out int range, out MagicType magic, out Element element)
+        {
+            range = 0;
+            magic = MagicType.None;
+            element = Element.None;
+
+            switch (ai)
+            {
+                case 19:
+                    range = Config.MaxViewRange;
+                    magic = MagicType.None;
+                    element = Element.Dark;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool TryGetAutoIcySpiritProfile(int ai, out bool drainMp)
+        {
+            drainMp = ai is 67;
+            return ai is 66 or 67;
+        }
+
+        private static bool IsAutoDeathSelfSpawnAi(int ai)
+        {
+            return ai is 99;
+        }
+
+        private static bool TryGetAutoLineAoEProfile(int ai, out int distance, out int minOffset, out int maxOffset, out MagicType magic, out Element element)
+        {
+            distance = 0;
+            minOffset = 0;
+            maxOffset = 0;
+            magic = MagicType.None;
+            element = Element.None;
+
+            switch (ai)
+            {
+                case 82:
+                    distance = 12;
+                    minOffset = -2;
+                    maxOffset = 2;
+                    magic = MagicType.GreaterFrozenEarth;
+                    element = Element.Ice;
+                    return true;
+                case 83:
+                    distance = 8;
+                    minOffset = -2;
+                    maxOffset = 2;
+                    magic = MagicType.MonsterScortchedEarth;
+                    element = Element.Fire;
+                    return true;
+                case 86:
+                    distance = 12;
+                    minOffset = 0;
+                    maxOffset = 8;
+                    magic = MagicType.MonsterScortchedEarth;
+                    element = Element.Fire;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool TryGetAutoAreaMelee(int ai, out int radius, out bool applyPoison)
+        {
+            radius = ai switch
+            {
+                25 => 1,
+                58 => 2,
+                149 or 150 => 1,
+                _ => 0,
+            };
+            applyPoison = ai is 25 or 150;
+
+            return radius > 0;
+        }
+
+        private static int GetAutoAttackRange(MonsterInfo monster, CustomMonsterBehaviorTemplate template)
+        {
+            if (TryGetAutoSelfDestructRange(monster.AI, out int selfDestructRange))
+                return selfDestructRange;
+
+            if (TryGetAutoBossRange(monster.AI, out _))
+                return 1;
+
+            if (TryGetAutoSamaProfile(monster.AI, out _, out _, out _, out _, out _, out _))
+                return 2;
+
+            if (TryGetAutoSimpleCaster(monster.AI, out _, out _, out _) || TryGetAutoLightningChoiceCaster(monster.AI))
+                return 9;
+
+            if (TryGetAutoFixedMassRange(monster.AI, out int fixedRange, out _, out _))
+                return fixedRange;
+
+            if (TryGetAutoLineAoEProfile(monster.AI, out int aoeDistance, out _, out _, out _, out _))
+                return aoeDistance;
+
+            if (IsAutoWedgeMothLarvaAi(monster.AI))
+                return Config.MaxViewRange;
+
+            if (IsAutoArachnidGrazerAi(monster.AI))
+                return Math.Max(1, monster.ViewRange);
+
+            if (TryGetAutoPortalProfile(monster.AI, out _, out _, out _, out _))
+                return Math.Max(1, monster.ViewRange);
+
+            if (IsAutoTornadoAi(monster.AI))
+                return 1;
+
+            if (IsAutoBanyoCaptainAi(monster.AI) || IsAutoEscortCommanderAi(monster.AI) || IsAutoWingedHorrorAi(monster.AI))
+                return 1;
+
+            if (IsAutoBanyoLordGuzakAi(monster.AI))
+                return 1;
+
+            if (IsAutoChaosKnightAi(monster.AI))
+                return 1;
+
+            if (TryGetAutoJinchonDevilProfile(monster.AI, out _, out _, out _))
+                return 3;
+
+            if (IsAutoSamaProphetAi(monster.AI))
+                return 12;
+
+            if (IsAutoSamaScorcerAi(monster.AI))
+                return 3;
+
+            if (IsAutoQueenOfDawnAi(monster.AI) || IsAutoQuartzTurtleSubAi(monster.AI))
+                return 1;
+
+            if (IsAutoMonasteryBossAi(monster.AI))
+                return 9;
+
+            if (IsAutoLordNiJaeAi(monster.AI) || IsAutoEnragedLordNiJaeAi(monster.AI))
+                return Config.MaxViewRange;
+
+            if (IsAutoDragonLordAi(monster.AI))
+                return 12;
+
+            if (IsAutoDragonQueenAi(monster.AI))
+                return 10;
+
+            if (IsAutoDoomClawAi(monster.AI))
+                return Config.MaxViewRange;
+
+            if (IsAutoFerociousIceTigerAi(monster.AI) || IsAutoArchLichTaeduAi(monster.AI) || IsAutoEnragedArchLichTaeduAi(monster.AI))
+                return 3;
+
+            if (IsAutoHealerAntAi(monster.AI))
+                return Globals.MagicRange;
+
+            if (TryGetAutoRangedDistance(monster.AI, out int rangedDistance))
+                return rangedDistance;
+
+            if (TryGetAutoLineDistance(monster.AI, out int lineDistance))
+                return lineDistance;
+
+            if (TryGetAutoRangeSwitchDistance(monster.AI, out int rangeSwitchDistance))
+                return rangeSwitchDistance;
+
+            if (TryGetAutoAreaMelee(monster.AI, out int areaRadius, out _))
+                return areaRadius;
+
+            if (IsAutoPlantAmbushAi(monster.AI))
+                return 1;
+
+            return InferFallbackAttackRange(monster, template);
+        }
+
+        private static int GetAutoMaxMinions(int ai)
+        {
+            return ai switch
+            {
+                77 => 200,
+                43 or 91 => 50,
+                101 or 102 or 124 => 10,
+                74 => 5,
+                122 => 10,
+                144 => 30,
+                _ => 20,
+            };
+        }
+
+        private static void ApplyAutoPoison(int ai, out PoisonType poisonType, out int poisonRate, out int poisonTicks, out int poisonFrequency)
+        {
+            poisonType = PoisonType.None;
+            poisonRate = 10;
+            poisonTicks = 5;
+            poisonFrequency = 2;
+
+            switch (ai)
+            {
+                case 6:
+                case 14:
+                    poisonType = PoisonType.Green;
+                    break;
+                case 46:
+                    poisonType = PoisonType.Red;
+                    poisonTicks = 1;
+                    poisonFrequency = 10;
+                    poisonRate = 25;
+                    break;
+                case 47:
+                    poisonType = PoisonType.Green;
+                    poisonTicks = 7;
+                    poisonRate = 15;
+                    break;
+                case 8:
+                case 49:
+                    poisonType = PoisonType.Paralysis;
+                    poisonTicks = 1;
+                    poisonFrequency = 5;
+                    poisonRate = ai == 8 ? 12 : 10;
+                    break;
+                case 23:
+                    poisonType = PoisonType.Green;
+                    break;
+                case 24:
+                    poisonType = PoisonType.Red;
+                    break;
+                case 25:
+                    poisonType = PoisonType.Green;
+                    poisonRate = 6;
+                    poisonTicks = 10;
+                    poisonFrequency = 2;
+                    break;
+                case 85:
+                    poisonType = PoisonType.Paralysis;
+                    poisonTicks = 1;
+                    poisonFrequency = 5;
+                    poisonRate = 8;
+                    break;
+                case 87:
+                    poisonType = PoisonType.Abyss;
+                    poisonTicks = 1;
+                    poisonFrequency = 7;
+                    poisonRate = 15;
+                    break;
+                case 89:
+                case 119:
+                    poisonType = PoisonType.Silenced;
+                    poisonTicks = 1;
+                    poisonFrequency = 5;
+                    poisonRate = 10;
+                    break;
+                case 90:
+                case 95:
+                case 133:
+                case 134:
+                    poisonType = PoisonType.Paralysis;
+                    poisonTicks = 1;
+                    poisonFrequency = 5;
+                    poisonRate = ai == 90 ? 25 : 15;
+                    break;
+                case 143:
+                case 146:
+                    poisonType = PoisonType.StrongGreen;
+                    poisonTicks = ai == 146 ? 20 : 10;
+                    poisonFrequency = 1;
+                    poisonRate = 0;
+                    break;
+                case 150:
+                    poisonType = PoisonType.Green;
+                    poisonTicks = 10;
+                    poisonFrequency = 2;
+                    poisonRate = 5;
+                    break;
+                case 153:
+                    poisonType = PoisonType.Green;
+                    poisonTicks = 20;
+                    poisonRate = 5;
+                    break;
+            }
+        }
+
+        private static CustomMonsterBehaviorTemplate InferFallbackTemplate(MonsterInfo monster, CustomMonsterAiMigrationRow migration)
+        {
+            if (monster.AI == -1)
+                return CustomMonsterBehaviorTemplate.Guard;
+
+            string text = $"{migration?.SuggestedTemplate} {migration?.CurrentImplementation} {migration?.Notes}";
+
+            if (monster.IsBoss || ContainsAny(text, "Boss", "牛魔王", "全屏", "阶段"))
+                return CustomMonsterBehaviorTemplate.Boss;
+
+            if (ContainsAny(text, "召唤", "Summon", "SpawnMinions"))
+                return CustomMonsterBehaviorTemplate.Summoner;
+
+            if (ContainsAny(text, "法师", "范围", "AoE", "Magic", "Caster", "施法"))
+                return CustomMonsterBehaviorTemplate.Caster;
+
+            if (ContainsAny(text, "远程", "Range", "投掷", "直线"))
+                return CustomMonsterBehaviorTemplate.Ranged;
+
+            return CustomMonsterBehaviorTemplate.Melee;
+        }
+
+        private static int InferFallbackAttackRange(MonsterInfo monster, CustomMonsterBehaviorTemplate template)
+        {
+            if (template is CustomMonsterBehaviorTemplate.Ranged or CustomMonsterBehaviorTemplate.Caster or CustomMonsterBehaviorTemplate.Boss)
+                return Math.Max(2, Math.Min(Math.Max(monster.ViewRange, 2), 12));
+
+            return 1;
+        }
+
+        private static bool IsPassiveAi(int ai)
+        {
+            return ai is 1 or 2 or 4 or 5 or 86 or 124 or 128 or 129;
+        }
+
+        private static bool IsFixedAi(int ai)
+        {
+            return ai is 1 or 2 or 4 or 5 or 12 or 19 or 30 or 44 or 65 or 69 or 86 or 120 or 124 or 128 or 144 or 147 or 159;
+        }
+
+        private static bool TryGetHarvestCount(int ai, out int harvestCount)
+        {
+            harvestCount = ai switch
+            {
+                1 or 5 or 6 or 8 => 2,
+                2 or 3 or 4 => 3,
+                _ => 0,
+            };
+
+            return harvestCount > 0;
+        }
+
+        private static bool ContainsAny(string value, params string[] tokens)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            return tokens.Any(x => value.Contains(x, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private void ExportSkills(string directory, bool overwrite, CustomSystemTextReport report, bool includeAllDatabaseSkills = false)
+        {
+            Dictionary<int, CustomSkillInfo> customSkills = _session.GetCollection<CustomSkillInfo>().Binding
+                .Where(x => x?.Magic != null)
+                .GroupBy(x => x.Magic.Index)
+                .ToDictionary(x => x.Key, x => x.First());
+
+            IEnumerable<MagicInfo> magics = includeAllDatabaseSkills
+                ? _session.GetCollection<MagicInfo>().Binding.Where(x => x != null)
+                : customSkills.Values.Select(x => x.Magic);
+
+            HashSet<string> usedFileNames = new(StringComparer.OrdinalIgnoreCase);
+
+            foreach (MagicInfo magic in magics.OrderBy(x => x.Name).ThenBy(x => x.Index))
+            {
+                string fileName = GetUniqueFileName(SafeFileName(magic.Name), magic.Index, usedFileNames);
+                string path = Path.Combine(directory, fileName + ".txt");
                 if (File.Exists(path) && !overwrite)
                 {
                     report.Failures.Add($"已存在技能文本，未覆盖: {path}");
                     continue;
                 }
 
-                File.WriteAllText(path, BuildSkillText(skill), new UTF8Encoding(false));
+                if (customSkills.TryGetValue(magic.Index, out CustomSkillInfo skill))
+                {
+                    File.WriteAllText(path, BuildSkillText(skill), new UTF8Encoding(false));
+                }
+                else
+                {
+                    File.WriteAllText(path, BuildFallbackSkillText(magic, out bool autoMigrated), new UTF8Encoding(false));
+                    if (includeAllDatabaseSkills && !autoMigrated)
+                        report.TodoDetails.Add($"技能 `{magic.Name}` -> Skills\\{fileName}.txt: 数据库没有 CustomSkillInfo，已导出 Enabled=False 的自定义技能骨架；旧 MagicObject 逻辑未迁移。原因: {GetManualSkillMigrationReason(magic.Magic)}");
+                }
+
                 report.SkillsExported++;
             }
         }
@@ -3117,6 +7099,7 @@ namespace Server.Envir
             sb.AppendLine($"FixedPower={skill.FixedPower}");
             sb.AppendLine($"PowerRate={skill.PowerRate}");
             sb.AppendLine($"Duration={skill.Duration}");
+            sb.AppendLine($"DurationPowerRate={skill.DurationPowerRate}");
             sb.AppendLine($"TickRate={skill.TickRate}");
             sb.AppendLine($"BuffType={skill.BuffType}");
             sb.AppendLine($"PoisonType={skill.PoisonType}");
@@ -3133,7 +7116,7 @@ namespace Server.Envir
             sb.AppendLine($"MaxSummons={skill.MaxSummons}");
             sb.AppendLine($"SummonDuration={skill.SummonDuration}");
 
-            foreach (CustomSkillEffectInfo effect in skill.Effects.OrderBy(x => x.Stage).ThenBy(x => x.Index))
+            foreach (CustomSkillEffectInfo effect in (skill.Effects?.Where(x => x != null) ?? Enumerable.Empty<CustomSkillEffectInfo>()).OrderBy(x => x.Stage).ThenBy(x => x.Index))
             {
                 sb.AppendLine();
                 sb.AppendLine("[Effect]");
@@ -3157,12 +7140,775 @@ namespace Server.Envir
             return sb.ToString();
         }
 
+        private static string BuildFallbackSkillText(MagicInfo magic, out bool autoMigrated)
+        {
+            StringBuilder sb = new();
+            AppendMagicText(sb, magic);
+
+            autoMigrated = TryGetAutoSkillProfile(magic, out AutoSkillExportProfile profile);
+            if (autoMigrated)
+                sb.AppendLine($"; AutoMigrated [Skill] 旧 MagicObject `{magic.Magic}` 已按模板 `{profile.Template}` 导出。复杂强化/被动联动仍以旧技能系统为准。");
+            else
+                sb.AppendLine($"; TODO [Skill] 数据库没有 CustomSkillInfo。旧技能逻辑仍在 C# MagicObject 中；迁移前保持 Enabled=False，避免覆盖正式旧技能。原因: {GetManualSkillMigrationReason(magic.Magic)}");
+
+            sb.AppendLine("[Skill]");
+            sb.AppendLine($"Enabled={autoMigrated}");
+            sb.AppendLine($"Template={profile.Template}");
+            sb.AppendLine($"TargetRule={profile.TargetRule}");
+            sb.AppendLine($"Range={profile.Range}");
+            sb.AppendLine($"Radius={profile.Radius}");
+            sb.AppendLine($"MaxTargets={profile.MaxTargets}");
+            sb.AppendLine($"Shape={profile.Shape}");
+            sb.AppendLine($"Length={profile.Length}");
+            sb.AppendLine($"Width={profile.Width}");
+            sb.AppendLine($"Angle={profile.Angle}");
+            sb.AppendLine($"WaveCount={profile.WaveCount}");
+            sb.AppendLine($"WaveInterval={profile.WaveInterval}");
+            sb.AppendLine($"KnockbackDistance={profile.KnockbackDistance}");
+            sb.AppendLine($"PullDistance={profile.PullDistance}");
+            sb.AppendLine($"Element={profile.Element}");
+            sb.AppendLine($"PowerSource={profile.PowerSource}");
+            sb.AppendLine($"IgnoreShield={profile.IgnoreShield}");
+            sb.AppendLine($"IgnoreArmour={profile.IgnoreArmour}");
+            sb.AppendLine($"FixedPower={profile.FixedPower}");
+            sb.AppendLine($"PowerRate={profile.PowerRate}");
+            sb.AppendLine($"Duration={profile.Duration}");
+            sb.AppendLine($"DurationPowerRate={profile.DurationPowerRate}");
+            sb.AppendLine($"TickRate={profile.TickRate}");
+            sb.AppendLine($"BuffType={profile.BuffType}");
+            sb.AppendLine($"PoisonType={profile.PoisonType}");
+            sb.AppendLine($"PoisonValue={profile.PoisonValue}");
+            sb.AppendLine($"PoisonCanKill={profile.PoisonCanKill}");
+            sb.AppendLine($"BuffStats={Quote(profile.BuffStats)}");
+            sb.AppendLine($"BuffVisible={profile.BuffVisible}");
+            sb.AppendLine($"BuffPause={profile.BuffPause}");
+            sb.AppendLine($"BuffHidden={profile.BuffHidden}");
+            sb.AppendLine($"BuffExtra={profile.BuffExtra}");
+            sb.AppendLine($"CastDelay={profile.CastDelay}");
+            sb.AppendLine($"ProjectileSpeed={profile.ProjectileSpeed}");
+            sb.AppendLine($"SummonMonster={Quote(profile.SummonMonster)}");
+            sb.AppendLine($"MaxSummons={profile.MaxSummons}");
+            sb.AppendLine($"SummonDuration={profile.SummonDuration}");
+
+            return sb.ToString();
+        }
+
+        private static string GetManualSkillMigrationReason(MagicType magic)
+        {
+            return magic switch
+            {
+                MagicType.Unused =>
+                    "占位或未使用技能，没有可迁移的旧运行逻辑。",
+
+                MagicType.AugmentCelestialLight or
+                MagicType.AugmentDefiance or
+                MagicType.AugmentDestructiveSurge or
+                MagicType.AugmentEvilSlayer or
+                MagicType.AugmentExplosiveTalisman or
+                MagicType.AugmentNeutralize or
+                MagicType.AugmentPoisonDust or
+                MagicType.AugmentPurification or
+                MagicType.AugmentReflectDamage or
+                MagicType.AugmentResurrection or
+                MagicType.ArtOfShadows or
+                MagicType.ElementalPuppet or
+                MagicType.EmpoweredHealing or
+                MagicType.PledgeOfBlood or
+                MagicType.TheNewBeginning or
+                MagicType.TouchOfTheDeparted =>
+                    "强化/被动联动技能，旧逻辑通过 GetAugmentedSkill、额外冷却、等级经验和宿主技能回调触发；需要先新增强化技能挂载模板。",
+
+                MagicType.Swordsmanship or
+                MagicType.PotionMastery or
+                MagicType.AdvancedPotionMastery or
+                MagicType.Slaying or
+                MagicType.Thrusting or
+                MagicType.HalfMoon or
+                MagicType.SwiftBlade or
+                MagicType.BladeStorm or
+                MagicType.FlamingSword or
+                MagicType.DragonRise or
+                MagicType.DestructiveSurge or
+                MagicType.DefensiveBlow or
+                MagicType.DefensiveMastery or
+                MagicType.ElementalSwords or
+                MagicType.DragonWave or
+                MagicType.DualWeaponSkills or
+                MagicType.FatalBlow or
+                MagicType.Massacre or
+                MagicType.FlameSplash or
+                MagicType.WillowDance or
+                MagicType.VineTreeDance or
+                MagicType.WhiteLotus or
+                MagicType.RedLotus or
+                MagicType.SweetBrier or
+                MagicType.WaningMoon or
+                MagicType.FullBloom or
+                MagicType.BloodyFlower or
+                MagicType.DanceOfSwallow or
+                MagicType.FlashOfLight or
+                MagicType.CalamityOfFullMoon =>
+                    "普攻被动、Toggle 或连招触发技能，旧逻辑依赖 AttackCast/AttackComplete/SecondaryAttackLocation；需要新增攻击触发模板。",
+
+                MagicType.Burning or
+                MagicType.Shocked or
+                MagicType.Infection or
+                MagicType.GhostWalk or
+                MagicType.Stealth or
+                MagicType.Release or
+                MagicType.Resolution or
+                MagicType.Rejuvenation or
+                MagicType.Vitality or
+                MagicType.Assault or
+                MagicType.PhysicalImmunity or
+                MagicType.MagicImmunity =>
+                    "旧类本身没有完整主动施法流程，通常由其他技能、状态或被动 Process 间接调用；需要先确认目标自定义语义。",
+
+                MagicType.MirrorImage =>
+                    "玩家镜像技能，依赖玩家外观、装备、包体伪装和宠物生命周期；需要专用玩家镜像模板。",
+
+                MagicType.SummonPuppet =>
+                    "替身木偶技能，依赖玩家伪装、暗石属性继承、Cloak/GhostWalk 联动和多宠生命周期；需要专用替身模板。",
+
+                MagicType.Resurrection or
+                MagicType.SummonDead or
+                MagicType.CorpseExploder =>
+                    "尸体/死亡对象技能，依赖死亡玩家或怪物状态、复活/尸体清理和特殊成功率；需要新增尸体目标模板。",
+
+                MagicType.DemonExplosion or
+                MagicType.DemonicRecovery =>
+                    "焰魔宠物专用技能，依赖指定宠物 Flag、宠物血量/位置和牺牲/治疗逻辑；需要新增宠物目标模板。",
+
+                MagicType.ExpelUndead =>
+                    "亡灵秒杀技能，依赖 Undead/Boss/等级/经验归属等特殊判定；需要新增条件击杀模板。",
+
+                MagicType.Purification =>
+                    "净化技能，旧逻辑是清除中毒和增益/减益状态，不是伤害或普通 Buff；需要新增状态清理模板。",
+
+                MagicType.Teleportation =>
+                    "随机传送技能，依赖地图 SkillDelay 和随机落点；当前 Move 模板只能传送到指定位置。",
+
+                MagicType.Interchange =>
+                    "换位技能，依赖目标合法性、双方位置交换、PVP 冷却和等级/可推动判定；需要新增换位模板。",
+
+                MagicType.ShoulderDash or
+                MagicType.DragonRepulse =>
+                    "冲撞位移技能，依赖逐格移动、阻挡检查、推人和客户端 Dash 包；需要新增冲撞模板。",
+
+                MagicType.MagicCombustion =>
+                    "魔力燃烧技能，主效果是扣目标 MP；需要新增法力燃烧模板。",
+
+                MagicType.SoulResonance =>
+                    "队友灵魂绑定技能，依赖组队关系、双向 Buff 和死亡联动；需要新增组队绑定模板。",
+
+                MagicType.Karma or
+                MagicType.Renounce or
+                MagicType.Discipline or
+                MagicType.ElementalSuperiority or
+                MagicType.ChangeOfSeasons or
+                MagicType.AdventOfDemon or
+                MagicType.AdventOfDevil or
+                MagicType.DragonBlood =>
+                    "职业专属状态或复杂资源转换技能，旧逻辑跨 Buff、装备、属性和被动回调；需要专用模板而不是基础模板硬迁。",
+
+                _ =>
+                    "旧技能包含当前基础模板尚不能表达的条件、状态或触发点，需新增专用模板后再迁移。",
+            };
+        }
+
+        private static bool TryGetAutoSkillProfile(MagicInfo magic, out AutoSkillExportProfile profile)
+        {
+            profile = AutoSkillExportProfile.Default;
+            if (magic == null || magic.Magic == MagicType.None) return false;
+
+            profile.Element = GetAutoSkillElement(magic.Magic);
+
+            switch (magic.Magic)
+            {
+                case MagicType.FireBall:
+                case MagicType.AdamantineFireBall:
+                case MagicType.IceBolt:
+                case MagicType.IceBlades:
+                case MagicType.ThunderBolt:
+                case MagicType.LightningBall:
+                case MagicType.Cyclone:
+                case MagicType.GustBlast:
+                case MagicType.EvilSlayer:
+                case MagicType.GreaterEvilSlayer:
+                case MagicType.ExplosiveTalisman:
+                case MagicType.ImprovedExplosiveTalisman:
+                case MagicType.SearingLight:
+                case MagicType.Shuriken:
+                    profile.Template = CustomSkillTemplate.ProjectileDamage;
+                    profile.ProjectileSpeed = Globals.ProjectileSpeed;
+                    return true;
+
+                case MagicType.ThunderStrike:
+                case MagicType.LightningStrike:
+                case MagicType.ElectricShock:
+                case MagicType.FrostBite:
+                case MagicType.BurningFire:
+                    profile.Template = CustomSkillTemplate.DirectDamage;
+                    return true;
+
+                case MagicType.ChainLightning:
+                case MagicType.FireBounce:
+                case MagicType.Chain:
+                case MagicType.ChainOfFire:
+                    profile.Template = CustomSkillTemplate.ChainDamage;
+                    profile.Radius = 4;
+                    profile.MaxTargets = 3;
+                    return true;
+
+                case MagicType.FireStorm:
+                case MagicType.IceStorm:
+                case MagicType.LightningWave:
+                case MagicType.IceRain:
+                case MagicType.MeteorShower:
+                case MagicType.Tempest:
+                case MagicType.Storm:
+                case MagicType.FrozenEarth:
+                case MagicType.GreaterFrozenEarth:
+                case MagicType.ScortchedEarth:
+                case MagicType.Asteroid:
+                case MagicType.JudgementOfHeaven:
+                    profile.Template = CustomSkillTemplate.AreaDamage;
+                    profile.TargetRule = CustomSkillTargetRule.EnemyOrGround;
+                    profile.Radius = magic.Magic is MagicType.MeteorShower or MagicType.Tempest or MagicType.Storm ? 4 : 2;
+                    profile.MaxTargets = 0;
+                    return true;
+
+                case MagicType.FireWall:
+                case MagicType.PoisonCloud:
+                case MagicType.Tornado:
+                    profile.Template = CustomSkillTemplate.PersistentAreaDamage;
+                    profile.TargetRule = CustomSkillTargetRule.EnemyOrGround;
+                    profile.Radius = magic.Magic == MagicType.Tornado ? 2 : 1;
+                    profile.Duration = magic.Magic == MagicType.FireWall ? 10000 : 8000;
+                    profile.TickRate = 1000;
+                    return true;
+
+                case MagicType.LightningBeam:
+                case MagicType.BlowEarth:
+                case MagicType.DragonTornado:
+                case MagicType.ElementalHurricane:
+                case MagicType.FrozenDragon:
+                case MagicType.IceDragon:
+                    profile.Template = CustomSkillTemplate.AreaDamage;
+                    profile.TargetRule = CustomSkillTargetRule.EnemyOrGround;
+                    profile.Shape = CustomSkillShape.Line;
+                    profile.Length = Globals.MagicRange;
+                    profile.Width = magic.Magic is MagicType.DragonTornado or MagicType.ElementalHurricane ? 3 : 1;
+                    profile.Radius = profile.Length;
+                    return true;
+
+                case MagicType.Heal:
+                    profile.Template = CustomSkillTemplate.Heal;
+                    profile.TargetRule = CustomSkillTargetRule.AllyOrSelf;
+                    profile.Element = Element.None;
+                    profile.PowerSource = CustomSkillPowerSource.SC;
+                    return true;
+
+                case MagicType.MassHeal:
+                    profile.Template = CustomSkillTemplate.Heal;
+                    profile.TargetRule = CustomSkillTargetRule.AllyOrSelf;
+                    profile.Element = Element.None;
+                    profile.PowerSource = CustomSkillPowerSource.SC;
+                    profile.Radius = 3;
+                    profile.MaxTargets = 8;
+                    return true;
+
+                case MagicType.Invisibility:
+                    ConfigureBuff(ref profile, BuffType.Invisibility, CustomSkillTargetRule.Self, "Invisibility=1", powerSource: CustomSkillPowerSource.SC, durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.MassInvisibility:
+                    ConfigureBuff(ref profile, BuffType.Invisibility, CustomSkillTargetRule.AllyOrSelf, "Invisibility=1", radius: 2, maxTargets: 0, powerSource: CustomSkillPowerSource.SC, durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.Transparency:
+                    ConfigureBuff(ref profile, BuffType.Transparency, CustomSkillTargetRule.Self, "Transparency=1", powerSource: CustomSkillPowerSource.SC, durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.MagicShield:
+                    ConfigureBuff(ref profile, BuffType.MagicShield, CustomSkillTargetRule.Self, "MagicShield=50", duration: 30000, powerSource: CustomSkillPowerSource.MC, powerRate: 50, durationPowerRate: 1000, castDelay: 1100);
+                    return true;
+
+                case MagicType.SuperiorMagicShield:
+                    ConfigureBuff(ref profile, BuffType.SuperiorMagicShield, CustomSkillTargetRule.Self, "SuperiorMagicShield=25", duration: int.MaxValue, castDelay: 1100);
+                    return true;
+
+                case MagicType.MagicResistance:
+                    ConfigureBuff(ref profile, BuffType.MagicResistance, CustomSkillTargetRule.AllyOrSelf, "MaxMR=5", radius: 3, maxTargets: 0, powerSource: CustomSkillPowerSource.SC, powerRate: 200, durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.Resilience:
+                    ConfigureBuff(ref profile, BuffType.Resilience, CustomSkillTargetRule.AllyOrSelf, "MaxAC=5,PhysicalResistance=1", radius: 3, maxTargets: 0, powerSource: CustomSkillPowerSource.SC, powerRate: 200, durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.BloodLust:
+                    ConfigureBuff(ref profile, BuffType.BloodLust, CustomSkillTargetRule.AllyOrSelf, "MaxDC=5", radius: 3, maxTargets: 0, powerSource: CustomSkillPowerSource.SC, powerRate: 200, durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.LifeSteal:
+                    ConfigureBuff(ref profile, BuffType.LifeSteal, CustomSkillTargetRule.AllyOrSelf, "LifeSteal=4", radius: 3, maxTargets: 0, powerSource: CustomSkillPowerSource.SC, durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.Spiritualism:
+                    ConfigureBuff(ref profile, BuffType.Spiritualism, CustomSkillTargetRule.Self, "MaxAC=5,MaxMR=5", powerSource: CustomSkillPowerSource.SC, powerRate: 200, durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.CelestialLight:
+                    ConfigureBuff(ref profile, BuffType.CelestialLight, CustomSkillTargetRule.Self, "CelestialLight=10", durationPowerRate: 1000, castDelay: 1500);
+                    return true;
+
+                case MagicType.StrengthOfFaith:
+                    ConfigureBuff(ref profile, BuffType.StrengthOfFaith, CustomSkillTargetRule.Self, "DCPercent=-20,PetDCPercent=30", durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.Endurance:
+                    ConfigureBuff(ref profile, BuffType.Endurance, CustomSkillTargetRule.Self, string.Empty, duration: 10000, durationPowerRate: 5000);
+                    return true;
+
+                case MagicType.Defiance:
+                    ConfigureBuff(ref profile, BuffType.Defiance, CustomSkillTargetRule.Self, "PhysicalDefencePercent=10,MagicDefencePercent=10,DCPercent=-20", duration: 60000, durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.Might:
+                    ConfigureBuff(ref profile, BuffType.Might, CustomSkillTargetRule.Self, "DCPercent=10,MagicDefencePercent=-10,PhysicalDefencePercent=-10", duration: 60000, durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.ReflectDamage:
+                    ConfigureBuff(ref profile, BuffType.ReflectDamage, CustomSkillTargetRule.Self, "ReflectDamage=5", duration: 15000, durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.Invincibility:
+                    ConfigureBuff(ref profile, BuffType.Invincibility, CustomSkillTargetRule.Self, "Invincibility=1", duration: 5000, durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.RagingWind:
+                    ConfigureBuff(ref profile, BuffType.RagingWind, CustomSkillTargetRule.Self, string.Empty, durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.Evasion:
+                    ConfigureBuff(ref profile, BuffType.Evasion, CustomSkillTargetRule.Self, "EvasionChance=4", durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.Concentration:
+                    ConfigureBuff(ref profile, BuffType.Concentration, CustomSkillTargetRule.Self, "CriticalChance=5", durationPowerRate: 1000);
+                    return true;
+
+                case MagicType.Cloak:
+                    ConfigureBuff(ref profile, BuffType.Cloak, CustomSkillTargetRule.Self, "Cloak=1", duration: int.MaxValue, tickRate: 2000);
+                    return true;
+
+                case MagicType.PoisonDust:
+                    ConfigureDebuff(ref profile, PoisonType.Green, powerSource: CustomSkillPowerSource.SC, durationPowerRate: 1000, tickRate: 2000, poisonValue: 1);
+                    return true;
+
+                case MagicType.Parasite:
+                    ConfigureDebuff(ref profile, PoisonType.Parasite, powerSource: CustomSkillPowerSource.SC, duration: 20000, tickRate: 2000);
+                    return true;
+
+                case MagicType.Abyss:
+                    ConfigureDebuff(ref profile, PoisonType.Abyss, powerSource: CustomSkillPowerSource.SC, duration: 8000, tickRate: 1000);
+                    return true;
+
+                case MagicType.WraithGrip:
+                    ConfigureDebuff(ref profile, PoisonType.WraithGrip, powerSource: CustomSkillPowerSource.SC, durationPowerRate: 1000, tickRate: 1000);
+                    return true;
+
+                case MagicType.Fetter:
+                    ConfigureDebuff(ref profile, PoisonType.Slow, targetRule: CustomSkillTargetRule.EnemyOrGround, radius: 2, duration: 8000, tickRate: 1000);
+                    return true;
+
+                case MagicType.Repulsion:
+                    ConfigureControl(ref profile, radius: 1, knockbackDistance: 3);
+                    return true;
+
+                case MagicType.CombatKick:
+                    ConfigureControl(ref profile, radius: 1, knockbackDistance: 3);
+                    profile.Template = CustomSkillTemplate.AreaDamage;
+                    profile.Shape = CustomSkillShape.Line;
+                    profile.Length = 1;
+                    profile.Width = 1;
+                    profile.Radius = 1;
+                    profile.PowerSource = CustomSkillPowerSource.DC;
+                    return true;
+
+                case MagicType.ThunderKick:
+                    profile.Template = CustomSkillTemplate.AreaDamage;
+                    profile.TargetRule = CustomSkillTargetRule.EnemyOrGround;
+                    profile.Shape = CustomSkillShape.Circle;
+                    profile.Radius = 1;
+                    profile.MaxTargets = 0;
+                    profile.PowerSource = CustomSkillPowerSource.DC;
+                    profile.KnockbackDistance = 3;
+                    return true;
+
+                case MagicType.Beckon:
+                    ConfigureControl(ref profile, radius: 1, pullDistance: 4);
+                    return true;
+
+                case MagicType.MassBeckon:
+                    ConfigureControl(ref profile, targetRule: CustomSkillTargetRule.EnemyOrGround, radius: 4, pullDistance: 4);
+                    return true;
+
+                case MagicType.SummonSkeleton:
+                    ConfigureSummon(ref profile, "变异骷髅");
+                    return true;
+
+                case MagicType.SummonShinsu:
+                    ConfigureSummon(ref profile, "神兽");
+                    return true;
+
+                case MagicType.SummonJinSkeleton:
+                    ConfigureSummon(ref profile, "超强骷髅");
+                    return true;
+
+                case MagicType.SummonDemonicCreature:
+                    ConfigureSummon(ref profile, "焰魔");
+                    return true;
+
+                case MagicType.CursedDoll:
+                    ConfigureSummon(ref profile, "诅咒娃娃");
+                    return true;
+
+                case MagicType.Shredding:
+                    profile.Template = CustomSkillTemplate.DirectDamage;
+                    profile.Element = Element.Fire;
+                    profile.PowerSource = CustomSkillPowerSource.SC;
+                    return true;
+
+                case MagicType.HellFire:
+                    profile.Template = CustomSkillTemplate.DirectDamage;
+                    profile.Element = Element.Fire;
+                    profile.PowerSource = CustomSkillPowerSource.DC;
+                    profile.CastDelay = 1200;
+                    return true;
+
+                case MagicType.SeismicSlam:
+                    profile.Template = CustomSkillTemplate.AreaDamage;
+                    profile.TargetRule = CustomSkillTargetRule.EnemyOrGround;
+                    profile.Shape = CustomSkillShape.Circle;
+                    profile.Radius = 3;
+                    profile.MaxTargets = 0;
+                    profile.PowerSource = CustomSkillPowerSource.DC;
+                    profile.CastDelay = 600;
+                    return true;
+
+                case MagicType.CrushingWave:
+                    profile.Template = CustomSkillTemplate.AreaDamage;
+                    profile.TargetRule = CustomSkillTargetRule.EnemyOrGround;
+                    profile.Shape = CustomSkillShape.Line;
+                    profile.Length = 12;
+                    profile.Width = 3;
+                    profile.Radius = 12;
+                    profile.PowerSource = CustomSkillPowerSource.DC;
+                    profile.CastDelay = 400;
+                    return true;
+
+                case MagicType.PoisonousCloud:
+                    profile.Template = CustomSkillTemplate.PersistentAreaDamage;
+                    profile.TargetRule = CustomSkillTargetRule.Self;
+                    profile.Radius = 2;
+                    profile.MaxTargets = 0;
+                    profile.Element = Element.Dark;
+                    profile.PowerSource = CustomSkillPowerSource.Fixed;
+                    profile.FixedPower = 5;
+                    profile.DurationPowerRate = 1000;
+                    profile.TickRate = 1000;
+                    return true;
+
+                case MagicType.Neutralize:
+                    ConfigureDebuff(ref profile, PoisonType.Neutralize, duration: 9000, tickRate: 1000);
+                    profile.CastDelay = 1400;
+                    return true;
+
+                case MagicType.Containment:
+                    ConfigureDebuff(ref profile, PoisonType.Containment, targetRule: CustomSkillTargetRule.EnemyOrGround, radius: 3, duration: 3000, tickRate: 1000, powerSource: CustomSkillPowerSource.SC);
+                    profile.MaxTargets = 1;
+                    return true;
+
+                case MagicType.Hemorrhage:
+                    ConfigureDebuff(ref profile, PoisonType.Hemorrhage, durationPowerRate: 1000, tickRate: 1000, powerSource: CustomSkillPowerSource.SC);
+                    return true;
+
+                case MagicType.BindingTalisman:
+                    ConfigureDebuff(ref profile, PoisonType.Binding, durationPowerRate: 1000, tickRate: 1000, powerSource: CustomSkillPowerSource.SC);
+                    profile.Template = CustomSkillTemplate.Control;
+                    profile.Element = Element.Holy;
+                    return true;
+
+                case MagicType.TrapOctagon:
+                    ConfigureControl(ref profile, targetRule: CustomSkillTargetRule.EnemyOrGround, radius: 1);
+                    profile.PoisonType = PoisonType.Paralysis;
+                    profile.DurationPowerRate = 1000;
+                    profile.TickRate = 1000;
+                    profile.PowerSource = CustomSkillPowerSource.SC;
+                    return true;
+
+                case MagicType.DarkSoulPrison:
+                    profile.Template = CustomSkillTemplate.PersistentAreaDamage;
+                    profile.TargetRule = CustomSkillTargetRule.EnemyOrGround;
+                    profile.Radius = 3;
+                    profile.MaxTargets = 0;
+                    profile.Element = Element.Dark;
+                    profile.PowerSource = CustomSkillPowerSource.SC;
+                    profile.PowerRate = 40;
+                    profile.Duration = 10000;
+                    profile.TickRate = 2000;
+                    return true;
+
+                case MagicType.GeoManipulation:
+                    profile.Template = CustomSkillTemplate.Move;
+                    profile.TargetRule = CustomSkillTargetRule.Ground;
+                    profile.Element = Element.None;
+                    profile.CastDelay = 500;
+                    return true;
+
+                case MagicType.DarkConversion:
+                    ConfigureBuff(ref profile, BuffType.DarkConversion, CustomSkillTargetRule.Self, "DarkConversion=1", duration: int.MaxValue, tickRate: 2000);
+                    return true;
+
+                case MagicType.Rake:
+                    profile.Template = CustomSkillTemplate.DirectDamage;
+                    profile.TargetRule = CustomSkillTargetRule.Enemy;
+                    profile.Element = Element.None;
+                    profile.PowerSource = CustomSkillPowerSource.DC;
+                    profile.CastDelay = 600;
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+
+        private static void ConfigureBuff(
+            ref AutoSkillExportProfile profile,
+            BuffType buffType,
+            CustomSkillTargetRule targetRule,
+            string buffStats,
+            int radius = 0,
+            int maxTargets = 1,
+            int duration = 0,
+            int durationPowerRate = 0,
+            int tickRate = 0,
+            CustomSkillPowerSource powerSource = CustomSkillPowerSource.Auto,
+            int powerRate = 100,
+            int castDelay = 500)
+        {
+            profile.Template = CustomSkillTemplate.Buff;
+            profile.TargetRule = targetRule;
+            profile.Element = Element.None;
+            profile.Radius = radius;
+            profile.MaxTargets = maxTargets;
+            profile.PowerSource = powerSource;
+            profile.PowerRate = powerRate;
+            profile.Duration = duration;
+            profile.DurationPowerRate = durationPowerRate;
+            profile.TickRate = tickRate <= 0 ? 1000 : tickRate;
+            profile.BuffType = buffType;
+            profile.BuffStats = buffStats;
+            profile.CastDelay = castDelay;
+        }
+
+        private static void ConfigureDebuff(
+            ref AutoSkillExportProfile profile,
+            PoisonType poisonType,
+            CustomSkillTargetRule targetRule = CustomSkillTargetRule.Enemy,
+            int radius = 0,
+            int duration = 0,
+            int durationPowerRate = 0,
+            int tickRate = 1000,
+            int poisonValue = 0,
+            CustomSkillPowerSource powerSource = CustomSkillPowerSource.Auto)
+        {
+            profile.Template = CustomSkillTemplate.Debuff;
+            profile.TargetRule = targetRule;
+            profile.Element = Element.None;
+            profile.Radius = radius;
+            profile.MaxTargets = radius > 0 ? 0 : 1;
+            profile.PowerSource = powerSource;
+            profile.Duration = duration;
+            profile.DurationPowerRate = durationPowerRate;
+            profile.TickRate = tickRate;
+            profile.PoisonType = poisonType;
+            profile.PoisonValue = poisonValue;
+        }
+
+        private static void ConfigureControl(
+            ref AutoSkillExportProfile profile,
+            CustomSkillTargetRule targetRule = CustomSkillTargetRule.EnemyOrGround,
+            int radius = 0,
+            int knockbackDistance = 0,
+            int pullDistance = 0)
+        {
+            profile.Template = CustomSkillTemplate.Control;
+            profile.TargetRule = targetRule;
+            profile.Radius = radius;
+            profile.MaxTargets = radius > 0 ? 0 : 1;
+            profile.KnockbackDistance = knockbackDistance;
+            profile.PullDistance = pullDistance;
+            profile.Duration = 1000;
+        }
+
+        private static void ConfigureSummon(ref AutoSkillExportProfile profile, string monsterName)
+        {
+            profile.Template = CustomSkillTemplate.Summon;
+            profile.TargetRule = CustomSkillTargetRule.Ground;
+            profile.Element = Element.None;
+            profile.SummonMonster = monsterName;
+            profile.MaxSummons = 2;
+            profile.SummonDuration = 0;
+        }
+
+        private static Element GetAutoSkillElement(MagicType magic)
+        {
+            return magic switch
+            {
+                MagicType.FireBall or MagicType.AdamantineFireBall or MagicType.FireStorm or MagicType.FireWall or MagicType.ScortchedEarth or MagicType.FireBounce or MagicType.ChainOfFire or MagicType.BurningFire => Element.Fire,
+                MagicType.IceBolt or MagicType.IceBlades or MagicType.IceStorm or MagicType.FrozenEarth or MagicType.GreaterFrozenEarth or MagicType.IceRain or MagicType.FrostBite or MagicType.FrozenDragon or MagicType.IceDragon => Element.Ice,
+                MagicType.ThunderBolt or MagicType.LightningBall or MagicType.LightningStrike or MagicType.LightningBeam or MagicType.LightningWave or MagicType.ElectricShock or MagicType.ChainLightning or MagicType.ThunderStrike => Element.Lightning,
+                MagicType.Cyclone or MagicType.BlowEarth or MagicType.DragonTornado or MagicType.GustBlast or MagicType.Tornado or MagicType.Tempest or MagicType.Storm or MagicType.ElementalHurricane => Element.Wind,
+                MagicType.EvilSlayer or MagicType.GreaterEvilSlayer or MagicType.SearingLight => Element.Holy,
+                MagicType.PoisonCloud => Element.Dark,
+                _ => Element.None,
+            };
+        }
+
+        private struct AutoSkillExportProfile
+        {
+            public bool Enabled { get; set; }
+            public CustomSkillTemplate Template { get; set; }
+            public CustomSkillTargetRule TargetRule { get; set; }
+            public int Range { get; set; }
+            public int Radius { get; set; }
+            public int MaxTargets { get; set; }
+            public CustomSkillShape Shape { get; set; }
+            public int Length { get; set; }
+            public int Width { get; set; }
+            public int Angle { get; set; }
+            public int WaveCount { get; set; }
+            public int WaveInterval { get; set; }
+            public int KnockbackDistance { get; set; }
+            public int PullDistance { get; set; }
+            public Element Element { get; set; }
+            public CustomSkillPowerSource PowerSource { get; set; }
+            public bool IgnoreShield { get; set; }
+            public bool IgnoreArmour { get; set; }
+            public int FixedPower { get; set; }
+            public int PowerRate { get; set; }
+            public int Duration { get; set; }
+            public int DurationPowerRate { get; set; }
+            public int TickRate { get; set; }
+            public BuffType BuffType { get; set; }
+            public PoisonType PoisonType { get; set; }
+            public int PoisonValue { get; set; }
+            public bool PoisonCanKill { get; set; }
+            public string BuffStats { get; set; }
+            public bool BuffVisible { get; set; }
+            public bool BuffPause { get; set; }
+            public bool BuffHidden { get; set; }
+            public int BuffExtra { get; set; }
+            public int CastDelay { get; set; }
+            public int ProjectileSpeed { get; set; }
+            public string SummonMonster { get; set; }
+            public int MaxSummons { get; set; }
+            public int SummonDuration { get; set; }
+
+            public static AutoSkillExportProfile Default => new()
+            {
+                Template = CustomSkillTemplate.DirectDamage,
+                TargetRule = CustomSkillTargetRule.Enemy,
+                Range = Globals.MagicRange,
+                Shape = CustomSkillShape.Circle,
+                WaveCount = 1,
+                Element = Element.None,
+                PowerSource = CustomSkillPowerSource.Auto,
+                PowerRate = 100,
+                TickRate = 1000,
+                BuffType = BuffType.None,
+                PoisonType = PoisonType.None,
+                BuffStats = string.Empty,
+                BuffVisible = true,
+                CastDelay = 500,
+                ProjectileSpeed = Globals.ProjectileSpeed,
+                SummonMonster = string.Empty,
+                MaxSummons = 1,
+            };
+        }
+
+        private static void AppendMagicText(StringBuilder sb, MagicInfo magic)
+        {
+            sb.AppendLine("[Magic]");
+            sb.AppendLine($"Index={magic.Index}");
+            sb.AppendLine($"Name={Quote(magic.Name)}");
+            sb.AppendLine($"Magic={magic.Magic}");
+            sb.AppendLine($"Class={magic.Class}");
+            sb.AppendLine($"School={magic.School}");
+            sb.AppendLine($"Property={magic.Property}");
+            sb.AppendLine($"Icon={magic.Icon}");
+            sb.AppendLine($"MinBasePower={magic.MinBasePower}");
+            sb.AppendLine($"MaxBasePower={magic.MaxBasePower}");
+            sb.AppendLine($"MinLevelPower={magic.MinLevelPower}");
+            sb.AppendLine($"MaxLevelPower={magic.MaxLevelPower}");
+            sb.AppendLine($"BaseCost={magic.BaseCost}");
+            sb.AppendLine($"LevelCost={magic.LevelCost}");
+            sb.AppendLine($"NeedLevel1={magic.NeedLevel1}");
+            sb.AppendLine($"NeedLevel2={magic.NeedLevel2}");
+            sb.AppendLine($"NeedLevel3={magic.NeedLevel3}");
+            sb.AppendLine($"Experience1={magic.Experience1}");
+            sb.AppendLine($"Experience2={magic.Experience2}");
+            sb.AppendLine($"Experience3={magic.Experience3}");
+            sb.AppendLine($"Delay={magic.Delay}");
+            sb.AppendLine($"Description={Quote(magic.Description)}");
+            sb.AppendLine();
+        }
+
+        private static void ExportTodoReport(string path, bool overwrite, CustomSystemTextReport report)
+        {
+            if (File.Exists(path) && !overwrite)
+            {
+                report.Failures.Add($"已存在 TODO 报告，未覆盖: {path}");
+                return;
+            }
+
+            StringBuilder sb = new();
+            sb.AppendLine("自定义怪物与技能全量导出 TODO 报告");
+            sb.AppendLine();
+            sb.AppendLine($"待处理项: {report.PendingTodoCount}");
+            sb.AppendLine();
+
+            foreach (string todo in report.TodoDetails)
+                sb.AppendLine("- " + todo);
+
+            File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+        }
+
         private static string SafeFileName(string value)
         {
             if (string.IsNullOrWhiteSpace(value)) return "Unnamed";
             foreach (char c in Path.GetInvalidFileNameChars())
                 value = value.Replace(c.ToString(), string.Empty);
             return string.IsNullOrWhiteSpace(value) ? "Unnamed" : value.Trim();
+        }
+
+        private static string GetUniqueFileName(string fileName, int index, HashSet<string> usedFileNames)
+        {
+            fileName = SafeFileName(fileName);
+            if (usedFileNames.Add(fileName))
+                return fileName;
+
+            string indexedName = $"{fileName}#{index}";
+            if (usedFileNames.Add(indexedName))
+                return indexedName;
+
+            int suffix = 2;
+            while (!usedFileNames.Add($"{indexedName}-{suffix}"))
+                suffix++;
+
+            return $"{indexedName}-{suffix}";
         }
 
         private static string Quote(string value)
@@ -3219,6 +7965,9 @@ namespace Server.Envir
         public List<string> MissingMonsters { get; } = [];
         public List<string> MissingMagics { get; } = [];
         public List<string> MissingItems { get; } = [];
+        public List<string> TodoDetails { get; } = [];
+        public IEnumerable<string> PendingTodoDetails => TodoDetails.Where(IsPendingTodoDetail);
+        public int PendingTodoCount => PendingTodoDetails.Count();
 
         public string ToDisplayText()
         {
@@ -3236,12 +7985,14 @@ namespace Server.Envir
                 sb.AppendLine($"模板校验: 怪物 {TemplateMonsterFilesLoaded}, 技能 {TemplateSkillFilesLoaded}");
             sb.AppendLine($"缺失引用: 资源 {MissingResources.Distinct(StringComparer.OrdinalIgnoreCase).Count()}, 怪物 {MissingMonsters.Distinct(StringComparer.OrdinalIgnoreCase).Count()}, 技能 {MissingMagics.Distinct(StringComparer.OrdinalIgnoreCase).Count()}, 物品 {MissingItems.Distinct(StringComparer.OrdinalIgnoreCase).Count()}");
             sb.AppendLine($"跳过: 怪物 {MonstersSkipped}, 技能 {SkillsSkipped}");
+            sb.AppendLine($"待迁移 TODO: {PendingTodoCount}");
             sb.AppendLine($"错误: {Failures.Count}");
 
             AppendSamples(sb, "缺失资源", MissingResources);
             AppendSamples(sb, "缺失怪物", MissingMonsters);
             AppendSamples(sb, "缺失技能", MissingMagics);
             AppendSamples(sb, "缺失物品", MissingItems);
+            AppendSamples(sb, "待迁移 TODO 示例", PendingTodoDetails);
 
             if (Failures.Count > 0)
                 AppendSamples(sb, "错误示例", Failures);
@@ -3262,6 +8013,14 @@ namespace Server.Envir
             sb.AppendLine();
             sb.AppendLine($"{title}:");
             sb.AppendLine(string.Join(Environment.NewLine, samples));
+        }
+
+        private static bool IsPendingTodoDetail(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return false;
+
+            return value.StartsWith("怪物 `", StringComparison.Ordinal) ||
+                   value.StartsWith("技能 `", StringComparison.Ordinal);
         }
     }
 

@@ -1742,6 +1742,7 @@ namespace Server.WinForms
             details = AppendCustomSystemDetails(details, "缺失怪物完整列表", report.MissingMonsters.Distinct(StringComparer.OrdinalIgnoreCase));
             details = AppendCustomSystemDetails(details, "缺失技能完整列表", report.MissingMagics.Distinct(StringComparer.OrdinalIgnoreCase));
             details = AppendCustomSystemDetails(details, "缺失物品完整列表", report.MissingItems.Distinct(StringComparer.OrdinalIgnoreCase));
+            details = AppendCustomSystemDetails(details, "待迁移 TODO 完整列表", report.TodoDetails);
             details = AppendCustomSystemDetails(details, "错误完整列表", report.Failures);
 
             return details;

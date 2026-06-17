@@ -575,7 +575,12 @@ namespace Server.Models.Monsters
 
             bool ignoreShield = GetActionOptionBool(sourceAction, "IgnoreShield", false);
             bool ignoreArmour = GetActionOptionBool(sourceAction, "IgnoreArmour", false);
-            if (!ignoreShield && !ignoreArmour) return Attack(target, power, element);
+            if (!ignoreShield && !ignoreArmour)
+            {
+                int normalDamage = Attack(target, power, element);
+                ApplyActionPush(sourceAction, target, normalDamage);
+                return normalDamage;
+            }
 
             bool previousIgnoreShield = IgnoreShield;
             bool previousIgnoreArmour = IgnoreArmour;
@@ -584,13 +589,30 @@ namespace Server.Models.Monsters
             {
                 IgnoreShield |= ignoreShield;
                 IgnoreArmour |= ignoreArmour;
-                return Attack(target, power, element);
+                int damage = Attack(target, power, element);
+                ApplyActionPush(sourceAction, target, damage);
+                return damage;
             }
             finally
             {
                 IgnoreShield = previousIgnoreShield;
                 IgnoreArmour = previousIgnoreArmour;
             }
+        }
+
+        private void ApplyActionPush(CustomMonsterAiActionInfo action, MapObject target, int damage)
+        {
+            if (damage <= 0 || target == null || target == this) return;
+
+            int distance = GetActionOptionInt(action, "PushDistance", 0);
+            if (distance <= 0) return;
+
+            string directionName = GetActionOptionValue(action, "PushDirection");
+            MirDirection direction = string.IsNullOrWhiteSpace(directionName) || !TryGetActionDirection(directionName, target, out MirDirection configured)
+                ? Functions.DirectionFromPoint(CurrentLocation, target.CurrentLocation)
+                : configured;
+
+            target.Pushed(direction, distance);
         }
 
         private void ProcessPickupCompanion()
@@ -1192,6 +1214,9 @@ namespace Server.Models.Monsters
 
                 case CustomAiActionType.DespawnSelf:
                     return ExecuteDespawnSelf(action);
+
+                case CustomAiActionType.SpawnSpellObject:
+                    return ExecuteSpawnSpellObject(action);
 
                 default:
                     return false;
@@ -1835,7 +1860,8 @@ namespace Server.Models.Monsters
         {
             CullMinionsForSpawnAction(action);
 
-            if (MaxMinions <= MinionList.Count) return false;
+            bool ignoreMaxMinions = GetActionOptionBool(action, "IgnoreMaxMinions", false);
+            if (!ignoreMaxMinions && MaxMinions <= MinionList.Count) return false;
 
             bool spawned = false;
             MapObject inheritedTarget = GetExecutionTarget();
@@ -1843,7 +1869,7 @@ namespace Server.Models.Monsters
                              GetActionOptionBool(action, "PerTarget", false);
             List<Point> origins = perTarget
                 ? GetActionTargets(action, requireAttackTarget: false).Select(x => x.CurrentLocation).Distinct().ToList()
-                : new List<Point> { GetActionLocation(action) ?? CurrentLocation };
+                : new List<Point> { ApplyActionOriginOffset(action, GetActionLocation(action) ?? CurrentLocation) };
 
             if (origins.Count == 0)
                 origins.Add(CurrentLocation);
@@ -1854,13 +1880,14 @@ namespace Server.Models.Monsters
             foreach (Point origin in origins)
             {
                 int count = SEnvir.Random.Next(Math.Max(0, action.RandomCount) + 1) + Math.Max(0, action.FixedCount);
-                count = Math.Min(count, MaxMinions - MinionList.Count);
+                if (!ignoreMaxMinions)
+                    count = Math.Min(count, MaxMinions - MinionList.Count);
                 count = Math.Min(count, totalLimit - totalSpawned);
                 if (count <= 0) break;
 
                 for (int i = 0; i < count; i++)
                 {
-                    MonsterInfo info = action.SpawnMonster ?? SEnvir.GetMonsterInfo(SpawnList);
+                    MonsterInfo info = action.SpawnMonster ?? GetSpawnMonsterFromActionFlag(action) ?? GetSpawnMonsterFromActionPool(action) ?? SEnvir.GetMonsterInfo(SpawnList);
                     if (info == null) break;
 
                     MonsterObject mob = GetMonster(info);
@@ -1884,11 +1911,14 @@ namespace Server.Models.Monsters
         {
             int leashRadius = GetActionOptionInt(action, "MinionLeashRadius", GetActionOptionInt(action, "LeashRadius", 0));
             bool cullMissing = GetActionOptionBool(action, "CullMissingMinions", true);
+            bool preserveBoss = GetActionOptionBool(action, "PreserveBossMinions", GetActionOptionBool(action, "PreserveBoss", false));
             if (leashRadius <= 0 && !cullMissing) return;
 
             for (int i = MinionList.Count - 1; i >= 0; i--)
             {
                 MonsterObject minion = MinionList[i];
+                if (preserveBoss && minion?.MonsterInfo?.IsBoss == true) continue;
+
                 bool remove = minion == null || cullMissing && (minion.Node == null || minion.Dead);
 
                 if (!remove && leashRadius > 0)
@@ -1910,6 +1940,48 @@ namespace Server.Models.Monsters
 
                 minion.Despawn();
             }
+        }
+
+        private static MonsterInfo GetSpawnMonsterFromActionFlag(CustomMonsterAiActionInfo action)
+        {
+            MonsterFlag flag = GetActionMonsterFlag(action);
+            return flag == MonsterFlag.None ? null : SEnvir.MonsterInfoList.Binding.FirstOrDefault(x => x.Flag == flag);
+        }
+
+        private static MonsterInfo GetSpawnMonsterFromActionPool(CustomMonsterAiActionInfo action)
+        {
+            string value = GetActionOptionValue(action, "MonsterFlags");
+            if (string.IsNullOrWhiteSpace(value))
+                value = GetActionOptionValue(action, "SpawnPool");
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+
+            List<(MonsterInfo Info, int Weight)> pool = [];
+            foreach (string token in value.Split(['|', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                string[] parts = token.Split(':', 2, StringSplitOptions.TrimEntries);
+                if (!Enum.TryParse(parts[0], true, out MonsterFlag flag) || flag == MonsterFlag.None) continue;
+
+                MonsterInfo info = SEnvir.MonsterInfoList.Binding.FirstOrDefault(x => x.Flag == flag);
+                if (info == null) continue;
+
+                int weight = parts.Length == 2 && int.TryParse(parts[1], out int parsed) ? parsed : 1;
+                if (weight <= 0) continue;
+
+                pool.Add((info, weight));
+            }
+
+            if (pool.Count == 0) return null;
+
+            int total = pool.Sum(x => x.Weight);
+            int roll = SEnvir.Random.Next(total);
+            foreach ((MonsterInfo info, int weight) in pool)
+            {
+                if ((roll -= weight) < 0)
+                    return info;
+            }
+
+            return pool[^1].Info;
         }
 
         private bool ExecuteTeleportSelf(CustomMonsterAiActionInfo action)
@@ -2009,9 +2081,18 @@ namespace Server.Models.Monsters
             if (CurrentMap == null) return false;
 
             int radius = action.Radius > 0 ? action.Radius : ViewRange;
+            bool searchAllies = ActionSearchesAllies(action);
             List<MapObject> targets = UsesTargetCollection(action.Target)
-                ? GetActionTargets(action, requireAttackTarget: true).Where(ShouldAttackTarget).ToList()
-                : GetTargets(CurrentMap, CurrentLocation, radius)
+                ? GetActionTargets(action, requireAttackTarget: !searchAllies)
+                    .Where(x => searchAllies ? CanHelpTarget(x) : ShouldAttackTarget(x))
+                    .ToList()
+                : searchAllies
+                    ? GetAllObjects(CurrentLocation, radius)
+                    .Where(x => x != null && x != this && x.Node != null && !x.Dead && x.Visible && x.CurrentMap == CurrentMap && CanHelpTarget(x))
+                    .OrderBy(x => Functions.Distance(CurrentLocation, x.CurrentLocation))
+                    .ThenBy(_ => SEnvir.Random.Next())
+                    .ToList()
+                    : GetTargets(CurrentMap, CurrentLocation, radius)
                     .Where(ShouldAttackTarget)
                     .OrderBy(x => Functions.Distance(CurrentLocation, x.CurrentLocation))
                     .ThenBy(_ => SEnvir.Random.Next())
@@ -2022,6 +2103,18 @@ namespace Server.Models.Monsters
 
             Target = target;
             return true;
+        }
+
+        private static bool ActionSearchesAllies(CustomMonsterAiActionInfo action)
+        {
+            if (action == null) return false;
+
+            return action.Target is CustomAiTargetSelectorType.AllyRadius
+                    or CustomAiTargetSelectorType.RandomAllyInView
+                    or CustomAiTargetSelectorType.NearestAllyInView
+                    or CustomAiTargetSelectorType.LowestHealthAllyInView
+                   || GetActionOptionBool(action, "SearchAllies", false)
+                   || GetActionOptionBool(action, "SearchCanHelp", false);
         }
 
         private bool ExecuteSetCounter(CustomMonsterAiActionInfo action, bool additive)
@@ -2350,6 +2443,7 @@ namespace Server.Models.Monsters
             Point origin = action.Target == CustomAiTargetSelectorType.TargetRadius
                 ? target.CurrentLocation
                 : CurrentLocation;
+            origin = ApplyActionOriginOffset(action, origin);
 
             return TeleportObjectNear(target, CurrentMap, origin, 0, Math.Max(1, action.Radius == 0 ? 5 : action.Radius));
         }
@@ -2686,6 +2780,91 @@ namespace Server.Models.Monsters
             return true;
         }
 
+        private bool ExecuteSpawnSpellObject(CustomMonsterAiActionInfo action)
+        {
+            if (CurrentMap == null) return false;
+
+            string effectName = GetActionOptionValue(action, "SpellEffect");
+            if (string.IsNullOrWhiteSpace(effectName))
+                effectName = GetActionOptionValue(action, "Effect");
+            if (string.IsNullOrWhiteSpace(effectName) || !Enum.TryParse(effectName, true, out SpellEffect effect) || effect == SpellEffect.None)
+                return false;
+
+            MapObject target = GetExecutionTarget();
+            if (action.Distance > 0 && target != null && !Functions.InRange(CurrentLocation, target.CurrentLocation, action.Distance))
+                return false;
+
+            bool perTarget = GetActionOptionBool(action, "PerTarget", false);
+            List<MapObject> selectedTargets = perTarget
+                ? GetActionTargets(action, requireAttackTarget: true).Where(x => x?.CurrentMap == CurrentMap).Distinct().ToList()
+                : [];
+            List<Point> origins = selectedTargets.Count > 0
+                ? selectedTargets.Select(x => x.CurrentLocation).Distinct().ToList()
+                : [GetActionLocation(action) ?? CurrentLocation];
+
+            int radius = Math.Max(0, action.Radius);
+            List<Cell> allCells = [];
+
+            bool visibleOriginOnly = GetActionOptionBool(action, "VisibleOriginOnly", false);
+            int duration = Math.Max(0, action.Duration);
+            int durationRandom = Math.Max(0, GetActionOptionInt(action, "DurationRandom", 0));
+            if (durationRandom > 0)
+                duration += SEnvir.Random.Next(durationRandom);
+
+            TimeSpan tickFrequency = TimeSpan.FromMilliseconds(Math.Max(0, action.TickRate));
+            int tickCount = action.FixedCount > 0 ? action.FixedCount : 1;
+
+            foreach (Point origin in origins)
+            {
+                List<Cell> cells = CurrentMap.GetCells(origin, 0, radius).Where(x => x != null).ToList();
+                foreach (Cell cell in cells)
+                {
+                    SpellObject spell = new()
+                    {
+                        DisplayLocation = origin,
+                        TickCount = tickCount,
+                        TickFrequency = tickFrequency,
+                        Owner = this,
+                        Effect = effect,
+                        Power = Math.Max(0, action.FixedPower),
+                        Visible = !visibleOriginOnly || cell.Location == origin,
+                    };
+
+                    if (duration > 0)
+                        spell.TickTime = SEnvir.Now.AddMilliseconds(duration);
+
+                    spell.Spawn(cell.Map, cell.Location);
+                    allCells.Add(cell);
+                }
+            }
+
+            if (allCells.Count == 0) return false;
+
+            MagicType magic = GetActionMagicType(action);
+            if (magic != MagicType.None || GetActionOptionBool(action, "BroadcastMagic", false))
+            {
+                if (target != null)
+                    Direction = Functions.DirectionFromPoint(CurrentLocation, target.CurrentLocation);
+
+                Broadcast(new S.ObjectMagic
+                {
+                    ObjectID = ObjectID,
+                    Direction = Direction,
+                    CurrentLocation = CurrentLocation,
+                    Cast = true,
+                    Type = magic,
+                    MagicInfoIndex = action.MagicInfo?.Index ?? 0,
+                    Targets = selectedTargets.Count > 0 ? selectedTargets.Select(x => x.ObjectID).ToList() : target == null ? [] : [target.ObjectID],
+                    Locations = allCells.Select(x => x.Location).Distinct().ToList(),
+                    AttackElement = GetActionElement(action),
+                    AnimationVariant = action.AnimationVariant
+                });
+            }
+
+            UpdateAttackTime();
+            return true;
+        }
+
         private static MonsterFlag GetActionMonsterFlag(CustomMonsterAiActionInfo action)
         {
             string flagName = GetActionOptionValue(action, "MonsterFlag");
@@ -2703,7 +2882,7 @@ namespace Server.Models.Monsters
             if (string.IsNullOrWhiteSpace(directionName))
                 directionName = GetActionOptionValue(action, "OffsetDirection");
 
-            if (string.IsNullOrWhiteSpace(directionName) || !TryGetActionOffsetDirection(directionName, out MirDirection direction))
+            if (string.IsNullOrWhiteSpace(directionName) || !TryGetActionDirection(directionName, GetExecutionTarget(), out MirDirection direction))
                 return origin;
 
             int distance = GetActionOptionInt(action, "OriginDistance", GetActionOptionInt(action, "OffsetDistance", 1));
@@ -2711,12 +2890,12 @@ namespace Server.Models.Monsters
             return distance == 0 ? origin : Functions.Move(origin, direction, distance);
         }
 
-        private bool TryGetActionOffsetDirection(string directionName, out MirDirection direction)
+        private bool TryGetActionDirection(string directionName, MapObject selectedTarget, out MirDirection direction)
         {
             direction = Direction;
             if (string.IsNullOrWhiteSpace(directionName)) return false;
 
-            MapObject target = GetExecutionTarget();
+            MapObject target = selectedTarget ?? GetExecutionTarget();
 
             if (directionName.Equals("Target", StringComparison.OrdinalIgnoreCase)
                 || directionName.Equals("CurrentTarget", StringComparison.OrdinalIgnoreCase))
@@ -2772,7 +2951,10 @@ namespace Server.Models.Monsters
             {
                 if (target == null || target == this) continue;
 
-                MirDirection direction = Functions.DirectionFromPoint(CurrentLocation, target.CurrentLocation);
+                string directionName = GetActionOptionValue(action, "PushDirection");
+                MirDirection direction = string.IsNullOrWhiteSpace(directionName) || !TryGetActionDirection(directionName, target, out MirDirection configured)
+                    ? Functions.DirectionFromPoint(CurrentLocation, target.CurrentLocation)
+                    : configured;
                 pushed |= target.Pushed(direction, distance) > 0;
             }
 
@@ -4067,7 +4249,7 @@ namespace Server.Models.Monsters
             if (helpful && target != this && !CanHelpTarget(target)) return;
             if (!helpful && !CanAttackTarget(target)) return;
 
-            TimeSpan duration = TimeSpan.FromMilliseconds(Math.Max(1000, skill.Duration));
+            TimeSpan duration = GetSkillDuration(skill);
             TimeSpan tickRate = TimeSpan.FromMilliseconds(Math.Max(0, skill.TickRate));
 
             if (skill.BuffType != BuffType.None)
@@ -4136,6 +4318,16 @@ namespace Server.Models.Monsters
             };
 
             return Math.Max(1, skill.FixedPower + attack * Math.Max(0, skill.PowerRate) / 100);
+        }
+
+        private TimeSpan GetSkillDuration(CustomSkillInfo skill)
+        {
+            int duration = Math.Max(0, skill.Duration);
+
+            if (skill.DurationPowerRate > 0)
+                duration += GetSkillPower(skill) * skill.DurationPowerRate;
+
+            return TimeSpan.FromMilliseconds(Math.Max(1000, duration));
         }
 
         private static int GetMaxSkillTargetsOrAll(CustomSkillInfo skill)
@@ -4278,28 +4470,28 @@ namespace Server.Models.Monsters
                 || skill?.Effects?.Any(x => x?.Stage == CustomSkillEffectStage.Projectile) == true;
         }
 
-        private static Stats BuildActionBuffStats(CustomMonsterAiActionInfo action, MapObject target)
+        private Stats BuildActionBuffStats(CustomMonsterAiActionInfo action, MapObject target)
         {
             Stats stats = CloneStats(action?.BuffStats) ?? new Stats();
-            string value = GetActionOptionValue(action, "BuffStatsFromTarget");
+            AddScaledBuffStats(stats, target, GetActionOptionValue(action, "BuffStatsFromTarget"));
+            AddScaledBuffStats(stats, this, GetActionOptionValue(action, "BuffStatsFromSelf"));
 
-            if (string.IsNullOrWhiteSpace(value) || target == null)
-                return stats.Count == 0 ? null : stats;
+            return stats.Count == 0 ? null : stats;
+        }
+
+        private static void AddScaledBuffStats(Stats stats, MapObject sourceTarget, string value)
+        {
+            if (stats == null || sourceTarget == null || string.IsNullOrWhiteSpace(value)) return;
 
             foreach (string token in value.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
                 if (!TryParseBuffStatScale(token, out Stat source, out Stat destination, out int rate)) continue;
 
-                long amount = (long)target.Stats[source] * Math.Max(0, rate) / 100L;
+                long amount = (long)sourceTarget.Stats[source] * Math.Max(0, rate) / 100L;
                 if (amount == 0) continue;
 
-                if (amount > int.MaxValue)
-                    stats[destination] += int.MaxValue;
-                else
-                    stats[destination] += (int)amount;
+                stats[destination] += amount > int.MaxValue ? int.MaxValue : (int)amount;
             }
-
-            return stats.Count == 0 ? null : stats;
         }
 
         private static bool TryParseBuffStatScale(string token, out Stat source, out Stat destination, out int rate)

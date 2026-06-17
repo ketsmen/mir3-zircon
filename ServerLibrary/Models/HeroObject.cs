@@ -1243,7 +1243,7 @@ namespace Server.Models
             if (target?.Node == null || !CanHelpTarget(target) || skill.BuffType == BuffType.None) return false;
             if (target.Buffs.Any(x => x.Type == skill.BuffType)) return false;
 
-            TimeSpan duration = TimeSpan.FromMilliseconds(Math.Max(1000, skill.Duration));
+            TimeSpan duration = GetCustomHeroSkillDuration(magic, skill);
             TimeSpan tickRate = TimeSpan.FromMilliseconds(Math.Max(0, skill.TickRate));
 
             target.BuffAdd(skill.BuffType, duration, CloneStats(skill.BuffStats), skill.BuffVisible, skill.BuffPause, tickRate, skill.BuffHidden, skill.BuffExtra);
@@ -1394,7 +1394,7 @@ namespace Server.Models
         {
             if (target?.Node == null || target.Dead || !CanAttackTarget(target)) return;
 
-            TimeSpan duration = TimeSpan.FromMilliseconds(Math.Max(1000, skill.Duration));
+            TimeSpan duration = GetCustomHeroSkillDuration(magic, skill);
             TimeSpan tickRate = TimeSpan.FromMilliseconds(Math.Max(0, skill.TickRate));
 
             if (skill.BuffType != BuffType.None)
@@ -1440,6 +1440,16 @@ namespace Server.Models
             int power = skill.FixedPower + magic.GetPower() + source * Math.Max(0, skill.PowerRate) / 100;
 
             return Math.Max(1, power);
+        }
+
+        private TimeSpan GetCustomHeroSkillDuration(UserMagic magic, CustomSkillInfo skill)
+        {
+            int duration = Math.Max(0, skill.Duration);
+
+            if (skill.DurationPowerRate > 0)
+                duration += GetCustomHeroSkillPower(magic, skill) * skill.DurationPowerRate;
+
+            return TimeSpan.FromMilliseconds(Math.Max(1000, duration));
         }
 
         private int GetCustomHeroAutoPowerSource(UserMagic magic, CustomSkillInfo skill)

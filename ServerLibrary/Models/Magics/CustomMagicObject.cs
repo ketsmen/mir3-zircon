@@ -487,7 +487,7 @@ namespace Server.Models.Magics
             if (helpful && !Player.CanHelpTarget(target)) return;
             if (!helpful && !Player.CanAttackTarget(target)) return;
 
-            TimeSpan duration = TimeSpan.FromMilliseconds(Math.Max(1000, _skill.Duration));
+            TimeSpan duration = GetSkillDuration();
             TimeSpan tickRate = TimeSpan.FromMilliseconds(Math.Max(0, _skill.TickRate));
 
             if (_skill.BuffType != BuffType.None)
@@ -653,6 +653,16 @@ namespace Server.Models.Magics
             int tickRate = GetPersistentAreaTickRate();
             int duration = _skill.Duration <= 0 ? tickRate : _skill.Duration;
             return Math.Max(1, (int)Math.Ceiling(duration / (double)tickRate));
+        }
+
+        private TimeSpan GetSkillDuration()
+        {
+            int duration = Math.Max(0, _skill.Duration);
+
+            if (_skill.DurationPowerRate > 0)
+                duration += GetTemplatePower() * _skill.DurationPowerRate;
+
+            return TimeSpan.FromMilliseconds(Math.Max(1000, duration));
         }
 
         private int GetAutoPowerSource()
