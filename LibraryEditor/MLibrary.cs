@@ -29,8 +29,14 @@ namespace LibraryEditor
         public MLibrary(string filename)
         {
             FileName = filename;
-            Initialize();
-            Close();
+            try
+            {
+                Initialize();
+            }
+            finally
+            {
+                Close();
+            }
         }
 
         public void Initialize()
@@ -41,7 +47,7 @@ namespace LibraryEditor
             if (!File.Exists(FileName))
                 return;
 
-            _stream = new FileStream(FileName, FileMode.Open, FileAccess.ReadWrite);
+            _stream = new FileStream(FileName, FileMode.Open, FileAccess.Read, FileShare.Read);
             _reader = new BinaryReader(_stream);
             CurrentVersion = _reader.ReadInt32();
             if (CurrentVersion != LibVersion)
@@ -50,11 +56,17 @@ namespace LibraryEditor
                 return;
             }
             Count = _reader.ReadInt32();
+            ValidateImageCount(Count, _stream.Length, 8);
             Images = new List<MImage>();
             IndexList = new List<int>();
 
+            long imageDataStart = 8L + (long)Count * sizeof(int);
             for (int i = 0; i < Count; i++)
-                IndexList.Add(_reader.ReadInt32());
+            {
+                int offset = _reader.ReadInt32();
+                ValidateImageOffset(offset, imageDataStart, _stream.Length, i);
+                IndexList.Add(offset);
+            }
 
             for (int i = 0; i < Count; i++)
                 Images.Add(null);
@@ -65,10 +77,27 @@ namespace LibraryEditor
 
         public void Close()
         {
-            if (_stream != null)
-                _stream.Dispose();
-            // if (_reader != null)
-            //     _reader.Dispose();
+            _reader?.Dispose();
+            _reader = null;
+
+            _stream?.Dispose();
+            _stream = null;
+        }
+
+        private static void ValidateImageCount(int count, long streamLength, int headerPrefixBytes)
+        {
+            long imageDataStart = headerPrefixBytes + (long)count * sizeof(int);
+            if (count < 0 || imageDataStart > streamLength)
+                throw new InvalidDataException($"图库图片数量无效: {count:#,##0}。");
+        }
+
+        private static void ValidateImageOffset(int offset, long imageDataStart, long streamLength, int imageIndex)
+        {
+            if (offset == 0)
+                return;
+
+            if (offset < imageDataStart || offset >= streamLength)
+                throw new InvalidDataException($"图库图片 {imageIndex} 的数据位置无效: {offset:#,##0}。");
         }
 
         public void Save()
@@ -85,24 +114,30 @@ namespace LibraryEditor
             for (int i = 0; i < Count; i++)
             {
                 IndexList.Add((int)stream.Length + offSet);
-                Images[i].Save(writer);
+                MImage image = Images[i];
+                if (image == null)
+                    MImage.SaveBlank(writer);
+                else
+                    image.Save(writer);
             }
 
             writer.Flush();
             byte[] fBytes = stream.ToArray();
             //  writer.Dispose();
 
-            _stream = File.Create(FileName);
-            writer = new BinaryWriter(_stream);
-            writer.Write(LibVersion);
-            writer.Write(Count);
-            for (int i = 0; i < Count; i++)
-                writer.Write(IndexList[i]);
+            using (MemoryStream output = new MemoryStream())
+            using (BinaryWriter fileWriter = new BinaryWriter(output))
+            {
+                fileWriter.Write(LibVersion);
+                fileWriter.Write(Count);
+                for (int i = 0; i < Count; i++)
+                    fileWriter.Write(IndexList[i]);
 
-            writer.Write(fBytes);
-            writer.Flush();
-            writer.Close();
-            writer.Dispose();
+                fileWriter.Write(fBytes);
+                fileWriter.Flush();
+                LibraryFileWriter.WriteAllBytesAtomically(FileName, output.ToArray());
+            }
+
             Close();
         }
 
@@ -116,6 +151,9 @@ namespace LibraryEditor
 
             if (Images[index] == null)
             {
+                if (IndexList[index] == 0)
+                    return;
+
                 _stream.Position = IndexList[index];
                 Images[index] = new MImage(_reader);
             }
@@ -134,37 +172,26 @@ namespace LibraryEditor
         {
             string fileName = Path.ChangeExtension(FileName, ".Zl");
 
-            if (File.Exists(fileName))
-                File.Delete(fileName);
+            using Mir3Library library = Mir3Library.CreateEmpty(fileName, useBlackKeyTransparency);
+            library.Version = Mir3Library.LIBRARY_VERSION;
 
-            Mir3Library library = new Mir3Library(fileName, useBlackKeyTransparency)
-            {
-                Version = Mir3Library.LIBRARY_VERSION
-            };
-
-            library.Images.AddRange(Enumerable.Repeat(new Mir3Library.Mir3Image(library.Version), Images.Count));
+            for (int i = 0; i < Images.Count; i++)
+                library.Images.Add(null);
 
             ParallelOptions options = new ParallelOptions { MaxDegreeOfParallelism = 8 };
 
-            try
+            Parallel.For(0, Images.Count, options, i =>
             {
-                Parallel.For(0, Images.Count, options, i =>
-                {
-                    MImage image = Images[i];
-                    if (image.HasMask)
-                        library.Images[i] = new Mir3Library.Mir3Image(image.Image, null, image.MaskImage, library.Version, library.UseBlackKeyTransparency) { OffSetX = image.X, OffSetY = image.Y, ShadowOffSetX = image.ShadowX, ShadowOffSetY = image.ShadowY };
-                    else
-                        library.Images[i] = new Mir3Library.Mir3Image(image.Image, library.Version, library.UseBlackKeyTransparency) { OffSetX = image.X, OffSetY = image.Y, ShadowOffSetX = image.ShadowX, ShadowOffSetY = image.ShadowY };
-                });
-            }
-            catch (System.Exception)
-            {
-                throw;
-            }
-            finally
-            {
-                library.Save(fileName);
-            }
+                MImage image = Images[i];
+                if (image == null) return;
+
+                if (image.HasMask)
+                    library.Images[i] = new Mir3Library.Mir3Image(CloneBitmap(image.Image), null, CloneBitmap(image.MaskImage), library.Version, library.UseBlackKeyTransparency) { OffSetX = image.X, OffSetY = image.Y, ShadowOffSetX = image.ShadowX, ShadowOffSetY = image.ShadowY };
+                else
+                    library.Images[i] = new Mir3Library.Mir3Image(CloneBitmap(image.Image), library.Version, library.UseBlackKeyTransparency) { OffSetX = image.X, OffSetY = image.Y, ShadowOffSetX = image.ShadowX, ShadowOffSetY = image.ShadowY };
+            });
+
+            library.Save(fileName);
 
             // Operation finished.
             // System.Windows.Forms.MessageBox.Show("Converted " + fileName + " successfully.",
@@ -176,31 +203,29 @@ namespace LibraryEditor
         public void MergeToMLibrary(Mir3Library lib, int newImages)
         {
             int offset = lib.Images.Count;
-            lib.Images.AddRange(Enumerable.Repeat(new Mir3Library.Mir3Image(lib.Version), Images.Count));
+            for (int i = 0; i < Images.Count; i++)
+                lib.Images.Add(null);
             //library.Save();
 
             ParallelOptions options = new ParallelOptions { MaxDegreeOfParallelism = 8 };
 
-            try
+            Parallel.For(0, Images.Count, options, i =>
             {
-                Parallel.For(0, Images.Count, options, i =>
-                {
-                    MImage image = Images[i];
-                    if (image.HasMask)
-                        lib.Images[i + offset] = new Mir3Library.Mir3Image(image.Image, null, image.MaskImage, lib.Version, lib.UseBlackKeyTransparency) { OffSetX = image.X, OffSetY = image.Y, ShadowOffSetX = image.ShadowX, ShadowOffSetY = image.ShadowY };
-                    else
-                        lib.Images[i + offset] = new Mir3Library.Mir3Image(image.Image, lib.Version, lib.UseBlackKeyTransparency) { OffSetX = image.X, OffSetY = image.Y, ShadowOffSetX = image.ShadowX, ShadowOffSetY = image.ShadowY };
-                });
-                lib.AddBlanks(newImages);
-            }
-            catch (System.Exception)
-            {
-                throw;
-            }
+                MImage image = Images[i];
+                if (image == null) return;
+
+                if (image.HasMask)
+                    lib.Images[i + offset] = new Mir3Library.Mir3Image(CloneBitmap(image.Image), null, CloneBitmap(image.MaskImage), lib.Version, lib.UseBlackKeyTransparency) { OffSetX = image.X, OffSetY = image.Y, ShadowOffSetX = image.ShadowX, ShadowOffSetY = image.ShadowY };
+                else
+                    lib.Images[i + offset] = new Mir3Library.Mir3Image(CloneBitmap(image.Image), lib.Version, lib.UseBlackKeyTransparency) { OffSetX = image.X, OffSetY = image.Y, ShadowOffSetX = image.ShadowX, ShadowOffSetY = image.ShadowY };
+            });
+            lib.AddBlanks(newImages);
         }
 
         public sealed class MImage
         {
+            private const int MaxImagePixels = 16777216;
+
             public short Width, Height, X, Y, ShadowX, ShadowY;
             public byte Shadow;
             public int Length;
@@ -227,7 +252,8 @@ namespace LibraryEditor
                 ShadowY = reader.ReadInt16();
                 Shadow = reader.ReadByte();
                 Length = reader.ReadInt32();
-                FBytes = reader.ReadBytes(Length);
+                ValidateStoredDimensions(Width, Height, Length, "主图");
+                FBytes = ReadExactBytes(reader, Length, "主图");
                 //check if there's a second layer and read it
                 HasMask = ((Shadow >> 7) == 1) ? true : false;
                 if (HasMask)
@@ -237,7 +263,8 @@ namespace LibraryEditor
                     MaskX = reader.ReadInt16();
                     MaskY = reader.ReadInt16();
                     MaskLength = reader.ReadInt32();
-                    MaskFBytes = reader.ReadBytes(MaskLength);
+                    ValidateStoredDimensions(MaskWidth, MaskHeight, MaskLength, "遮罩图");
+                    MaskFBytes = ReadExactBytes(reader, MaskLength, "遮罩图");
                 }
             }
 
@@ -267,13 +294,21 @@ namespace LibraryEditor
             {
                 byte[] output;
 
-                BitmapData data = input.LockBits(new Rectangle(0, 0, input.Width, input.Height), ImageLockMode.ReadOnly,
-                                                 PixelFormat.Format32bppArgb);
-
                 byte[] pixels = new byte[input.Width * input.Height * 4];
 
-                Marshal.Copy(data.Scan0, pixels, 0, pixels.Length);
-                input.UnlockBits(data);
+                BitmapData data = null;
+                try
+                {
+                    data = input.LockBits(new Rectangle(0, 0, input.Width, input.Height), ImageLockMode.ReadOnly,
+                                                     PixelFormat.Format32bppArgb);
+
+                    Marshal.Copy(data.Scan0, pixels, 0, pixels.Length);
+                }
+                finally
+                {
+                    if (data != null)
+                        input.UnlockBits(data);
+                }
 
                 for (int i = 0; i < pixels.Length; i += 4)
                 {
@@ -306,17 +341,31 @@ namespace LibraryEditor
                 writer.Write(ShadowX);
                 writer.Write(ShadowY);
                 writer.Write(HasMask ? (byte)(Shadow | 0x80) : (byte)Shadow);
-                writer.Write(FBytes.Length);
-                writer.Write(FBytes);
+                byte[] imageBytes = FBytes ?? Array.Empty<byte>();
+                writer.Write(imageBytes.Length);
+                writer.Write(imageBytes);
                 if (HasMask)
                 {
                     writer.Write(MaskWidth);
                     writer.Write(MaskHeight);
                     writer.Write(MaskX);
                     writer.Write(MaskY);
-                    writer.Write(MaskFBytes.Length);
-                    writer.Write(MaskFBytes);
+                    byte[] maskBytes = MaskFBytes ?? Array.Empty<byte>();
+                    writer.Write(maskBytes.Length);
+                    writer.Write(maskBytes);
                 }
+            }
+
+            public static void SaveBlank(BinaryWriter writer)
+            {
+                writer.Write((short)0);
+                writer.Write((short)0);
+                writer.Write((short)0);
+                writer.Write((short)0);
+                writer.Write((short)0);
+                writer.Write((short)0);
+                writer.Write((byte)0);
+                writer.Write(0);
             }
 
             public unsafe void CreateTexture(BinaryReader reader)
@@ -331,23 +380,45 @@ namespace LibraryEditor
 
                 Image = new Bitmap(w, h);
 
-                BitmapData data = Image.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadWrite,
-                                                 PixelFormat.Format32bppArgb);
-
-                fixed (byte* source = FBytes)
-                    Squish.DecompressImage(data.Scan0, w, h, (IntPtr)source, SquishFlags.Dxt1);
-
-                byte* dest = (byte*)data.Scan0;
-
-                for (int i = 0; i < h * w * 4; i += 4)
+                BitmapData data = null;
+                bool imageReady = false;
+                try
                 {
-                    //Reverse Red/Blue
-                    byte b = dest[i];
-                    dest[i] = dest[i + 2];
-                    dest[i + 2] = b;
-                }
+                    data = Image.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadWrite,
+                                                     PixelFormat.Format32bppArgb);
 
-                Image.UnlockBits(data);
+                    ValidateBufferLength(FBytes, Squish.GetStorageRequirements(w, h, SquishFlags.Dxt1), "主图");
+                    fixed (byte* source = FBytes)
+                        Squish.DecompressImage(data.Scan0, w, h, (IntPtr)source, SquishFlags.Dxt1);
+
+                    byte* dest = (byte*)data.Scan0;
+
+                    for (int i = 0; i < h * w * 4; i += 4)
+                    {
+                        //Reverse Red/Blue
+                        byte b = dest[i];
+                        dest[i] = dest[i + 2];
+                        dest[i + 2] = b;
+                    }
+
+                    imageReady = true;
+                }
+                finally
+                {
+                    try
+                    {
+                        if (data != null)
+                            Image.UnlockBits(data);
+                    }
+                    finally
+                    {
+                        if (!imageReady)
+                        {
+                            Image?.Dispose();
+                            Image = null;
+                        }
+                    }
+                }
 
                 if (HasMask)
                 {
@@ -360,25 +431,88 @@ namespace LibraryEditor
                     }
                     MaskImage = new Bitmap(w, h);
 
-                    data = MaskImage.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadWrite,
-                                                     PixelFormat.Format32bppArgb);
-
-                    fixed (byte* source = MaskFBytes)
-                        Squish.DecompressImage(data.Scan0, w, h, (IntPtr)source, SquishFlags.Dxt1);
-
-                    dest = (byte*)data.Scan0;
-
-                    for (int i = 0; i < h * w * 4; i += 4)
+                    BitmapData maskData = null;
+                    bool maskReady = false;
+                    try
                     {
-                        //Reverse Red/Blue
-                        byte b = dest[i];
-                        dest[i] = dest[i + 2];
-                        dest[i + 2] = b;
-                    }
+                        maskData = MaskImage.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadWrite,
+                                                         PixelFormat.Format32bppArgb);
 
-                    MaskImage.UnlockBits(data);
+                        ValidateBufferLength(MaskFBytes, Squish.GetStorageRequirements(w, h, SquishFlags.Dxt1), "遮罩图");
+                        fixed (byte* source = MaskFBytes)
+                            Squish.DecompressImage(maskData.Scan0, w, h, (IntPtr)source, SquishFlags.Dxt1);
+
+                        byte* dest = (byte*)maskData.Scan0;
+
+                        for (int i = 0; i < h * w * 4; i += 4)
+                        {
+                            //Reverse Red/Blue
+                            byte b = dest[i];
+                            dest[i] = dest[i + 2];
+                            dest[i + 2] = b;
+                        }
+
+                        maskReady = true;
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            if (maskData != null)
+                                MaskImage.UnlockBits(maskData);
+                        }
+                        finally
+                        {
+                            if (!maskReady)
+                            {
+                                MaskImage?.Dispose();
+                                MaskImage = null;
+                            }
+                        }
+                    }
                 }
             }
+
+            private static byte[] ReadExactBytes(BinaryReader reader, int count, string description)
+            {
+                if (count < 0)
+                    throw new InvalidDataException($"{description}长度无效: {count:#,##0} 字节。");
+                if (reader.BaseStream.CanSeek && count > reader.BaseStream.Length - reader.BaseStream.Position)
+                    throw new InvalidDataException($"{description}数据不完整: 需要 {count:#,##0} 字节，剩余 {Math.Max(0, reader.BaseStream.Length - reader.BaseStream.Position):#,##0} 字节。");
+
+                byte[] bytes = reader.ReadBytes(count);
+                if (bytes.Length != count)
+                    throw new InvalidDataException($"{description}数据不完整: 需要 {count:#,##0} 字节，实际 {bytes.Length:#,##0} 字节。");
+
+                return bytes;
+            }
+
+            private static void ValidateStoredDimensions(short width, short height, int length, string description)
+            {
+                if (length == 0 && width == 0 && height == 0) return;
+
+                if (width <= 0 ||
+                    height <= 0 ||
+                    (long)Pad4(width) * Pad4(height) > MaxImagePixels)
+                    throw new InvalidDataException($"{description}尺寸无效: {width}x{height}。");
+            }
+
+            private static int Pad4(int value)
+            {
+                return value + (4 - value % 4) % 4;
+            }
+
+            private static void ValidateBufferLength(byte[] bytes, int minimumLength, string description)
+            {
+                int actualLength = bytes?.Length ?? 0;
+                if (actualLength < minimumLength)
+                    throw new InvalidDataException($"{description}压缩数据长度不足: 至少需要 {minimumLength:#,##0} 字节，实际 {actualLength:#,##0} 字节。");
+            }
+        }
+
+        private static Bitmap CloneBitmap(Bitmap image)
+        {
+            return image == null ? null : new Bitmap(image);
         }
     }
 }

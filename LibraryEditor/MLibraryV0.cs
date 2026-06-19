@@ -25,8 +25,14 @@ namespace LibraryEditor
         public MLibraryv0(string filename)
         {
             FileName = filename;
-            Initialize();
-            Close();
+            try
+            {
+                Initialize();
+            }
+            finally
+            {
+                Close();
+            }
         }
 
         public void Initialize()
@@ -36,15 +42,21 @@ namespace LibraryEditor
             if (!File.Exists(FileName))
                 return;
 
-            _stream = new FileStream(FileName, FileMode.Open, FileAccess.ReadWrite);
+            _stream = new FileStream(FileName, FileMode.Open, FileAccess.Read, FileShare.Read);
             _reader = new BinaryReader(_stream);
 
             Count = _reader.ReadInt32();
+            ValidateImageCount(Count, _stream.Length, 4);
             Images = new List<MImage>();
             IndexList = new List<int>();
 
+            long imageDataStart = 4L + (long)Count * sizeof(int);
             for (int i = 0; i < Count; i++)
-                IndexList.Add(_reader.ReadInt32());
+            {
+                int offset = _reader.ReadInt32();
+                ValidateImageOffset(offset, imageDataStart, _stream.Length, i);
+                IndexList.Add(offset);
+            }
 
             for (int i = 0; i < Count; i++)
                 Images.Add(null);
@@ -55,10 +67,27 @@ namespace LibraryEditor
 
         public void Close()
         {
-            if (_stream != null)
-                _stream.Dispose();
-            // if (_reader != null)
-            //     _reader.Dispose();
+            _reader?.Dispose();
+            _reader = null;
+
+            _stream?.Dispose();
+            _stream = null;
+        }
+
+        private static void ValidateImageCount(int count, long streamLength, int headerPrefixBytes)
+        {
+            long imageDataStart = headerPrefixBytes + (long)count * sizeof(int);
+            if (count < 0 || imageDataStart > streamLength)
+                throw new InvalidDataException($"图库图片数量无效: {count:#,##0}。");
+        }
+
+        private static void ValidateImageOffset(int offset, long imageDataStart, long streamLength, int imageIndex)
+        {
+            if (offset == 0)
+                return;
+
+            if (offset < imageDataStart || offset >= streamLength)
+                throw new InvalidDataException($"图库图片 {imageIndex} 的数据位置无效: {offset:#,##0}。");
         }
 
         public void Save()
@@ -75,24 +104,29 @@ namespace LibraryEditor
             for (int i = 0; i < Count; i++)
             {
                 IndexList.Add((int)stream.Length + offSet);
-                Images[i].Save(writer);
+                MImage image = Images[i];
+                if (image == null)
+                    MImage.SaveBlank(writer);
+                else
+                    image.Save(writer);
             }
 
             writer.Flush();
             byte[] fBytes = stream.ToArray();
             //  writer.Dispose();
 
-            _stream = File.Create(FileName);
-            writer = new BinaryWriter(_stream);
+            using (MemoryStream output = new MemoryStream())
+            using (BinaryWriter fileWriter = new BinaryWriter(output))
+            {
+                fileWriter.Write(Count);
+                for (int i = 0; i < Count; i++)
+                    fileWriter.Write(IndexList[i]);
 
-            writer.Write(Count);
-            for (int i = 0; i < Count; i++)
-                writer.Write(IndexList[i]);
+                fileWriter.Write(fBytes);
+                fileWriter.Flush();
+                LibraryFileWriter.WriteAllBytesAtomically(FileName, output.ToArray());
+            }
 
-            writer.Write(fBytes);
-            writer.Flush();
-            writer.Close();
-            writer.Dispose();
             Close();
         }
 
@@ -106,6 +140,9 @@ namespace LibraryEditor
 
             if (Images[index] == null)
             {
+                if (IndexList[index] == 0)
+                    return;
+
                 _stream.Position = IndexList[index];
                 Images[index] = new MImage(_reader);
             }
@@ -130,6 +167,9 @@ namespace LibraryEditor
 
             if (Images[index] == null)
             {
+                if (IndexList[index] == 0)
+                    return Point.Empty;
+
                 _stream.Seek(IndexList[index], SeekOrigin.Begin);
                 Images[index] = new MImage(_reader);
             }
@@ -146,6 +186,9 @@ namespace LibraryEditor
 
             if (Images[index] == null)
             {
+                if (IndexList[index] == 0)
+                    return Size.Empty;
+
                 _stream.Seek(IndexList[index], SeekOrigin.Begin);
                 Images[index] = new MImage(_reader);
             }
@@ -233,6 +276,8 @@ namespace LibraryEditor
 
         public sealed class MImage
         {
+            private const int MaxImagePixels = 16777216;
+
             public short Width, Height, X, Y;
             public int Length;
             public bool TextureValid;
@@ -246,8 +291,9 @@ namespace LibraryEditor
                 X = reader.ReadInt16();
                 Y = reader.ReadInt16();
                 Length = reader.ReadInt32();
+                ValidateStoredDimensions(Width, Height, Length, "主图");
 
-                FBytes = reader.ReadBytes(Length);
+                FBytes = ReadExactBytes(reader, Length, "主图");
             }
 
             public unsafe MImage(Bitmap image)
@@ -279,13 +325,21 @@ namespace LibraryEditor
 
                 Image = image;
 
-                BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.ReadOnly,
-                                                 PixelFormat.Format32bppArgb);
-
                 byte[] pixels = new byte[image.Width * image.Height * 4];
+                BitmapData data = null;
 
-                Marshal.Copy(data.Scan0, pixels, 0, pixels.Length);
-                image.UnlockBits(data);
+                try
+                {
+                    data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.ReadOnly,
+                                                     PixelFormat.Format32bppArgb);
+
+                    Marshal.Copy(data.Scan0, pixels, 0, pixels.Length);
+                }
+                finally
+                {
+                    if (data != null)
+                        image.UnlockBits(data);
+                }
 
                 for (int i = 0; i < pixels.Length; i += 4)
                 {
@@ -315,8 +369,18 @@ namespace LibraryEditor
                 writer.Write(X);
                 writer.Write(Y);
 
-                writer.Write(FBytes.Length);
-                writer.Write(FBytes);
+                byte[] imageBytes = FBytes ?? Array.Empty<byte>();
+                writer.Write(imageBytes.Length);
+                writer.Write(imageBytes);
+            }
+
+            public static void SaveBlank(BinaryWriter writer)
+            {
+                writer.Write((short)0);
+                writer.Write((short)0);
+                writer.Write((short)0);
+                writer.Write((short)0);
+                writer.Write(0);
             }
 
             public unsafe void CreateTexture(BinaryReader reader)
@@ -329,25 +393,80 @@ namespace LibraryEditor
                     return;
                 }
 
-                Image = new Bitmap(w, h);
+                Bitmap bitmap = new Bitmap(w, h);
+                BitmapData data = null;
+                bool imageReady = false;
 
-                BitmapData data = Image.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadWrite,
-                                                 PixelFormat.Format32bppArgb);
-
-                fixed (byte* source = FBytes)
-                    Squish.DecompressImage(data.Scan0, w, h, (IntPtr)source, SquishFlags.Dxt1);
-
-                byte* dest = (byte*)data.Scan0;
-
-                for (int i = 0; i < h * w * 4; i += 4)
+                try
                 {
-                    //Reverse Red/Blue
-                    byte b = dest[i];
-                    dest[i] = dest[i + 2];
-                    dest[i + 2] = b;
-                }
+                    data = bitmap.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadWrite,
+                                                     PixelFormat.Format32bppArgb);
 
-                Image.UnlockBits(data);
+                    ValidateBufferLength(FBytes, Squish.GetStorageRequirements(w, h, SquishFlags.Dxt1), "主图");
+                    fixed (byte* source = FBytes)
+                        Squish.DecompressImage(data.Scan0, w, h, (IntPtr)source, SquishFlags.Dxt1);
+
+                    byte* dest = (byte*)data.Scan0;
+
+                    for (int i = 0; i < h * w * 4; i += 4)
+                    {
+                        //Reverse Red/Blue
+                        byte b = dest[i];
+                        dest[i] = dest[i + 2];
+                        dest[i + 2] = b;
+                    }
+
+                    Image?.Dispose();
+                    Image = bitmap;
+                    bitmap = null;
+                    imageReady = true;
+                }
+                finally
+                {
+                    if (data != null)
+                        (bitmap ?? Image)?.UnlockBits(data);
+
+                    if (!imageReady)
+                        bitmap?.Dispose();
+                }
+            }
+
+            private static void ValidateBufferLength(byte[] buffer, int expectedLength, string description)
+            {
+                if (buffer == null || buffer.Length < expectedLength)
+                {
+                    int actualLength = buffer?.Length ?? 0;
+                    throw new InvalidDataException($"{description}数据不完整: 需要至少 {expectedLength:#,##0} 字节，实际 {actualLength:#,##0} 字节。");
+                }
+            }
+
+            private static byte[] ReadExactBytes(BinaryReader reader, int count, string description)
+            {
+                if (count < 0)
+                    throw new InvalidDataException($"{description}长度无效: {count:#,##0} 字节。");
+                if (reader.BaseStream.CanSeek && count > reader.BaseStream.Length - reader.BaseStream.Position)
+                    throw new InvalidDataException($"{description}数据不完整: 需要 {count:#,##0} 字节，剩余 {Math.Max(0, reader.BaseStream.Length - reader.BaseStream.Position):#,##0} 字节。");
+
+                byte[] bytes = reader.ReadBytes(count);
+                if (bytes.Length != count)
+                    throw new InvalidDataException($"{description}数据不完整: 需要 {count:#,##0} 字节，实际 {bytes.Length:#,##0} 字节。");
+
+                return bytes;
+            }
+
+            private static void ValidateStoredDimensions(short width, short height, int length, string description)
+            {
+                if (length == 0 && width == 0 && height == 0) return;
+
+                if (width <= 0 ||
+                    height <= 0 ||
+                    (long)Pad4(width) * Pad4(height) > MaxImagePixels)
+                    throw new InvalidDataException($"{description}尺寸无效: {width}x{height}。");
+            }
+
+            private static int Pad4(int value)
+            {
+                return value + (4 - value % 4) % 4;
             }
 
             public void CreatePreview()

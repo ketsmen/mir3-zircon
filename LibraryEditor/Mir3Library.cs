@@ -17,7 +17,7 @@ namespace LibraryEditor
         Overlay,
     }
 
-    public sealed class Mir3Library
+    public sealed class Mir3Library : IDisposable
     {
         /// <summary>
         /// V0 - Default version - Dxt1 Images
@@ -38,26 +38,53 @@ namespace LibraryEditor
         public bool UseBlackKeyTransparency { get; }
 
         public Mir3Library(string fileName, bool useBlackKeyTransparency = false)
+            : this(fileName, useBlackKeyTransparency, loadExisting: true)
+        {
+        }
+
+        public static Mir3Library CreateEmpty(string fileName, bool useBlackKeyTransparency = false)
+        {
+            return new Mir3Library(fileName, useBlackKeyTransparency, loadExisting: false);
+        }
+
+        private Mir3Library(string fileName, bool useBlackKeyTransparency, bool loadExisting)
         {
             FileName = fileName;
-            _fileName = Path.ChangeExtension(fileName, null);
+            _fileName = fileName;
             UseBlackKeyTransparency = useBlackKeyTransparency;
             Images = new List<Mir3Image>();
-            if (!File.Exists(fileName))
+            if (!loadExisting || !File.Exists(fileName))
                 return;
 
-            _fStream = File.OpenRead(fileName);
-            _bReader = new BinaryReader(_fStream);
+            try
+            {
+                _fStream = File.OpenRead(fileName);
+                _bReader = new BinaryReader(_fStream);
 
-            ReadLibrary();
-            Close();
+                ReadLibrary();
+                Close();
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
         }
         public void ReadLibrary()
         {
             if (_bReader == null)
                 return;
 
-            using (MemoryStream mstream = new MemoryStream(_bReader.ReadBytes(_bReader.ReadInt32())))
+            int headerLength = _bReader.ReadInt32();
+            if (headerLength < sizeof(int))
+                throw new InvalidDataException($"图库头长度无效: {headerLength:#,##0} 字节。");
+
+            long remainingBytes = _bReader.BaseStream.Length - _bReader.BaseStream.Position;
+            if (headerLength > remainingBytes)
+                throw new InvalidDataException($"图库头数据不完整: 需要 {headerLength:#,##0} 字节，剩余 {remainingBytes:#,##0} 字节。");
+
+            byte[] headerBytes = ReadExactBytes(_bReader, headerLength, "图库头");
+            using (MemoryStream mstream = new MemoryStream(headerBytes))
             using (BinaryReader reader = new BinaryReader(mstream))
             {
                 int value = reader.ReadInt32();
@@ -70,12 +97,22 @@ namespace LibraryEditor
                     count = value;
                 }
 
+                long remainingHeaderBytes = reader.BaseStream.Length - reader.BaseStream.Position;
+                if (count < 0 || count > remainingHeaderBytes)
+                    throw new InvalidDataException($"图库图片数量无效: {count:#,##0}。");
+
                 for (int i = 0; i < count; i++)
                     Images.Add(null);
 
                 for (int i = 0; i < Images.Count; i++)
                 {
+                    if (reader.BaseStream.Position >= reader.BaseStream.Length)
+                        throw new InvalidDataException($"图库头数据不完整: 缺少图片 {i} 的存在标记。");
+
                     if (!reader.ReadBoolean()) continue;
+
+                    if (reader.BaseStream.Length - reader.BaseStream.Position < Mir3Image.HeaderSize)
+                        throw new InvalidDataException($"图库头数据不完整: 图片 {i} 的头部不足 {Mir3Image.HeaderSize} 字节。");
 
                     Images[i] = new Mir3Image(reader, Version);
                 }
@@ -93,9 +130,30 @@ namespace LibraryEditor
         public void Close()
         {
             if (_fStream != null)
+            {
                 _fStream.Dispose();
+                _fStream = null;
+            }
             if (_bReader != null)
+            {
                 _bReader.Dispose();
+                _bReader = null;
+            }
+        }
+
+        public void Dispose()
+        {
+            Close();
+
+            if (Images != null)
+            {
+                foreach (Mir3Image image in Images)
+                    image?.Dispose();
+
+                Images.Clear();
+            }
+
+            GC.SuppressFinalize(this);
         }
         public Mir3Image CreateImage(int index, ImageType type)
         {
@@ -182,75 +240,136 @@ namespace LibraryEditor
         {
             for (int i = Images.Count - 1; i >= 0; i--)
             {
-                if (Images[i] == null)
+                Mir3Image image = Images[i];
+                if (image == null)
                 {
-                    if (!safe)
-                        RemoveImage(i);
-                    else if (Images[i].OffSetX == 0 && Images[i].OffSetY == 0)
-                        RemoveImage(i);
+                    RemoveImage(i);
+                    continue;
+                }
+
+                if (IsBlankImage(image, requireZeroOffset: safe))
+                {
+                    RemoveImage(i);
                 }
             }
+        }
+
+        private static bool IsBlankImage(Mir3Image image, bool requireZeroOffset)
+        {
+            if (image == null) return true;
+
+            bool blank = image.FBytes == null ||
+                         image.FBytes.Length == 0 ||
+                         (image.Width <= 1 && image.Height <= 1);
+            if (!blank) return false;
+
+            return !requireZeroOffset || (image.OffSetX == 0 && image.OffSetY == 0);
         }
 
         public void RemoveImage(int index)
         {
-            if (Images == null || Images.Count <= 1)
+            if (Images == null)
+                return;
+            if (index < 0 || index >= Images.Count)
+                return;
+
+            if (Images.Count <= 1)
             {
+                foreach (Mir3Image image in Images)
+                    image?.Dispose();
+
                 Images = new List<Mir3Image>();
                 return;
             }
 
+            Mir3Image removed = Images[index];
             Images.RemoveAt(index);
+            removed?.Dispose();
         }
         public void AddBlanks(int newImages)
         {
-            if (newImages == 0)
+            if (newImages <= 0)
                 return;
 
-            int count = Images.Count;
-
-            int cap = newImages - (count % newImages);
+            int cap = newImages - (Images.Count % newImages);
             if (cap != newImages)
-            {
-                Bitmap image;
-                for (int i = cap - 1; i >= 0; i--)
-                {
-                    try
-                    {
-                        image = new Bitmap(1, 1);
-                    }
-                    catch
-                    {
-                        return;
-                    }
+                AddBlankImages(cap);
+        }
 
-                    short x = 0;
-                    short y = 0;
+        public void AddBlankImages(int count)
+        {
+            if (Images == null)
+                throw new InvalidOperationException("Library image list is not initialized.");
+            if (count <= 0)
+                return;
 
+            for (int i = 0; i < count; i++)
+                Images.Add(null);
+        }
 
-                    AddImage(image, x, y);
-                }
-            }
+        public void InsertBlankImages(int index, int count)
+        {
+            if (Images == null)
+                throw new InvalidOperationException("Library image list is not initialized.");
+            if (index < 0 || index > Images.Count)
+                throw new ArgumentOutOfRangeException(nameof(index));
+            if (count <= 0)
+                return;
+
+            for (int i = 0; i < count; i++)
+                Images.Insert(index, null);
         }
         public void AddImage(Bitmap image, short x, short y)
         {
-            Mir3Image mImage = new Mir3Image(image, Version, UseBlackKeyTransparency) { OffSetX = x, OffSetY = y };
+            if (Images == null)
+                throw new InvalidOperationException("Library image list is not initialized.");
 
+            Mir3Image mImage = CreateOwnedImage(image, x, y);
             Images.Add(mImage);
         }
 
         public void ReplaceImage(int Index, Bitmap image, short x, short y)
         {
-            Mir3Image mImage = new Mir3Image(image, Version, UseBlackKeyTransparency) { OffSetX = x, OffSetY = y };
+            if (Images == null)
+                throw new InvalidOperationException("Library image list is not initialized.");
+            if (Index < 0 || Index >= Images.Count)
+                throw new ArgumentOutOfRangeException(nameof(Index));
 
+            Mir3Image mImage = CreateOwnedImage(image, x, y);
+
+            Mir3Image oldImage = Images[Index];
             Images[Index] = mImage;
+            oldImage?.Dispose();
         }
 
         public void InsertImage(int index, Bitmap image, short x, short y)
         {
-            Mir3Image mImage = new Mir3Image(image, Version, UseBlackKeyTransparency) { OffSetX = x, OffSetY = y };
+            if (Images == null)
+                throw new InvalidOperationException("Library image list is not initialized.");
+            if (index < 0 || index > Images.Count)
+                throw new ArgumentOutOfRangeException(nameof(index));
+
+            Mir3Image mImage = CreateOwnedImage(image, x, y);
 
             Images.Insert(index, mImage);
+        }
+
+        private Mir3Image CreateOwnedImage(Bitmap image, short x, short y)
+        {
+            Mir3Image mImage = null;
+
+            try
+            {
+                mImage = new Mir3Image(image, Version, UseBlackKeyTransparency) { OffSetX = x, OffSetY = y };
+                image = null;
+                return mImage;
+            }
+            catch
+            {
+                mImage?.Dispose();
+                image?.Dispose();
+                throw;
+            }
         }
 
         public void Save(string path)
@@ -261,7 +380,7 @@ namespace LibraryEditor
 
             foreach (Mir3Image image in Images)
             {
-                if (image == null || image.FBytes.Length == 0) continue;
+                if (!HasImageBytes(image)) continue;
 
                 headerSize += Mir3Image.HeaderSize;
             }
@@ -270,7 +389,7 @@ namespace LibraryEditor
 
             foreach (Mir3Image image in Images)
             {
-                if (image == null || image.FBytes.Length == 0) continue;
+                if (!HasImageBytes(image)) continue;
 
                 image.Position = position;
 
@@ -287,16 +406,16 @@ namespace LibraryEditor
 
                 foreach (Mir3Image image in Images)
                 {
-                    writer.Write(image != null && image.FBytes.Length > 0);
+                    writer.Write(HasImageBytes(image));
 
-                    if (image == null || image.FBytes.Length == 0) continue;
+                    if (!HasImageBytes(image)) continue;
 
                     image.SaveHeader(writer);
                 }
 
                 foreach (Mir3Image image in Images)
                 {
-                    if (image == null || image.FBytes.Length == 0) continue;
+                    if (!HasImageBytes(image)) continue;
 
                     if (image.FBytes != null)
                         writer.Write(image.FBytes);
@@ -308,13 +427,34 @@ namespace LibraryEditor
                         writer.Write(image.OverlayFBytes);
                 }
 
-                File.WriteAllBytes(path, buffer.ToArray());
+                LibraryFileWriter.WriteAllBytesAtomically(path, buffer.ToArray());
             }
+
+            FileName = path;
+            _fileName = path;
+        }
+
+        private static bool HasImageBytes(Mir3Image image)
+        {
+            return image?.FBytes?.Length > 0;
+        }
+
+        private static byte[] ReadExactBytes(BinaryReader reader, int count, string description)
+        {
+            if (count < 0)
+                throw new InvalidDataException($"{description}长度无效: {count:#,##0} 字节。");
+
+            byte[] bytes = reader.ReadBytes(count);
+            if (bytes.Length != count)
+                throw new InvalidDataException($"{description}数据不完整: 需要 {count:#,##0} 字节，实际 {bytes.Length:#,##0} 字节。");
+
+            return bytes;
         }
 
         public sealed class Mir3Image : IDisposable
         {
             public const int HeaderSize = 25;
+            private const int MaxImagePixels = 16777216;
 
             public int Version;
 
@@ -336,17 +476,7 @@ namespace LibraryEditor
             {
                 get
                 {
-                    int w = Width + (4 - Width % 4) % 4;
-                    int h = Height + (4 - Height % 4) % 4;
-
-                    if (Version > 0)
-                    {
-                        return w * h;
-                    }
-                    else
-                    {
-                        return w * h / 2;
-                    }
+                    return GetImageDataSize(Width, Height, Version, "主图");
                 }
             }
             public byte[] FBytes;
@@ -367,17 +497,7 @@ namespace LibraryEditor
             {
                 get
                 {
-                    int w = ShadowWidth + (4 - ShadowWidth % 4) % 4;
-                    int h = ShadowHeight + (4 - ShadowHeight % 4) % 4;
-
-                    if (Version > 0)
-                    {
-                        return w * h;
-                    }
-                    else
-                    {
-                        return w * h / 2;
-                    }
+                    return GetImageDataSize(ShadowWidth, ShadowHeight, Version, "阴影图");
                 }
             }
             #endregion
@@ -394,17 +514,7 @@ namespace LibraryEditor
             {
                 get
                 {
-                    int w = OverlayWidth + (4 - OverlayWidth % 4) % 4;
-                    int h = OverlayHeight + (4 - OverlayHeight % 4) % 4;
-
-                    if (Version > 0)
-                    {
-                        return w * h;
-                    }
-                    else
-                    {
-                        return w * h / 2;
-                    }
+                    return GetImageDataSize(OverlayWidth, OverlayHeight, Version, "叠加图");
                 }
             }
             #endregion
@@ -436,17 +546,79 @@ namespace LibraryEditor
 
                 OverlayWidth = reader.ReadInt16();
                 OverlayHeight = reader.ReadInt16();
+
+                ValidateRequiredStoredDimensions(Width, Height, "主图");
+                ValidateOptionalStoredDimensions(ShadowWidth, ShadowHeight, "阴影图");
+                ValidateOptionalStoredDimensions(OverlayWidth, OverlayHeight, "叠加图");
+            }
+
+            private static int Pad4(int value)
+            {
+                return value + (4 - value % 4) % 4;
+            }
+
+            private static int GetImageDataSize(short width, short height, int version, string description)
+            {
+                if (width <= 0 || height <= 0)
+                    return 0;
+
+                long paddedWidth = Pad4(width);
+                long paddedHeight = Pad4(height);
+                long pixels = paddedWidth * paddedHeight;
+                if (pixels > MaxImagePixels)
+                    throw new InvalidDataException($"{description}尺寸过大: {width}x{height}。");
+
+                long dataSize = version > 0 ? pixels : pixels / 2;
+                if (dataSize > int.MaxValue)
+                    throw new InvalidDataException($"{description}数据长度过大: {dataSize:#,##0} 字节。");
+
+                return (int)dataSize;
+            }
+
+            private static void ValidateBitmapDimensions(Bitmap bitmap, string description)
+            {
+                if (bitmap == null) return;
+
+                if (bitmap.Width <= 0 ||
+                    bitmap.Height <= 0 ||
+                    bitmap.Width > short.MaxValue ||
+                    bitmap.Height > short.MaxValue ||
+                    (long)Pad4(bitmap.Width) * Pad4(bitmap.Height) > MaxImagePixels)
+                    throw new InvalidDataException($"{description}尺寸无效: {bitmap.Width}x{bitmap.Height}。");
+            }
+
+            private static void ValidateRequiredStoredDimensions(short width, short height, string description)
+            {
+                if (width <= 0 ||
+                    height <= 0 ||
+                    (long)Pad4(width) * Pad4(height) > MaxImagePixels)
+                    throw new InvalidDataException($"{description}尺寸无效: {width}x{height}。");
+            }
+
+            private static void ValidateOptionalStoredDimensions(short width, short height, string description)
+            {
+                if (width == 0 && height == 0) return;
+
+                ValidateRequiredStoredDimensions(width, height, description);
             }
 
             private static byte[] PreparePixels(Bitmap bitmap, bool useBlackKeyTransparency)
             {
-                BitmapData data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadOnly,
-                                                 PixelFormat.Format32bppArgb);
-
                 byte[] pixels = new byte[bitmap.Width * bitmap.Height * 4];
+                BitmapData data = null;
 
-                Marshal.Copy(data.Scan0, pixels, 0, pixels.Length);
-                bitmap.UnlockBits(data);
+                try
+                {
+                    data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadOnly,
+                                                     PixelFormat.Format32bppArgb);
+
+                    Marshal.Copy(data.Scan0, pixels, 0, pixels.Length);
+                }
+                finally
+                {
+                    if (data != null)
+                        bitmap.UnlockBits(data);
+                }
 
                 for (int i = 0; i < pixels.Length; i += 4)
                 {
@@ -465,14 +637,15 @@ namespace LibraryEditor
 
             public unsafe Mir3Image(Bitmap image, int version, bool useBlackKeyTransparency = false)
             {
+                Version = version;
+
                 if (image == null)
                 {
                     FBytes = new byte[0];
                     return;
                 }
 
-                Version = version;
-
+                ValidateBitmapDimensions(image, "主图");
                 Position = -1;
                 Width = (short)image.Width;
                 Height = (short)image.Height;
@@ -509,14 +682,19 @@ namespace LibraryEditor
 
             public unsafe Mir3Image(Bitmap image, Bitmap shadow, Bitmap overlay, int version, bool useBlackKeyTransparency = false)
             {
+                Version = version;
+
                 if (image == null)
                 {
+                    shadow?.Dispose();
+                    overlay?.Dispose();
                     FBytes = new byte[0];
                     return;
                 }
 
-                Version = version;
-
+                ValidateBitmapDimensions(image, "主图");
+                ValidateBitmapDimensions(shadow, "阴影图");
+                ValidateBitmapDimensions(overlay, "叠加图");
                 Position = -1;
                 Width = (short)image.Width;
                 Height = (short)image.Height;
@@ -632,27 +810,41 @@ namespace LibraryEditor
 
                 if (w == 0 || h == 0) return;
 
-                Image = new Bitmap(w, h);
-                BitmapData data = Image.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+                Bitmap bitmap = new Bitmap(w, h);
+                BitmapData data = null;
 
-                reader.BaseStream.Seek(Position, SeekOrigin.Begin);
-                FBytes = reader.ReadBytes(ImageDataSize);
-
-                fixed (byte* source = FBytes)
-                    Squish.DecompressImage(data.Scan0, w, h, (IntPtr)source, DxtFlags);
-
-                byte* dest = (byte*)data.Scan0;
-
-                for (int i = 0; i < h * w * 4; i += 4)
+                try
                 {
-                    //Reverse Red/Blue
-                    byte b = dest[i];
-                    dest[i] = dest[i + 2];
-                    dest[i + 2] = b;
-                }
+                    data = bitmap.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
 
-                Image.UnlockBits(data);
-                ImageValid = true;
+                    reader.BaseStream.Seek(Position, SeekOrigin.Begin);
+                    FBytes = ReadExactBytes(reader, ImageDataSize, "主图");
+
+                    fixed (byte* source = FBytes)
+                        Squish.DecompressImage(data.Scan0, w, h, (IntPtr)source, DxtFlags);
+
+                    byte* dest = (byte*)data.Scan0;
+
+                    for (int i = 0; i < h * w * 4; i += 4)
+                    {
+                        //Reverse Red/Blue
+                        byte b = dest[i];
+                        dest[i] = dest[i + 2];
+                        dest[i + 2] = b;
+                    }
+
+                    Image?.Dispose();
+                    Image = bitmap;
+                    bitmap = null;
+                    ImageValid = true;
+                }
+                finally
+                {
+                    if (data != null)
+                        (bitmap ?? Image)?.UnlockBits(data);
+
+                    bitmap?.Dispose();
+                }
             }
             public unsafe void CreateShadow(BinaryReader reader)
             {
@@ -666,27 +858,41 @@ namespace LibraryEditor
 
                 if (w == 0 || h == 0) return;
 
-                ShadowImage = new Bitmap(w, h);
-                BitmapData data = ShadowImage.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+                Bitmap bitmap = new Bitmap(w, h);
+                BitmapData data = null;
 
-                reader.BaseStream.Seek(Position + ImageDataSize, SeekOrigin.Begin);
-                ShadowFBytes = reader.ReadBytes(ShadowDataSize);
-
-                fixed (byte* source = ShadowFBytes)
-                    Squish.DecompressImage(data.Scan0, w, h, (IntPtr)source, DxtFlags);
-
-                byte* dest = (byte*)data.Scan0;
-
-                for (int i = 0; i < h * w * 4; i += 4)
+                try
                 {
-                    //Reverse Red/Blue
-                    byte b = dest[i];
-                    dest[i] = dest[i + 2];
-                    dest[i + 2] = b;
-                }
+                    data = bitmap.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
 
-                ShadowImage.UnlockBits(data);
-                ShadowValid = true;
+                    reader.BaseStream.Seek(Position + ImageDataSize, SeekOrigin.Begin);
+                    ShadowFBytes = ReadExactBytes(reader, ShadowDataSize, "阴影图");
+
+                    fixed (byte* source = ShadowFBytes)
+                        Squish.DecompressImage(data.Scan0, w, h, (IntPtr)source, DxtFlags);
+
+                    byte* dest = (byte*)data.Scan0;
+
+                    for (int i = 0; i < h * w * 4; i += 4)
+                    {
+                        //Reverse Red/Blue
+                        byte b = dest[i];
+                        dest[i] = dest[i + 2];
+                        dest[i + 2] = b;
+                    }
+
+                    ShadowImage?.Dispose();
+                    ShadowImage = bitmap;
+                    bitmap = null;
+                    ShadowValid = true;
+                }
+                finally
+                {
+                    if (data != null)
+                        (bitmap ?? ShadowImage)?.UnlockBits(data);
+
+                    bitmap?.Dispose();
+                }
             }
             public unsafe void CreateOverlay(BinaryReader reader)
             {
@@ -700,27 +906,53 @@ namespace LibraryEditor
 
                 if (w == 0 || h == 0) return;
 
-                OverlayImage = new Bitmap(w, h);
-                BitmapData data = OverlayImage.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+                Bitmap bitmap = new Bitmap(w, h);
+                BitmapData data = null;
 
-                reader.BaseStream.Seek(Position + ImageDataSize + ShadowDataSize, SeekOrigin.Begin);
-                OverlayFBytes = reader.ReadBytes(OverlayDataSize);
-
-                fixed (byte* source = OverlayFBytes)
-                    Squish.DecompressImage(data.Scan0, w, h, (IntPtr)source, DxtFlags);
-
-                byte* dest = (byte*)data.Scan0;
-
-                for (int i = 0; i < h * w * 4; i += 4)
+                try
                 {
-                    //Reverse Red/Blue
-                    byte b = dest[i];
-                    dest[i] = dest[i + 2];
-                    dest[i + 2] = b;
-                }
+                    data = bitmap.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
 
-                OverlayImage.UnlockBits(data);
-                OverlayValid = true;
+                    reader.BaseStream.Seek(Position + ImageDataSize + ShadowDataSize, SeekOrigin.Begin);
+                    OverlayFBytes = ReadExactBytes(reader, OverlayDataSize, "叠加图");
+
+                    fixed (byte* source = OverlayFBytes)
+                        Squish.DecompressImage(data.Scan0, w, h, (IntPtr)source, DxtFlags);
+
+                    byte* dest = (byte*)data.Scan0;
+
+                    for (int i = 0; i < h * w * 4; i += 4)
+                    {
+                        //Reverse Red/Blue
+                        byte b = dest[i];
+                        dest[i] = dest[i + 2];
+                        dest[i + 2] = b;
+                    }
+
+                    OverlayImage?.Dispose();
+                    OverlayImage = bitmap;
+                    bitmap = null;
+                    OverlayValid = true;
+                }
+                finally
+                {
+                    if (data != null)
+                        (bitmap ?? OverlayImage)?.UnlockBits(data);
+
+                    bitmap?.Dispose();
+                }
+            }
+
+            private static byte[] ReadExactBytes(BinaryReader reader, int count, string description)
+            {
+                if (count < 0)
+                    throw new InvalidDataException($"{description}长度无效: {count:#,##0} 字节。");
+
+                byte[] bytes = reader.ReadBytes(count);
+                if (bytes.Length != count)
+                    throw new InvalidDataException($"{description}数据不完整: 需要 {count:#,##0} 字节，实际 {bytes.Length:#,##0} 字节。");
+
+                return bytes;
             }
 
             public void CreatePreview()
@@ -759,9 +991,9 @@ namespace LibraryEditor
                 {
                     g.InterpolationMode = InterpolationMode.Low;//HighQualityBicubic
                     g.Clear(Color.Transparent);
-                    int w = Math.Min((int)Width, 64);
-                    int h = Math.Min((int)Height, 64);
-                    g.DrawImage(ShadowImage, new Rectangle((64 - w) / 2, (64 - h) / 2, w, h), new Rectangle(0, 0, Width, Height), GraphicsUnit.Pixel);
+                    int w = Math.Min((int)ShadowWidth, 64);
+                    int h = Math.Min((int)ShadowHeight, 64);
+                    g.DrawImage(ShadowImage, new Rectangle((64 - w) / 2, (64 - h) / 2, w, h), new Rectangle(0, 0, ShadowWidth, ShadowHeight), GraphicsUnit.Pixel);
 
                     g.Save();
                 }
@@ -781,9 +1013,9 @@ namespace LibraryEditor
                 {
                     g.InterpolationMode = InterpolationMode.Low;//HighQualityBicubic
                     g.Clear(Color.Transparent);
-                    int w = Math.Min((int)Width, 64);
-                    int h = Math.Min((int)Height, 64);
-                    g.DrawImage(OverlayImage, new Rectangle((64 - w) / 2, (64 - h) / 2, w, h), new Rectangle(0, 0, Width, Height), GraphicsUnit.Pixel);
+                    int w = Math.Min((int)OverlayWidth, 64);
+                    int h = Math.Min((int)OverlayHeight, 64);
+                    g.DrawImage(OverlayImage, new Rectangle((64 - w) / 2, (64 - h) / 2, w, h), new Rectangle(0, 0, OverlayWidth, OverlayHeight), GraphicsUnit.Pixel);
 
                     g.Save();
                 }
@@ -826,9 +1058,24 @@ namespace LibraryEditor
 
             public void Dispose(bool disposing)
             {
+                if (IsDisposed) return;
+
                 if (disposing)
                 {
-                    IsDisposed = true;
+                    Image?.Dispose();
+                    Image = null;
+                    Preview?.Dispose();
+                    Preview = null;
+
+                    ShadowImage?.Dispose();
+                    ShadowImage = null;
+                    ShadowPreview?.Dispose();
+                    ShadowPreview = null;
+
+                    OverlayImage?.Dispose();
+                    OverlayImage = null;
+                    OverlayPreview?.Dispose();
+                    OverlayPreview = null;
 
                     Position = 0;
 
@@ -846,11 +1093,12 @@ namespace LibraryEditor
                     OverlayHeight = 0;
                 }
 
+                IsDisposed = true;
             }
 
             public void Dispose()
             {
-                Dispose(!IsDisposed);
+                Dispose(true);
                 GC.SuppressFinalize(this);
             }
             ~Mir3Image()
