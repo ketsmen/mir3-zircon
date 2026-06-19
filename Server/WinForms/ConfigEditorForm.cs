@@ -28,6 +28,7 @@ namespace Server.WinForms
         private readonly Dictionary<string, DataGridView> _sectionGrids = new Dictionary<string, DataGridView>();
         private readonly Dictionary<string, DataGridViewRow> _propertyRows = new Dictionary<string, DataGridViewRow>(StringComparer.OrdinalIgnoreCase);
         private readonly List<ConfigSetting> _settings = new List<ConfigSetting>();
+        private bool _applyingFilter;
         private const string HeroSectionName = "英雄";
         private static readonly HashSet<string> HeroSettingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -80,7 +81,11 @@ namespace Server.WinForms
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            EndGridEdits();
+            if (!EndGridEdits())
+            {
+                e.Cancel = true;
+                return;
+            }
 
             int modified = CountModifiedSettings();
             if (modified > 0)
@@ -304,7 +309,11 @@ namespace Server.WinForms
                 if (grid.IsCurrentCellDirty)
                     grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
             };
-            grid.CellValueChanged += (_, _) => ApplyFilter();
+            grid.CellValueChanged += (_, _) =>
+            {
+                if (!_applyingFilter)
+                    ApplyFilter();
+            };
 
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
@@ -389,7 +398,8 @@ namespace Server.WinForms
 
         private bool TryApplySettings(bool saveFile)
         {
-            EndGridEdits();
+            if (!EndGridEdits())
+                return false;
 
             List<string> errors = new List<string>();
             List<ConfigValue> values = new List<ConfigValue>();
@@ -421,13 +431,27 @@ namespace Server.WinForms
                 return false;
             }
 
+            List<ConfigValue> originalValues = saveFile
+                ? values.Select(value => new ConfigValue(value.Property, value.Property.GetValue(null))).ToList()
+                : null;
+
             foreach (ConfigValue value in values)
                 value.Property.SetValue(null, value.Value);
 
             if (saveFile)
             {
-                ConfigReader.Save(_configAssembly);
-                Config.LoadVersion();
+                try
+                {
+                    ConfigReader.Save(_configAssembly);
+                    Config.LoadVersion();
+                }
+                catch (Exception ex)
+                {
+                    RestoreConfigValues(originalValues);
+                    _statusLabel.Text = $"配置未保存，当前内存配置已恢复为保存前状态。{GetConfigPathText()}";
+                    MessageBox.Show(this, ex.ToString(), "保存配置失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return false;
+                }
 
                 if (SEnvir.Started)
                     SEnvir.ServerBuffChanged = true;
@@ -442,6 +466,14 @@ namespace Server.WinForms
 
             ApplyFilter();
             return true;
+        }
+
+        private static void RestoreConfigValues(IEnumerable<ConfigValue> values)
+        {
+            if (values == null) return;
+
+            foreach (ConfigValue value in values)
+                value.Property.SetValue(null, value.Value);
         }
 
         private static void ValidateConfigValues(List<ConfigValue> values, List<string> errors)
@@ -484,14 +516,25 @@ namespace Server.WinForms
             return false;
         }
 
-        private void EndGridEdits()
+        private bool EndGridEdits()
         {
-            foreach (DataGridView grid in _sectionGrids.Values)
+            try
             {
-                if (grid.IsCurrentCellDirty)
-                    grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+                foreach (DataGridView grid in _sectionGrids.Values)
+                {
+                    if (grid.IsCurrentCellDirty)
+                        grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
 
-                grid.EndEdit();
+                    if (!grid.EndEdit())
+                        return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "提交编辑失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
             }
         }
 
@@ -521,6 +564,9 @@ namespace Server.WinForms
 
         private void SelectFileProperty(string propertyName, string title)
         {
+            if (!EndGridEdits())
+                return;
+
             using (OpenFileDialog dialog = new OpenFileDialog())
             {
                 dialog.Title = title;
@@ -548,6 +594,9 @@ namespace Server.WinForms
 
         private void SelectFolderProperty(string propertyName, string description)
         {
+            if (!EndGridEdits())
+                return;
+
             using (FolderBrowserDialog dialog = new FolderBrowserDialog())
             {
                 dialog.Description = description;
@@ -599,50 +648,61 @@ namespace Server.WinForms
 
         private void ApplyFilter()
         {
-            EndGridEdits();
+            if (_applyingFilter) return;
 
-            DataGridView activeGrid = _tabs.SelectedTab?.Controls.OfType<DataGridView>().FirstOrDefault();
-            ConfigSetting activeSetting = activeGrid?.CurrentRow?.Tag as ConfigSetting;
-            int activeColumn = activeGrid?.CurrentCell?.ColumnIndex ?? 2;
-            string filter = _filterText.Text?.Trim();
-            bool modifiedOnly = _modifiedOnlyButton.Checked;
-            int visible = 0;
-            int total = 0;
-            int modifiedCount = 0;
-
-            foreach (KeyValuePair<string, DataGridView> pair in _sectionGrids)
+            _applyingFilter = true;
+            try
             {
-                DataGridView grid = pair.Value;
-                grid.CurrentCell = null;
+                if (!EndGridEdits())
+                    return;
 
-                int sectionVisible = 0;
-                foreach (DataGridViewRow row in grid.Rows)
+                DataGridView activeGrid = _tabs.SelectedTab?.Controls.OfType<DataGridView>().FirstOrDefault();
+                ConfigSetting activeSetting = activeGrid?.CurrentRow?.Tag as ConfigSetting;
+                int activeColumn = activeGrid?.CurrentCell?.ColumnIndex ?? 2;
+                string filter = _filterText.Text?.Trim();
+                bool modifiedOnly = _modifiedOnlyButton.Checked;
+                int visible = 0;
+                int total = 0;
+                int modifiedCount = 0;
+
+                foreach (KeyValuePair<string, DataGridView> pair in _sectionGrids)
                 {
-                    if (row.Tag is not ConfigSetting setting) continue;
+                    DataGridView grid = pair.Value;
+                    grid.CurrentCell = null;
 
-                    total++;
-                    bool modified = IsModified(setting, row);
-                    ApplyModifiedStyle(row, modified);
-                    if (modified) modifiedCount++;
+                    int sectionVisible = 0;
+                    foreach (DataGridViewRow row in grid.Rows)
+                    {
+                        if (row.Tag is not ConfigSetting setting) continue;
 
-                    bool match = (!modifiedOnly || modified) && MatchesFilter(setting, row, filter);
-                    row.Visible = match;
-                    if (!match) continue;
+                        total++;
+                        bool modified = IsModified(setting, row);
+                        ApplyModifiedStyle(row, modified);
+                        if (modified) modifiedCount++;
 
-                    visible++;
-                    sectionVisible++;
+                        bool match = (!modifiedOnly || modified) && MatchesFilter(setting, row, filter);
+                        row.Visible = match;
+                        if (!match) continue;
+
+                        visible++;
+                        sectionVisible++;
+                    }
+
+                    if (grid.Parent is TabPage page)
+                        page.Text = string.IsNullOrWhiteSpace(filter) && !modifiedOnly ? pair.Key : $"{pair.Key} ({sectionVisible})";
                 }
 
-                if (grid.Parent is TabPage page)
-                    page.Text = string.IsNullOrWhiteSpace(filter) && !modifiedOnly ? pair.Key : $"{pair.Key} ({sectionVisible})";
+                string filterSuffix = string.IsNullOrWhiteSpace(filter) ? string.Empty : $"，过滤: {filter}";
+                string modifiedSuffix = modifiedOnly ? $"，只看修改: {modifiedCount}" :
+                    modifiedCount > 0 ? $"，已修改: {modifiedCount}" : string.Empty;
+                _statusLabel.Text = $"配置项: {visible}/{total}{filterSuffix}{modifiedSuffix}。{GetConfigPathText()}";
+
+                RestoreCurrentSetting(activeSetting, activeColumn);
             }
-
-            string filterSuffix = string.IsNullOrWhiteSpace(filter) ? string.Empty : $"，过滤: {filter}";
-            string modifiedSuffix = modifiedOnly ? $"，只看修改: {modifiedCount}" :
-                modifiedCount > 0 ? $"，已修改: {modifiedCount}" : string.Empty;
-            _statusLabel.Text = $"配置项: {visible}/{total}{filterSuffix}{modifiedSuffix}。{GetConfigPathText()}";
-
-            RestoreCurrentSetting(activeSetting, activeColumn);
+            finally
+            {
+                _applyingFilter = false;
+            }
         }
 
         private static bool MatchesFilter(ConfigSetting setting, DataGridViewRow row, string filter)
@@ -690,7 +750,8 @@ namespace Server.WinForms
 
         private void ResetAllModifiedSettings()
         {
-            EndGridEdits();
+            if (!EndGridEdits())
+                return;
 
             List<ConfigSetting> modified = _settings
                 .Where(setting => _propertyRows.TryGetValue(setting.Property.Name, out DataGridViewRow row) && IsModified(setting, row))
@@ -722,6 +783,9 @@ namespace Server.WinForms
 
         private void CopyCurrentSetting()
         {
+            if (!EndGridEdits())
+                return;
+
             if (!TryGetCurrentSettingRow(out DataGridViewRow row, out ConfigSetting setting))
             {
                 MessageBox.Show(this, "当前没有可复制的配置项。", "复制当前项", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -742,12 +806,20 @@ namespace Server.WinForms
                 modified
             };
 
-            Clipboard.SetText(
-                string.Join("\t", headers.Select(EscapeClipboardCell)) +
-                Environment.NewLine +
-                string.Join("\t", values.Select(EscapeClipboardCell)));
+            string text = string.Join("\t", headers.Select(EscapeClipboardCell)) +
+                          Environment.NewLine +
+                          string.Join("\t", values.Select(EscapeClipboardCell));
 
-            _statusLabel.Text = $"已复制配置项 {setting.Property.Name}。{GetConfigPathText()}";
+            try
+            {
+                Clipboard.SetText(text);
+                _statusLabel.Text = $"已复制配置项 {setting.Property.Name}。{GetConfigPathText()}";
+            }
+            catch (Exception ex)
+            {
+                _statusLabel.Text = $"复制配置项失败。{GetConfigPathText()}";
+                MessageBox.Show(this, ex.ToString(), "复制当前项失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private bool TryGetCurrentSettingRow(out DataGridViewRow row, out ConfigSetting setting)
@@ -768,8 +840,17 @@ namespace Server.WinForms
 
         private void UpdateOriginalValues()
         {
-            foreach (ConfigSetting setting in _settings)
-                setting.UpdateOriginalValue(setting.Property.GetValue(null));
+            bool wasApplyingFilter = _applyingFilter;
+            _applyingFilter = true;
+            try
+            {
+                foreach (ConfigSetting setting in _settings)
+                    MarkSettingSaved(setting.Property.Name, setting.Property.GetValue(null));
+            }
+            finally
+            {
+                _applyingFilter = wasApplyingFilter;
+            }
         }
 
         private int CountModifiedSettings()
@@ -781,6 +862,9 @@ namespace Server.WinForms
 
         private void FocusNextModifiedSetting()
         {
+            if (!EndGridEdits())
+                return;
+
             List<ConfigSetting> modified = _settings
                 .Where(setting => _propertyRows.TryGetValue(setting.Property.Name, out DataGridViewRow row) && IsModified(setting, row))
                 .ToList();
@@ -849,6 +933,9 @@ namespace Server.WinForms
 
         private void GenerateEncryptionKey()
         {
+            if (!EndGridEdits())
+                return;
+
             byte[] random = new byte[32];
             using (RandomNumberGenerator rng = RandomNumberGenerator.Create())
                 rng.GetBytes(random);
@@ -859,28 +946,38 @@ namespace Server.WinForms
 
         private void ApplyDatabaseEncryption()
         {
+            if (!EndGridEdits())
+                return;
+
             if (SEnvir.EnvirThread != null)
             {
                 MessageBox.Show(this, "应用数据库加密会重写 System.db 和 Users.db。请先停止服务端再执行。", "数据库加密", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            if (!TryApplySettings(false))
+            if (!TryReadEncryptionSettings(out bool encryptionEnabled, out string encryptionKey))
                 return;
 
             byte[] key = null;
-            if (Config.EncryptionEnabled)
+            if (encryptionEnabled)
             {
-                if (!TryGetEncryptionKey(out key, out string reason))
+                if (!TryGetEncryptionKey(encryptionKey, out key, out string reason))
                 {
                     MessageBox.Show(this, reason, "数据库加密", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
             }
 
-            string action = Config.EncryptionEnabled ? "使用当前密钥重新加密数据库" : "移除数据库加密";
+            string action = encryptionEnabled ? "使用当前密钥重新加密数据库" : "移除数据库加密";
             if (MessageBox.Show(this, $"{action}会重写 System.db 和 Users.db，并由 MirDB 创建备份。确定继续吗？", "数据库加密", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            {
                 return;
+            }
+
+            bool oldEncryptionEnabled = Config.EncryptionEnabled;
+            string oldEncryptionKey = Config.EncryptionKey;
+            Dictionary<string, DateTime?> databaseWriteTimes = CaptureDatabaseWriteTimes();
+            bool databaseSaved = false;
 
             try
             {
@@ -890,19 +987,156 @@ namespace Server.WinForms
                 };
                 session.Initialize(MirDbSessionFactory.DatabaseAssemblies);
 
-                Encryption.SetKey(Config.EncryptionEnabled ? key : null);
+                Config.EncryptionEnabled = encryptionEnabled;
+                Config.EncryptionKey = encryptionKey;
+                Encryption.SetKey(encryptionEnabled ? key : null);
                 session.Save(true);
+                databaseSaved = true;
 
                 ConfigReader.Save(_configAssembly);
                 MirDbSessionFactory.ConfigureEncryption();
 
+                MarkEncryptionSettingsSaved();
+                ApplyFilter();
                 _statusLabel.Text = "数据库加密设置已应用并保存。";
                 MessageBox.Show(this, "数据库加密设置已应用。", "数据库加密", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, ex.ToString(), "数据库加密失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (!databaseSaved)
+                {
+                    if (!DatabaseFilesChanged(databaseWriteTimes))
+                    {
+                        RestoreEncryptionConfig(oldEncryptionEnabled, oldEncryptionKey);
+                        MessageBox.Show(this, ex.ToString(), "数据库加密失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    _statusLabel.Text = "数据库加密未完整完成，数据库文件可能已部分重写。请检查 MirDB 备份后再启动服务端。";
+                    MessageBox.Show(
+                        this,
+                        ex + "\r\n\r\n数据库重写过程中至少有一个数据库文件的时间戳发生变化，但整个保存流程没有完成。\r\n请先检查 MirDB 自动备份，确认 System.db 和 Users.db 使用同一套加密设置后再启动服务端。",
+                        "数据库加密可能部分完成",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+
+                _statusLabel.Text = "数据库已重写，但配置保存或加密状态刷新失败。请检查 Server.ini 后再启动服务端。";
+                MessageBox.Show(
+                    this,
+                    ex + "\r\n\r\n数据库文件已经按当前加密设置重写，但 Server.ini 保存或管理端加密状态刷新失败。\r\n请确认 Server.ini 中的 EncryptionEnabled 和 EncryptionKey 与当前界面一致后再启动服务端；如无法确认，请使用 MirDB 自动备份恢复数据库。",
+                    "数据库加密部分完成",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
             }
+        }
+
+        private static Dictionary<string, DateTime?> CaptureDatabaseWriteTimes()
+        {
+            Session session = new Session(SessionMode.Both);
+
+            return new[] { session.SystemPath, session.UsersPath }
+                .ToDictionary(path => path, GetDatabaseWriteTimeUtc, StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static bool DatabaseFilesChanged(Dictionary<string, DateTime?> writeTimes)
+        {
+            if (writeTimes == null || writeTimes.Count == 0) return false;
+
+            try
+            {
+                return writeTimes.Any(pair => GetDatabaseWriteTimeUtc(pair.Key) != pair.Value);
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private static DateTime? GetDatabaseWriteTimeUtc(string path)
+        {
+            return File.Exists(path) ? File.GetLastWriteTimeUtc(path) : null;
+        }
+
+        private static void RestoreEncryptionConfig(bool encryptionEnabled, string encryptionKey)
+        {
+            Config.EncryptionEnabled = encryptionEnabled;
+            Config.EncryptionKey = encryptionKey;
+
+            try
+            {
+                MirDbSessionFactory.ConfigureEncryption();
+            }
+            catch (Exception restoreEx)
+            {
+                SEnvir.Log($"恢复原数据库加密配置失败: {restoreEx}");
+            }
+        }
+
+        private bool TryReadEncryptionSettings(out bool encryptionEnabled, out string encryptionKey)
+        {
+            encryptionEnabled = Config.EncryptionEnabled;
+            encryptionKey = Config.EncryptionKey;
+
+            List<string> errors = new List<string>();
+
+            if (TryReadSettingValue("EncryptionEnabled", errors, out object enabledValue) && enabledValue is bool parsedEnabled)
+                encryptionEnabled = parsedEnabled;
+
+            if (TryReadSettingValue("EncryptionKey", errors, out object keyValue))
+                encryptionKey = Convert.ToString(keyValue, CultureInfo.InvariantCulture) ?? string.Empty;
+
+            if (errors.Count == 0) return true;
+
+            MessageBox.Show(this, string.Join("\r\n", errors), "数据库加密", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        private bool TryReadSettingValue(string propertyName, List<string> errors, out object value)
+        {
+            value = null;
+
+            if (!_propertyRows.TryGetValue(propertyName, out DataGridViewRow row) || row.Tag is not ConfigSetting setting)
+            {
+                errors.Add($"{propertyName}: 找不到配置项。");
+                return false;
+            }
+
+            try
+            {
+                value = ParseValue(setting.Property.PropertyType, row.Cells[2].Value);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"{propertyName}: {ex.Message}");
+                return false;
+            }
+        }
+
+        private void MarkEncryptionSettingsSaved()
+        {
+            bool wasApplyingFilter = _applyingFilter;
+            _applyingFilter = true;
+            try
+            {
+                MarkSettingSaved("EncryptionEnabled", Config.EncryptionEnabled);
+                MarkSettingSaved("EncryptionKey", Config.EncryptionKey);
+            }
+            finally
+            {
+                _applyingFilter = wasApplyingFilter;
+            }
+        }
+
+        private void MarkSettingSaved(string propertyName, object value)
+        {
+            if (!_propertyRows.TryGetValue(propertyName, out DataGridViewRow row) || row.Tag is not ConfigSetting setting)
+                return;
+
+            SetRowValue(row, setting.Property.PropertyType, value);
+            setting.UpdateOriginalValue(value);
         }
 
         private void SynchronizeLocalDatabase()
@@ -923,7 +1157,7 @@ namespace Server.WinForms
                 Directory.CreateDirectory(dataPath);
 
                 string targetPath = Path.Combine(dataPath, Path.GetFileName(systemPath));
-                File.Copy(systemPath, targetPath, true);
+                WinFormsFileWriter.CopyFileAtomically(systemPath, targetPath, true);
 
                 SEnvir.Log("本地数据库同步完成。");
                 MessageBox.Show(this, $"本地数据库已同步到：\r\n{targetPath}", "同步本地数据库", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -948,13 +1182,12 @@ namespace Server.WinForms
             try
             {
                 string systemPath = SaveSystemDatabase();
-                string key = Uri.EscapeDataString(Config.SyncKey ?? string.Empty);
-                string url = $"{Config.SyncRemotePreffix}?Type={WebServer.SystemDBSyncCommand}&Key={key}";
+                string url = BuildRemoteSyncUrl(Config.SyncRemotePreffix, Config.SyncKey);
 
                 using (HttpClient client = new HttpClient())
                 using (ByteArrayContent content = new ByteArrayContent(File.ReadAllBytes(systemPath)))
                 {
-                    HttpResponseMessage response = await client.PostAsync(url, content);
+                    using HttpResponseMessage response = await client.PostAsync(url, content);
                     response.EnsureSuccessStatusCode();
                 }
 
@@ -964,6 +1197,17 @@ namespace Server.WinForms
             {
                 MessageBox.Show(this, ex.ToString(), "同步远程数据库失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private static string BuildRemoteSyncUrl(string prefix, string syncKey)
+        {
+            prefix = (prefix ?? string.Empty).Trim();
+
+            string separator = prefix.Contains("?")
+                ? (prefix.EndsWith("?", StringComparison.Ordinal) || prefix.EndsWith("&", StringComparison.Ordinal) ? string.Empty : "&")
+                : "?";
+
+            return $"{prefix}{separator}Type={Uri.EscapeDataString(WebServer.SystemDBSyncCommand)}&Key={Uri.EscapeDataString(syncKey ?? string.Empty)}";
         }
 
         private static string SaveSystemDatabase()
@@ -982,14 +1226,14 @@ namespace Server.WinForms
             return session.SystemPath;
         }
 
-        private static bool TryGetEncryptionKey(out byte[] key, out string reason)
+        private static bool TryGetEncryptionKey(string encryptionKey, out byte[] key, out string reason)
         {
             key = null;
             reason = null;
 
             try
             {
-                key = Convert.FromBase64String(Config.EncryptionKey ?? string.Empty);
+                key = Convert.FromBase64String(encryptionKey ?? string.Empty);
                 if (key.Length != 32)
                 {
                     reason = "EncryptionKey 必须是 32 字节的 Base64 字符串。";
@@ -1010,8 +1254,23 @@ namespace Server.WinForms
             if (type == typeof(bool))
             {
                 if (value is bool boolValue) return boolValue;
-                if (bool.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), out bool result)) return result;
-                throw new FormatException("请输入 True 或 False。");
+                string boolText = Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+
+                if (bool.TryParse(boolText, out bool result)) return result;
+                if (boolText == "1") return true;
+                if (boolText == "0") return false;
+                if (boolText.Equals("是", StringComparison.OrdinalIgnoreCase) ||
+                    boolText.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+                    boolText.Equals("y", StringComparison.OrdinalIgnoreCase) ||
+                    boolText.Equals("on", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                if (boolText.Equals("否", StringComparison.OrdinalIgnoreCase) ||
+                    boolText.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+                    boolText.Equals("n", StringComparison.OrdinalIgnoreCase) ||
+                    boolText.Equals("off", StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                throw new FormatException("请输入 True/False、1/0、是/否。");
             }
 
             string text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
@@ -1033,7 +1292,7 @@ namespace Server.WinForms
             if (type == typeof(Size)) return ParseSize(text);
             if (type == typeof(SizeF)) return ParseSizeF(text);
             if (type == typeof(Color)) return ParseColor(text);
-            if (type.IsEnum) return Enum.Parse(type, text, true);
+            if (type.IsEnum) return ParseEnum(type, text);
 
             try
             {
@@ -1047,6 +1306,42 @@ namespace Server.WinForms
 
                 throw;
             }
+        }
+
+        private static object ParseEnum(Type enumType, string text)
+        {
+            object parsed = Enum.Parse(enumType, text, true);
+            if (!IsDefinedEnumValue(enumType, parsed))
+                throw new FormatException($"`{text}` 不是 {enumType.Name} 的有效值。");
+
+            return parsed;
+        }
+
+        private static bool IsDefinedEnumValue(Type enumType, object value)
+        {
+            if (Enum.IsDefined(enumType, value))
+                return true;
+
+            if (enumType.GetCustomAttribute<FlagsAttribute>() == null)
+                return false;
+
+            ulong raw = ToUInt64(value);
+            if (raw == 0)
+                return true;
+
+            ulong allowedBits = 0;
+            foreach (object definedValue in Enum.GetValues(enumType))
+                allowedBits |= ToUInt64(definedValue);
+
+            return (raw & ~allowedBits) == 0;
+        }
+
+        private static ulong ToUInt64(object value)
+        {
+            TypeCode typeCode = Convert.GetTypeCode(value);
+            return typeCode is TypeCode.SByte or TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64
+                ? unchecked((ulong)Convert.ToInt64(value, CultureInfo.InvariantCulture))
+                : Convert.ToUInt64(value, CultureInfo.InvariantCulture);
         }
 
         private static Point ParsePoint(string text)

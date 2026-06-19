@@ -5,6 +5,7 @@ using Server.Envir;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.IO;
@@ -123,6 +124,12 @@ namespace Server.WinForms
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            if (!EndGridEdits())
+            {
+                e.Cancel = true;
+                return;
+            }
+
             if (!_readOnly && _dirty)
             {
                 DialogResult result = MessageBox.Show(
@@ -156,6 +163,7 @@ namespace Server.WinForms
         public bool TryNavigateToType(string typeName)
         {
             if (string.IsNullOrWhiteSpace(typeName)) return true;
+            if (!EndGridEdits()) return false;
 
             Type type = _metadata.ObjectTypes.FirstOrDefault(x => x.Name.Equals(typeName, StringComparison.OrdinalIgnoreCase));
             if (type == null)
@@ -164,11 +172,14 @@ namespace Server.WinForms
                 return false;
             }
 
-            if (!SelectTypeNode(type) && !string.IsNullOrWhiteSpace(_tableSearchText.Text))
+            bool selected = SelectTypeNode(type);
+            if (!selected && !string.IsNullOrWhiteSpace(_tableSearchText.Text))
             {
                 _tableSearchText.Text = string.Empty;
-                SelectTypeNode(type);
+                selected = SelectTypeNode(type);
             }
+
+            if (!selected) return false;
 
             if (_currentType != type)
                 ShowCollection(type);
@@ -178,6 +189,8 @@ namespace Server.WinForms
 
         public bool TryNavigateToFilteredType(string filter, string typeName)
         {
+            if (!EndGridEdits()) return false;
+
             _tableSearchText.Text = filter ?? string.Empty;
             return TryNavigateToType(typeName);
         }
@@ -259,6 +272,7 @@ namespace Server.WinForms
             _split.SplitterDistance = 260;
 
             _tree.Dock = DockStyle.Fill;
+            _tree.BeforeSelect += Tree_BeforeSelect;
             _tree.AfterSelect += Tree_AfterSelect;
             _split.Panel1.Controls.Add(_tree);
 
@@ -403,10 +417,35 @@ namespace Server.WinForms
 
         private void RefreshActiveGrid()
         {
+            if (!EndGridEdits()) return;
+
             _activeGrid?.RefreshBinding();
             UpdateVisibleTypeNodeCounts();
             ShowChildLists(_rootGrid?.CurrentObject);
             UpdateGridStatus();
+        }
+
+        private bool EndGridEdits()
+        {
+            foreach (MirDbGridControl grid in GetOpenGrids())
+            {
+                if (!grid.EndPendingEdit())
+                    return false;
+            }
+
+            return true;
+        }
+
+        private IEnumerable<MirDbGridControl> GetOpenGrids()
+        {
+            if (_rootGrid != null)
+                yield return _rootGrid;
+
+            foreach (TabPage page in _childTabs.TabPages)
+            {
+                foreach (MirDbGridControl grid in page.Controls.OfType<MirDbGridControl>())
+                    yield return grid;
+            }
         }
 
         private void MarkExternalDatabaseChanged()
@@ -525,12 +564,16 @@ namespace Server.WinForms
             }
 
             _tree.SelectedNode = node;
+            if (!ReferenceEquals(_tree.SelectedNode, node)) return false;
+
             node.EnsureVisible();
             return true;
         }
 
         private void SelectFirstVisibleTypeNode()
         {
+            if (!EndGridEdits()) return;
+
             TreeNode node = FindFirstTypeNode(_tree.Nodes);
             if (node?.Tag is not Type type) return;
 
@@ -639,6 +682,15 @@ namespace Server.WinForms
             }
         }
 
+        private void Tree_BeforeSelect(object sender, TreeViewCancelEventArgs e)
+        {
+            if (_buildingTree) return;
+            if (e.Node?.Tag is not Type) return;
+
+            if (!EndGridEdits())
+                e.Cancel = true;
+        }
+
         private void Tree_AfterSelect(object sender, TreeViewEventArgs e)
         {
             if (_buildingTree) return;
@@ -668,6 +720,7 @@ namespace Server.WinForms
                 };
                 _rootGrid.BecameActive += (_, _) => SetActiveGrid(_rootGrid);
                 _rootGrid.ReferenceOpenRequested += Grid_ReferenceOpenRequested;
+                _rootGrid.FilterCleared += Grid_FilterCleared;
                 _rootGrid.ContentChanged += (_, _) =>
                 {
                     MarkDirty();
@@ -723,6 +776,7 @@ namespace Server.WinForms
                     };
                     grid.BecameActive += (_, _) => SetActiveGrid(grid);
                     grid.ReferenceOpenRequested += Grid_ReferenceOpenRequested;
+                    grid.FilterCleared += Grid_FilterCleared;
                     grid.ContentChanged += (_, _) =>
                     {
                         page.Text = $"{property.Name} ({list.Count})";
@@ -742,6 +796,14 @@ namespace Server.WinForms
             UpdateActiveGridFromSelectedChildTab();
         }
 
+        private void Grid_FilterCleared(object sender, EventArgs e)
+        {
+            if (!string.IsNullOrEmpty(_searchText.Text))
+                _searchText.Text = string.Empty;
+
+            UpdateGridStatus();
+        }
+
         private void RestoreChildTab(string key)
         {
             if (string.IsNullOrWhiteSpace(key)) return;
@@ -758,19 +820,23 @@ namespace Server.WinForms
         private void Grid_ReferenceOpenRequested(object sender, DBObjectReferenceEventArgs e)
         {
             if (e.Reference == null) return;
+            if (!EndGridEdits()) return;
 
             Type type = e.Reference.GetType();
-            if (!SelectTypeNode(type) && !string.IsNullOrWhiteSpace(_tableSearchText.Text))
-            {
-                _tableSearchText.Text = string.Empty;
-                SelectTypeNode(type);
-            }
-
             if (!_metadata.ObjectTypes.Contains(type))
             {
                 MessageBox.Show(this, $"找不到引用对象类型 {type.Name} 的数据库集合。", "打开引用对象", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
+
+            bool selected = SelectTypeNode(type);
+            if (!selected && !string.IsNullOrWhiteSpace(_tableSearchText.Text))
+            {
+                _tableSearchText.Text = string.Empty;
+                selected = SelectTypeNode(type);
+            }
+
+            if (!selected) return;
 
             if (_currentType != type)
                 ShowCollection(type);
@@ -879,6 +945,8 @@ namespace Server.WinForms
 
         private void OpenSelectedMap()
         {
+            if (!EndGridEdits()) return;
+
             object current = _activeGrid?.CurrentObject;
             MapInfo map = current switch
             {
@@ -918,7 +986,7 @@ namespace Server.WinForms
         {
             if (_activeGrid == null) return;
 
-            if (!int.TryParse(_indexText.Text?.Trim(), out int index))
+            if (!int.TryParse(_indexText.Text?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int index))
             {
                 MessageBox.Show(this, "请输入有效的数字 Index。", "跳转", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
@@ -955,6 +1023,8 @@ namespace Server.WinForms
 
         private void OpenSelectedMapRegion()
         {
+            if (!EndGridEdits()) return;
+
             if (_readOnly)
             {
                 MessageBox.Show(this, "数据库当前以只读模式打开，不能编辑地图区域。", "地图区域", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -989,6 +1059,8 @@ namespace Server.WinForms
                 return;
             }
 
+            if (!EndGridEdits()) return;
+
             if (!_onlineMode && !_lockService.HasWriteLocks && !_lockService.AcquireWriteLocks(out string reason))
             {
                 MessageBox.Show(this, reason, "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -1018,8 +1090,8 @@ namespace Server.WinForms
                 }
                 else
                 {
-                    _lockService.ReleaseWriteLocks();
                     _lockService.Backup();
+                    _lockService.ReleaseWriteLocks();
                     _session.Save(true);
                 }
 
@@ -1057,6 +1129,8 @@ namespace Server.WinForms
             try
             {
                 UseWaitCursor = true;
+                if (!EndGridEdits()) return;
+
                 List<string> validationMessages = ValidateDatabaseCore();
 
                 if (validationMessages.Count == 0)
@@ -1172,6 +1246,7 @@ namespace Server.WinForms
         private void ImportCurrent()
         {
             if (_activeGrid == null || _readOnly) return;
+            if (!EndGridEdits()) return;
 
             try
             {
@@ -1186,13 +1261,14 @@ namespace Server.WinForms
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, ex.ToString(), "导入失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                HandlePotentialPartialImportFailure(ex, "导入失败");
             }
         }
 
         private void ExportCurrent()
         {
             if (_currentType == null || _activeGrid == null) return;
+            if (!EndGridEdits()) return;
 
             try
             {
@@ -1207,6 +1283,7 @@ namespace Server.WinForms
         private void ExportAllCurrent()
         {
             if (_currentType == null || _activeGrid == null) return;
+            if (!EndGridEdits()) return;
 
             try
             {
@@ -1225,6 +1302,8 @@ namespace Server.WinForms
                 MessageBox.Show(this, "数据库当前以只读模式打开，不能导入 Mir2 掉落。", "导入 Mir2 掉落", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+
+            if (!EndGridEdits()) return;
 
             using FolderBrowserDialog dialog = new FolderBrowserDialog
             {
@@ -1245,11 +1324,13 @@ namespace Server.WinForms
             {
                 Mir2DropImporter importer = new Mir2DropImporter(_session);
                 Mir2DropImportReport report = importer.Import(dialog.SelectedPath, replaceExisting);
+                bool changed = HasMir2DropImports(report);
 
-                if (_onlineMode)
+                if (_onlineMode && changed)
                     SEnvir.RebuildMonsterDropTable();
 
-                MarkDirty();
+                if (changed)
+                    MarkDirty();
                 _rootGrid?.RefreshBinding();
                 UpdateVisibleTypeNodeCounts();
                 ShowChildLists(_rootGrid?.CurrentObject);
@@ -1268,12 +1349,14 @@ namespace Server.WinForms
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, ex.ToString(), "导入 Mir2 掉落失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                HandlePotentialPartialImportFailure(ex, "导入 Mir2 掉落失败");
             }
         }
 
         private void ExportMir2Drops()
         {
+            if (!EndGridEdits()) return;
+
             using FolderBrowserDialog dialog = new FolderBrowserDialog
             {
                 Description = "请选择导出 Mir2 掉落文件的输出目录",
@@ -1311,6 +1394,8 @@ namespace Server.WinForms
                 MessageBox.Show(this, "数据库当前以只读模式打开，不能迁移怪物形象。", "迁移怪物形象", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+
+            if (!EndGridEdits()) return;
 
             List<MonsterInfo> monsters = _session.GetCollection<MonsterInfo>().Binding.ToList();
             MonsterImageMigrationService service = new MonsterImageMigrationService();
@@ -1350,6 +1435,8 @@ namespace Server.WinForms
 
         private void ValidateTextNpcs()
         {
+            if (!EndGridEdits()) return;
+
             using FolderBrowserDialog dialog = new FolderBrowserDialog
             {
                 Description = "选择包含 NPCInfo.txt 的文本 NPC 目录",
@@ -1381,6 +1468,8 @@ namespace Server.WinForms
                 return;
             }
 
+            if (!EndGridEdits()) return;
+
             using FolderBrowserDialog dialog = new FolderBrowserDialog
             {
                 Description = "选择包含 NPCInfo.txt 的文本 NPC 目录",
@@ -1410,7 +1499,7 @@ namespace Server.WinForms
                 TextNpcDatabaseImporter importer = new TextNpcDatabaseImporter(_session);
                 TextNpcDatabaseImportReport report = importer.Import(dialog.SelectedPath, mode);
 
-                if (mode != TextNpcDatabaseImportMode.ValidateOnly)
+                if (mode != TextNpcDatabaseImportMode.ValidateOnly && HasTextNpcImports(report))
                     MarkDirty();
 
                 _rootGrid?.RefreshBinding();
@@ -1425,12 +1514,17 @@ namespace Server.WinForms
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, ex.ToString(), "导入文本 NPC 失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (mode == TextNpcDatabaseImportMode.ValidateOnly)
+                    MessageBox.Show(this, ex.ToString(), "导入文本 NPC 失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                else
+                    HandlePotentialPartialImportFailure(ex, "导入文本 NPC 失败");
             }
         }
 
         private void ExportTextNpcs()
         {
+            if (!EndGridEdits()) return;
+
             List<NPCInfo> selected = _activeGrid?.SelectedObjects.OfType<NPCInfo>().Where(x => x != null).Distinct().ToList() ?? new List<NPCInfo>();
             List<NPCInfo> source;
 
@@ -1474,14 +1568,18 @@ namespace Server.WinForms
                 TextNpcExportReport report = exporter.Export(dialog.SelectedPath, source, overwrite);
 
                 string details = report.ToDisplayText();
-                if (report.Todos.Count > 0)
+                if (report.Todos.Count > 0 || report.Failures.Count > 0)
                 {
                     OpenDiagnosticsForm()?.ShowReport(report.BuildTodoDetailsText());
-                    details += "\r\n\r\n完整 TODO 明细已写入报告文件，并已在诊断窗口显示，可使用“复制报告”复制。";
-                    details += "\r\n\r\nTODO 示例:\r\n" + string.Join("\r\n", report.Todos.Take(20));
+                    details += "\r\n\r\n完整明细已在诊断窗口显示，可使用“复制报告”复制。";
+                    if (report.Failures.Count > 0)
+                        details += "\r\n\r\n失败示例:\r\n" + string.Join("\r\n", report.Failures.Take(20));
+                    if (report.Todos.Count > 0)
+                        details += "\r\n\r\nTODO 示例:\r\n" + string.Join("\r\n", report.Todos.Take(20));
                 }
 
-                MessageBox.Show(this, details, "导出 NPC 文本完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBoxIcon icon = report.Failures.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information;
+                MessageBox.Show(this, details, "导出 NPC 文本完成", MessageBoxButtons.OK, icon);
             }
             catch (Exception ex)
             {
@@ -1491,6 +1589,8 @@ namespace Server.WinForms
 
         private void ValidateCustomSystem()
         {
+            if (!EndGridEdits()) return;
+
             using FolderBrowserDialog dialog = new FolderBrowserDialog
             {
                 Description = "选择包含 Resources.txt、Monsters、Skills 的自定义系统目录",
@@ -1524,6 +1624,8 @@ namespace Server.WinForms
                 return;
             }
 
+            if (!EndGridEdits()) return;
+
             using FolderBrowserDialog dialog = new FolderBrowserDialog
             {
                 Description = "选择包含 Resources.txt、Monsters、Skills 的自定义系统目录",
@@ -1553,7 +1655,7 @@ namespace Server.WinForms
                 CustomSystemDatabaseImporter importer = new CustomSystemDatabaseImporter(_session);
                 CustomSystemTextReport report = importer.Import(dialog.SelectedPath, mode);
 
-                if (mode != CustomSystemImportMode.ValidateOnly && report.Failures.Count == 0)
+                if (mode != CustomSystemImportMode.ValidateOnly && HasCustomSystemImports(report))
                     MarkDirty();
 
                 _rootGrid?.RefreshBinding();
@@ -1569,12 +1671,17 @@ namespace Server.WinForms
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, ex.ToString(), "导入自定义系统失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (mode == CustomSystemImportMode.ValidateOnly)
+                    MessageBox.Show(this, ex.ToString(), "导入自定义系统失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                else
+                    HandlePotentialPartialImportFailure(ex, "导入自定义系统失败");
             }
         }
 
         private void ExportCustomSystem()
         {
+            if (!EndGridEdits()) return;
+
             using FolderBrowserDialog dialog = new FolderBrowserDialog
             {
                 Description = "请选择导出自定义资源、怪物和技能文本的输出目录",
@@ -1610,10 +1717,10 @@ namespace Server.WinForms
         private void OpenCustomSystemDirectory()
         {
             string path = GetDefaultCustomSystemDirectory();
-            Directory.CreateDirectory(path);
 
             try
             {
+                Directory.CreateDirectory(path);
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
             }
             catch (Exception ex)
@@ -1698,6 +1805,8 @@ namespace Server.WinForms
 
         private void ShowCustomAiMigrationReport()
         {
+            if (!EndGridEdits()) return;
+
             try
             {
                 CustomMonsterAiMigrationReport report = CustomMonsterAiMigrationReportBuilder.Build(_session);
@@ -1748,6 +1857,43 @@ namespace Server.WinForms
             return details;
         }
 
+        private static bool HasCustomSystemImports(CustomSystemTextReport report)
+        {
+            return report != null &&
+                   (report.ResourcesImported > 0 ||
+                    report.MonsterStatsImported > 0 ||
+                    report.MonsterDropEntriesImported > 0 ||
+                    report.MonsterDropGroupsImported > 0 ||
+                    report.MonsterVisualsImported > 0 ||
+                    report.MonsterBehaviorsImported > 0 ||
+                    report.SkillsImported > 0);
+        }
+
+        private static bool HasTextNpcImports(TextNpcDatabaseImportReport report)
+        {
+            return report != null &&
+                   (report.NpcsImported > 0 ||
+                    report.NpcsCreated > 0 ||
+                    report.NpcsUpdated > 0 ||
+                    report.NpcsReplaced > 0 ||
+                    report.NpcsMerged > 0 ||
+                    report.PagesCreated > 0 ||
+                    report.ButtonsCreated > 0 ||
+                    report.ChecksCreated > 0 ||
+                    report.ActionsCreated > 0 ||
+                    report.GoodsCreated > 0 ||
+                    report.TypesCreated > 0);
+        }
+
+        private static bool HasMir2DropImports(Mir2DropImportReport report)
+        {
+            return report != null &&
+                   (report.MonstersCleared > 0 ||
+                    report.DropsImported > 0 ||
+                    report.GroupsImported > 0 ||
+                    report.GroupItemsImported > 0);
+        }
+
         private static string AppendCustomSystemDetails(string details, string title, IEnumerable<string> values)
         {
             List<string> lines = values?
@@ -1757,6 +1903,22 @@ namespace Server.WinForms
             if (lines.Count == 0) return details;
 
             return details + "\r\n\r\n" + title + ":\r\n" + string.Join("\r\n", lines);
+        }
+
+        private void HandlePotentialPartialImportFailure(Exception ex, string title)
+        {
+            MarkDirty();
+            _rootGrid?.RefreshBinding();
+            _activeGrid?.RefreshBinding();
+            UpdateVisibleTypeNodeCounts();
+            ShowChildLists(_rootGrid?.CurrentObject);
+
+            MessageBox.Show(
+                this,
+                ex + "\r\n\r\n导入过程可能已经创建或修改了部分内存对象，编辑器已标记为未保存。如不需要这些变更，请关闭数据库编辑器并放弃保存。",
+                title,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
         }
 
         private string GetModeText()
@@ -1775,16 +1937,16 @@ namespace Server.WinForms
                 if (cache == null) return;
 
                 if (cache.Width >= 1000 && cache.Height >= 640)
-                    Size = new System.Drawing.Size(cache.Width, cache.Height);
+                    Size = FitWindowSize(new System.Drawing.Size(cache.Width, cache.Height));
 
                 if (cache.Maximized)
                     WindowState = FormWindowState.Maximized;
 
                 if (cache.LeftSplitterDistance > 160)
-                    _split.SplitterDistance = Math.Min(cache.LeftSplitterDistance, Math.Max(160, _split.Width - 260));
+                    TrySetSplitterDistance(_split, cache.LeftSplitterDistance, 160);
 
                 if (cache.RightSplitterDistance > 240)
-                    _rightSplit.SplitterDistance = Math.Min(cache.RightSplitterDistance, Math.Max(240, _rightSplit.Height - 180));
+                    TrySetSplitterDistance(_rightSplit, cache.RightSplitterDistance, 240);
 
                 ApplyExpandedTreePaths(cache.ExpandedTreePaths);
 
@@ -1819,7 +1981,7 @@ namespace Server.WinForms
                     ExpandedTreePaths = GetExpandedTreePaths().ToList()
                 };
 
-                File.WriteAllText(UiCachePath, JsonSerializer.Serialize(cache, new JsonSerializerOptions
+                WinFormsFileWriter.WriteAllTextAtomically(UiCachePath, JsonSerializer.Serialize(cache, new JsonSerializerOptions
                 {
                     WriteIndented = true
                 }));
@@ -1839,6 +2001,43 @@ namespace Server.WinForms
             public int RightSplitterDistance { get; set; }
             public string LastTypeName { get; set; }
             public List<string> ExpandedTreePaths { get; set; } = new List<string>();
+        }
+
+        private static bool TrySetSplitterDistance(SplitContainer split, int requestedDistance, int preferredMinimumDistance)
+        {
+            if (split == null || requestedDistance <= 0)
+                return false;
+
+            int length = split.Orientation == Orientation.Vertical ? split.ClientSize.Width : split.ClientSize.Height;
+            if (length <= 0)
+                return false;
+
+            int absoluteMinimum = Math.Max(0, split.Panel1MinSize);
+            int absoluteMaximum = length - split.SplitterWidth - Math.Max(0, split.Panel2MinSize);
+            if (absoluteMaximum < absoluteMinimum)
+                return false;
+
+            int effectiveMinimum = Math.Min(Math.Max(preferredMinimumDistance, absoluteMinimum), absoluteMaximum);
+            int distance = Math.Min(Math.Max(requestedDistance, effectiveMinimum), absoluteMaximum);
+            split.SplitterDistance = distance;
+            return true;
+        }
+
+        private static System.Drawing.Size FitWindowSize(System.Drawing.Size requested)
+        {
+            System.Drawing.Rectangle area = Screen.PrimaryScreen?.WorkingArea ?? System.Drawing.Rectangle.Empty;
+            if (area.Width <= 0 || area.Height <= 0)
+                return requested;
+
+            int maxWidth = Math.Max(1000, area.Width - 40);
+            int maxHeight = Math.Max(640, area.Height - 40);
+            int width = Math.Min(requested.Width, maxWidth);
+            int height = Math.Min(requested.Height, maxHeight);
+
+            width = Math.Max(Math.Min(1000, maxWidth), width);
+            height = Math.Max(Math.Min(640, maxHeight), height);
+
+            return new System.Drawing.Size(width, height);
         }
 
         private IEnumerable<string> GetExpandedTreePaths()

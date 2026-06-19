@@ -8,6 +8,7 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -19,6 +20,9 @@ namespace Server.WinForms
     {
         private const int BaseCellWidth = 48;
         private const int BaseCellHeight = 32;
+        private const int AnimationFrameMask = 0x0F;
+        private const int AnimationBlendBit = 0x80;
+        private const int AnimationDataMask = AnimationFrameMask | AnimationBlendBit;
 
         private readonly ToolStripButton _saveButton = new ToolStripButton("保存");
         private readonly ToolStripButton _cancelButton = new ToolStripButton("取消");
@@ -62,6 +66,7 @@ namespace Server.WinForms
         private float _realMapBufferZoom;
         private Bitmap _realMapBuffer;
         private string _lastRenderFailure;
+        private string _mapLoadFailure;
         private bool _drawAttributes;
         private bool _drawSelection = true;
         private bool _attributeSelection;
@@ -107,13 +112,17 @@ namespace Server.WinForms
                 if (_mapRegion?.Map != null)
                 {
                     LoadMap(_mapRegion.Map.FileName);
-                    _selection = _mapRegion.GetPoints(_map.Width);
-                    _originalSelection = new HashSet<Point>(_selection);
+                    if (!_map.IsEmpty)
+                    {
+                        _selection = GetValidSelection(_mapRegion.GetPoints(_map.Width));
+                        _originalSelection = new HashSet<Point>(_selection);
+                    }
                 }
                 else
                 {
                     _map = MapData.Empty;
                     _mapPath = null;
+                    _mapLoadFailure = null;
                     _lastRealMapRendered = false;
                     ClearRealMapBuffer();
                 }
@@ -128,15 +137,21 @@ namespace Server.WinForms
 
         public void LoadMap(string path)
         {
-            string resolved = ResolveMapPath(path);
+            string resolved;
 
-            if (string.IsNullOrWhiteSpace(resolved) || !File.Exists(resolved))
+            try
+            {
+                resolved = ResolveMapPath(path);
+            }
+            catch (Exception ex)
             {
                 _map = MapData.Empty;
-                _mapPath = resolved;
+                _mapPath = path;
+                _mapLoadFailure = ex.Message;
                 _lastRealMapRendered = false;
                 ClearRealMapBuffer();
                 _selection.Clear();
+                _originalSelection.Clear();
                 UpdateCommands();
                 UpdateScrollBars();
                 UpdateStatus();
@@ -144,8 +159,49 @@ namespace Server.WinForms
                 return;
             }
 
-            _map = MapData.Load(resolved);
+            if (string.IsNullOrWhiteSpace(resolved) || !File.Exists(resolved))
+            {
+                _map = MapData.Empty;
+                _mapPath = resolved;
+                _mapLoadFailure = null;
+                _lastRealMapRendered = false;
+                ClearRealMapBuffer();
+                _selection.Clear();
+                _originalSelection.Clear();
+                UpdateCommands();
+                UpdateScrollBars();
+                UpdateStatus();
+                _canvas.Invalidate();
+                return;
+            }
+
+            MapData map;
+            try
+            {
+                map = MapData.Load(resolved);
+            }
+            catch (Exception ex)
+            {
+                _map = MapData.Empty;
+                _mapPath = resolved;
+                _mapLoadFailure = ex.Message;
+                _lastRealMapRendered = false;
+                ClearRealMapBuffer();
+                _selection.Clear();
+                _originalSelection.Clear();
+                UpdateCommands();
+                UpdateScrollBars();
+                UpdateStatus();
+                _canvas.Invalidate();
+
+                SEnvir.Log($"加载地图文件失败: {resolved}\r\n{ex}");
+                MessageBox.Show(this, $"地图文件读取失败：\r\n{resolved}\r\n\r\n{ex.Message}", "地图查看器", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            _map = map;
             _mapPath = resolved;
+            _mapLoadFailure = null;
             _lastRealMapRendered = false;
             ClearRealMapBuffer();
 
@@ -382,25 +438,29 @@ namespace Server.WinForms
         {
             if (MapRegion == null || _map.IsEmpty) return;
 
+            HashSet<Point> selection = GetValidSelection(_selection);
+            if (selection.Count != _selection.Count)
+                _selection = selection;
+
             BitArray bitRegion = null;
             Point[] pointRegion = null;
 
-            if (_selection.Count * 8 * 8 > _map.Width * _map.Height)
+            if (selection.Count * 8 * 8 > _map.Width * _map.Height)
             {
                 bitRegion = new BitArray(_map.Width * _map.Height);
 
-                foreach (Point point in _selection)
+                foreach (Point point in selection)
                     bitRegion[point.Y * _map.Width + point.X] = true;
             }
             else
             {
-                pointRegion = _selection.ToArray();
+                pointRegion = selection.ToArray();
             }
 
             MapRegion.BitRegion = bitRegion;
             MapRegion.PointRegion = pointRegion;
-            MapRegion.Size = _selection.Count;
-            _originalSelection = new HashSet<Point>(_selection);
+            MapRegion.Size = selection.Count;
+            _originalSelection = new HashSet<Point>(selection);
 
             UpdateCommands();
             UpdateStatus();
@@ -428,6 +488,7 @@ namespace Server.WinForms
             _zoom = zoom;
             ClearRealMapBuffer();
             UpdateScrollBars();
+            UpdateStatus();
             _canvas.Invalidate();
         }
 
@@ -538,14 +599,35 @@ namespace Server.WinForms
             return MapRegion != null && !_selection.SetEquals(_originalSelection);
         }
 
+        private HashSet<Point> GetValidSelection(IEnumerable<Point> points)
+        {
+            HashSet<Point> selection = new HashSet<Point>();
+            if (points == null || _map.IsEmpty) return selection;
+
+            foreach (Point point in points)
+            {
+                if (IsInMapBounds(point))
+                    selection.Add(point);
+            }
+
+            return selection;
+        }
+
+        private bool IsInMapBounds(Point point)
+        {
+            return point.X >= 0 &&
+                   point.Y >= 0 &&
+                   point.X < _map.Width &&
+                   point.Y < _map.Height;
+        }
+
         private void Canvas_Paint(object sender, PaintEventArgs e)
         {
             e.Graphics.Clear(Color.FromArgb(24, 28, 32));
 
             if (_map.IsEmpty)
             {
-                string text = string.IsNullOrWhiteSpace(_mapPath) ? "选择“打开”加载地图文件。" : $"地图文件不存在: {_mapPath}";
-                DrawMessage(e.Graphics, text);
+                DrawMessage(e.Graphics, GetEmptyMapMessage());
                 return;
             }
 
@@ -667,7 +749,7 @@ namespace Server.WinForms
                 for (int x = minX; x <= maxX; x++)
                 {
                     MapCell cell = _map.Cells[x, y];
-                    if (IsAnimated(cell.MiddleAnimationFrame) || IsAnimated(cell.FrontAnimationFrame))
+                    if (HasAnimationFrames(cell.MiddleAnimationFrame) || HasAnimationFrames(cell.FrontAnimationFrame))
                         return true;
                 }
             }
@@ -751,33 +833,41 @@ namespace Server.WinForms
 
         private bool DrawCellSizedLayer(Graphics graphics, int fileIndex, int imageIndex, int animationFrame, float x, float y)
         {
-            if (IsAnimated(animationFrame)) return false;
             if (!TryGetLibrary(fileIndex, allowTiles: false, out MapTileLibrary library)) return false;
 
+            bool blend = ApplyAnimationFrame(animationFrame, ref imageIndex);
             Size size = library.GetSize(imageIndex);
             if (!IsCellSized(size)) return false;
 
-            return DrawImage(graphics, library, imageIndex, x, y, 1F);
+            return DrawImage(graphics, library, imageIndex, x, y, blend ? 0.5F : 1F);
         }
 
         private bool DrawObjectLayer(Graphics graphics, int fileIndex, int imageIndex, int animationFrame, float x, float y)
         {
             if (!TryGetLibrary(fileIndex, allowTiles: false, out MapTileLibrary library)) return false;
 
-            bool blend = false;
-            if (IsAnimated(animationFrame))
-            {
-                int count = animationFrame & 0x4F;
-                if (count <= 0) return false;
-
-                imageIndex += _animation % count;
-                blend = (animationFrame & 0x50) > 0;
-            }
+            bool blend = ApplyAnimationFrame(animationFrame, ref imageIndex);
 
             Size size = library.GetSize(imageIndex);
             if (size.IsEmpty || IsCellSized(size)) return false;
 
             return DrawImage(graphics, library, imageIndex, x, y - size.Height, blend ? 0.5F : 1F);
+        }
+
+        private bool ApplyAnimationFrame(int animationFrame, ref int imageIndex)
+        {
+            if (!IsAnimated(animationFrame)) return false;
+
+            int count = animationFrame & AnimationFrameMask;
+            if (count > 0)
+                imageIndex += _animation % count;
+
+            return (animationFrame & AnimationBlendBit) != 0;
+        }
+
+        private static bool HasAnimationFrames(int animationFrame)
+        {
+            return IsAnimated(animationFrame) && (animationFrame & AnimationFrameMask) > 0;
         }
 
         private static bool IsAnimated(int animationFrame)
@@ -894,6 +984,17 @@ namespace Server.WinForms
             using Font font = new Font(FontFamily.GenericSansSerif, 11F);
             using Brush brush = new SolidBrush(Color.Gainsboro);
             graphics.DrawString(text, font, brush, new RectangleF(24, 24, Math.Max(10, _canvas.Width - 48), Math.Max(10, _canvas.Height - 48)));
+        }
+
+        private string GetEmptyMapMessage()
+        {
+            if (string.IsNullOrWhiteSpace(_mapPath))
+                return "选择“打开”加载地图文件。";
+
+            if (!string.IsNullOrWhiteSpace(_mapLoadFailure))
+                return $"地图文件读取失败: {_mapPath}\r\n{_mapLoadFailure}";
+
+            return $"地图文件不存在: {_mapPath}";
         }
 
         private RectangleF GetCellRectangle(int x, int y, int startX, int startY)
@@ -1055,7 +1156,8 @@ namespace Server.WinForms
         {
             if (_map.IsEmpty) return;
 
-            if (!int.TryParse(_jumpXText.Text, out int x) || !int.TryParse(_jumpYText.Text, out int y))
+            if (!int.TryParse(_jumpXText.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int x) ||
+                !int.TryParse(_jumpYText.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int y))
             {
                 MessageBox.Show(this, "请输入有效的地图坐标。", "跳转坐标", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
@@ -1098,8 +1200,23 @@ namespace Server.WinForms
                 return;
             }
 
-            Clipboard.SetText($"{_mouseLocation.X},{_mouseLocation.Y}");
-            _positionLabel.Text = $"坐标: {_mouseLocation.X},{_mouseLocation.Y} 已复制 半径: {_radius} 缩放: {_zoom:0.###}x";
+            string text = $"{_mouseLocation.X},{_mouseLocation.Y}";
+            if (TrySetClipboardText(text, "复制坐标"))
+                _positionLabel.Text = $"坐标: {text} 已复制 半径: {_radius} 缩放: {_zoom:0.###}x";
+        }
+
+        private bool TrySetClipboardText(string text, string title)
+        {
+            try
+            {
+                Clipboard.SetText(text);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), $"{title}失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
         }
 
         private void UpdateJumpText(Point location, bool force = false)
@@ -1223,6 +1340,12 @@ namespace Server.WinForms
             {
                 if (library.HasImage(imageIndex)) return;
 
+                if (!string.IsNullOrWhiteSpace(library.LoadFailure))
+                {
+                    AddMapLibraryIssue(issues, "图库读取失败", layer, location, fileIndex, file.ToString(), relativePath, fullPath, imageIndex, library.LoadFailure);
+                    return;
+                }
+
                 AddMapLibraryIssue(issues, "缺失图片索引", layer, location, fileIndex, file.ToString(), relativePath, fullPath, imageIndex, "图库文件存在，但没有这个图片索引。");
             }
             catch (Exception ex)
@@ -1233,9 +1356,9 @@ namespace Server.WinForms
 
         private static int GetAnimationImageCount(int animationFrame)
         {
-            if (!IsAnimated(animationFrame)) return 0;
+            if (!HasAnimationFrames(animationFrame)) return 0;
 
-            int count = animationFrame & 0x4F;
+            int count = animationFrame & AnimationFrameMask;
             return Math.Max(0, count);
         }
 
@@ -1343,7 +1466,11 @@ namespace Server.WinForms
                 return value;
 
             string fileName = value.EndsWith(".map", StringComparison.OrdinalIgnoreCase) ? value : value + ".map";
-            return Path.Combine(Config.MapPath, fileName);
+            string mapPath = string.IsNullOrWhiteSpace(Config.MapPath)
+                ? AppDomain.CurrentDomain.BaseDirectory
+                : Config.MapPath;
+
+            return Path.Combine(mapPath, fileName);
         }
 
         private sealed class MapData
@@ -1357,14 +1484,34 @@ namespace Server.WinForms
 
             public static MapData Load(string path)
             {
+                const int HeaderLength = 28;
+                const int BackgroundCellBytes = 3;
+                const int MapCellBytes = 14;
+                const int MaxMapCells = 4 * 1024 * 1024;
+
                 MapData data = new MapData();
 
-                using MemoryStream stream = new MemoryStream(File.ReadAllBytes(path));
+                using FileStream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
                 using BinaryReader reader = new BinaryReader(stream);
+
+                if (stream.Length < HeaderLength)
+                    throw new InvalidDataException($"地图文件长度无效: {stream.Length} 字节。");
 
                 stream.Seek(22, SeekOrigin.Begin);
                 data.Width = reader.ReadInt16();
                 data.Height = reader.ReadInt16();
+
+                if (data.Width <= 0 || data.Height <= 0)
+                    throw new InvalidDataException($"地图尺寸无效: {data.Width}x{data.Height}。");
+
+                long backgroundCellCount = (long)(data.Width / 2) * (data.Height / 2);
+                long mapCellCount = (long)data.Width * data.Height;
+                if (mapCellCount > MaxMapCells)
+                    throw new InvalidDataException($"地图尺寸超过查看器限制: {data.Width}x{data.Height}（{mapCellCount:#,##0} 格，最大 {MaxMapCells:#,##0} 格）。");
+
+                long requiredLength = HeaderLength + backgroundCellCount * BackgroundCellBytes + mapCellCount * MapCellBytes;
+                if (stream.Length < requiredLength)
+                    throw new InvalidDataException($"地图文件数据不完整: 需要至少 {requiredLength:#,##0} 字节，实际 {stream.Length:#,##0} 字节。");
 
                 stream.Seek(28, SeekOrigin.Begin);
                 data.Cells = new MapCell[data.Width, data.Height];
@@ -1387,10 +1534,13 @@ namespace Server.WinForms
                     for (int y = 0; y < data.Height; y++)
                     {
                         byte flag = reader.ReadByte();
-                        data.Cells[x, y].MiddleAnimationFrame = reader.ReadByte();
-
                         byte value = reader.ReadByte();
+                        data.Cells[x, y].MiddleAnimationFrame = value == 255 ? 0 : value;
+                        data.Cells[x, y].MiddleAnimationFrame &= AnimationDataMask;
+
+                        value = reader.ReadByte();
                         data.Cells[x, y].FrontAnimationFrame = value == 255 ? 0 : value;
+                        data.Cells[x, y].FrontAnimationFrame &= AnimationDataMask;
 
                         data.Cells[x, y].FrontFile = reader.ReadByte();
                         data.Cells[x, y].MiddleFile = reader.ReadByte();
@@ -1502,7 +1652,21 @@ namespace Server.WinForms
                     return;
                 }
 
-                Clipboard.SetText(_textBox.Text);
+                TrySetClipboardText(_textBox.Text, "复制报告");
+            }
+
+            private bool TrySetClipboardText(string text, string title)
+            {
+                try
+                {
+                    Clipboard.SetText(text);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, ex.ToString(), $"{title}失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return false;
+                }
             }
 
             private void ExportReport()
@@ -1517,8 +1681,15 @@ namespace Server.WinForms
 
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
-                File.WriteAllText(dialog.FileName, _textBox.Text, Encoding.UTF8);
-                MessageBox.Show(this, $"诊断报告已导出到：\r\n{dialog.FileName}", "导出报告", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                try
+                {
+                    WinFormsFileWriter.WriteAllTextAtomically(dialog.FileName, _textBox.Text, Encoding.UTF8);
+                    MessageBox.Show(this, $"诊断报告已导出到：\r\n{dialog.FileName}", "导出报告", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, ex.ToString(), "导出报告失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
         }
 

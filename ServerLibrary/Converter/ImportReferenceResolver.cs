@@ -26,14 +26,21 @@ namespace Server
         [ThreadStatic]
         private static ReferenceContext _currentContext;
 
-        private static readonly List<DeferredReference> PendingReferences = new();
+        [ThreadStatic]
+        private static List<DeferredReference> _pendingReferences;
 
-        private static bool EnableDeferredResolution { get; set; } = true;
+        [ThreadStatic]
+        private static bool _enableDeferredResolution;
+
+        private static List<DeferredReference> PendingReferences => _pendingReferences ??= new List<DeferredReference>();
 
         public static void SetDeferredResolution(bool enabled)
         {
-            EnableDeferredResolution = enabled;
-            PendingReferences.Clear();
+            lock (PendingReferences)
+            {
+                _enableDeferredResolution = enabled;
+                PendingReferences.Clear();
+            }
         }
 
         public static void SetContext(DBObject owner, PropertyInfo property)
@@ -52,23 +59,32 @@ namespace Server
 
         public static bool TryAddMissingReference(Type referenceType, List<string> identityValues)
         {
-            if (!EnableDeferredResolution || _currentContext == null)
+            ReferenceContext context = _currentContext;
+
+            if (context == null)
             {
                 return false;
             }
 
+            var reference = new DeferredReference
+            {
+                Owner = context.Owner,
+                Property = context.Property,
+                ReferenceType = referenceType,
+                IdentityValues = identityValues.ToList()
+            };
+
             lock (PendingReferences)
             {
-                PendingReferences.Add(new DeferredReference
+                if (!_enableDeferredResolution)
                 {
-                    Owner = _currentContext.Owner,
-                    Property = _currentContext.Property,
-                    ReferenceType = referenceType,
-                    IdentityValues = identityValues.ToList()
-                });
+                    return false;
+                }
+
+                PendingReferences.Add(reference);
             }
 
-            SEnvir.Log($"Deferred missing reference for '{referenceType.Name}' using values '{string.Join('/', identityValues)}' on '{_currentContext.Owner?.GetType().Name}.{_currentContext.Property?.Name}'.");
+            SEnvir.Log($"Deferred missing reference for '{referenceType.Name}' using values '{string.Join('/', identityValues)}' on '{context.Owner?.GetType().Name}.{context.Property?.Name}'.");
 
             return true;
         }
@@ -118,6 +134,28 @@ namespace Server
             return (resolved, stillPending.Count);
         }
 
+        public static IReadOnlyList<string> GetPendingReferenceDescriptions(int maxCount)
+        {
+            lock (PendingReferences)
+            {
+                return PendingReferences
+                    .Take(Math.Max(0, maxCount))
+                    .Select(DescribeReference)
+                    .ToArray();
+            }
+        }
+
+        public static int PendingReferenceCount
+        {
+            get
+            {
+                lock (PendingReferences)
+                {
+                    return PendingReferences.Count;
+                }
+            }
+        }
+
         private static DBObject TryResolveReference(Session session, DeferredReference reference)
         {
             var converterType = typeof(DBObjectReferenceConverter<>).MakeGenericType(reference.ReferenceType);
@@ -127,6 +165,17 @@ namespace Server
             MethodInfo getObjectMethod = converterType.GetMethod("GetObjectFromIdentity", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
             return getObjectMethod?.Invoke(converter, new object[] { reference.IdentityValues, false }) as DBObject;
+        }
+
+        private static string DescribeReference(DeferredReference reference)
+        {
+            string ownerType = reference.Owner?.GetType().Name ?? "[未知对象]";
+            string ownerIndex = reference.Owner == null ? string.Empty : $" #{reference.Owner.Index}";
+            string propertyName = reference.Property?.Name ?? "[未知属性]";
+            string referenceType = reference.ReferenceType?.Name ?? "[未知类型]";
+            string identity = string.Join("/", reference.IdentityValues ?? []);
+
+            return $"{ownerType}{ownerIndex}.{propertyName} -> {referenceType} ({identity})";
         }
     }
 }

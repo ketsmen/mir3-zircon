@@ -6,7 +6,6 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -29,6 +28,8 @@ namespace Server.WinForms
         private readonly ToolStripButton _networkMonitorButton = new ToolStripButton("网络诊断");
         private readonly BindingList<OrphanDiagnostic.OrphanTypeResult> _orphanResults = new BindingList<OrphanDiagnostic.OrphanTypeResult>();
         private readonly BindingList<DiagnosticValue> _networkDiagnostics = new BindingList<DiagnosticValue>();
+        private bool _operationRunning;
+        private bool CanUpdateUi => !IsDisposed && !Disposing;
 
         public event EventHandler DatabaseChanged;
 
@@ -190,30 +191,46 @@ namespace Server.WinForms
 
         private void LoadNetworkDiagnostics()
         {
-            _networkDiagnostics.Clear();
-
-            foreach (DiagnosticValue value in BaseConnection.Diagnostics.Values.OrderBy(x => x.Name))
-                _networkDiagnostics.Add(value);
+            ReloadNetworkDiagnostics();
         }
 
         private void RefreshNetworkDiagnostics()
         {
-            foreach (DiagnosticValue value in BaseConnection.Diagnostics.Values.OrderBy(x => x.Name))
-            {
-                if (_networkDiagnostics.Contains(value)) continue;
-
-                _networkDiagnostics.Add(value);
-            }
-
+            ReloadNetworkDiagnostics();
             _networkGrid.Refresh();
             UpdateStatus();
         }
 
+        private void ReloadNetworkDiagnostics()
+        {
+            _networkDiagnostics.Clear();
+
+            foreach (DiagnosticValue value in BaseConnection.Diagnostics.Values.Select(CloneDiagnosticValue).OrderBy(x => x.Name))
+                _networkDiagnostics.Add(value);
+        }
+
+        private static DiagnosticValue CloneDiagnosticValue(DiagnosticValue value)
+        {
+            lock (value)
+            {
+                return new DiagnosticValue
+                {
+                    Name = value.Name,
+                    Count = value.Count,
+                    TotalSize = value.TotalSize,
+                    LargestSize = value.LargestSize,
+                    TotalTime = value.TotalTime,
+                    LargestTime = value.LargestTime
+                };
+            }
+        }
+
         private async Task RunDatabaseValidation()
         {
+            if (!BeginDiagnosticOperation()) return;
+
             try
             {
-                UseWaitCursor = true;
                 _reportText.Text = "正在验证数据库...";
                 UpdateStatus("正在验证数据库...");
 
@@ -223,6 +240,8 @@ namespace Server.WinForms
                     MirDbMetadata metadata = new MirDbMetadata(session);
                     return new ValidationService(metadata).Validate();
                 });
+
+                if (!CanUpdateUi) return;
 
                 if (messages.Count == 0)
                 {
@@ -238,13 +257,19 @@ namespace Server.WinForms
             }
             catch (Exception ex)
             {
+                if (!CanUpdateUi)
+                {
+                    SEnvir.Log("数据库验证失败: " + ex);
+                    return;
+                }
+
                 _reportText.Text = ex.ToString();
                 UpdateStatus("数据库验证失败。");
                 MessageBox.Show(this, ex.ToString(), "数据库验证失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
-                UseWaitCursor = false;
+                EndDiagnosticOperation();
             }
         }
 
@@ -257,6 +282,12 @@ namespace Server.WinForms
                 return;
             }
 
+            if (_operationRunning)
+            {
+                UpdateStatus("已有诊断任务正在运行，请等待完成。");
+                return;
+            }
+
             if (cleanRun &&
                 MessageBox.Show(
                     this,
@@ -266,15 +297,18 @@ namespace Server.WinForms
                     MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 
+            if (!BeginDiagnosticOperation()) return;
+
             try
             {
-                UseWaitCursor = true;
                 _reportText.Text = cleanRun ? "正在清理孤立数据..." : "正在扫描孤立数据...";
                 UpdateStatus(cleanRun ? "正在清理孤立数据..." : "正在扫描孤立数据...");
 
                 OrphanDiagnostic.ScanResult result = await Task.Run(() => cleanRun
                     ? OrphanDiagnostic.MarkTemporaryOnCleanableOrphans(session)
                     : OrphanDiagnostic.Scan(session));
+
+                if (!CanUpdateUi) return;
 
                 LoadOrphanResults(result);
                 _reportText.Text = OrphanDiagnostic.FormatLog(result, cleanRun);
@@ -288,6 +322,12 @@ namespace Server.WinForms
             }
             catch (Exception ex)
             {
+                if (!CanUpdateUi)
+                {
+                    SEnvir.Log((cleanRun ? "清理孤立数据失败: " : "扫描孤立数据失败: ") + ex);
+                    return;
+                }
+
                 _reportText.Text = ex.ToString();
                 SEnvir.Log(ex.ToString());
                 UpdateStatus(cleanRun ? "清理孤立数据失败。" : "扫描孤立数据失败。");
@@ -295,8 +335,28 @@ namespace Server.WinForms
             }
             finally
             {
-                UseWaitCursor = false;
+                EndDiagnosticOperation();
             }
+        }
+
+        private bool BeginDiagnosticOperation()
+        {
+            if (_operationRunning)
+            {
+                UpdateStatus("已有诊断任务正在运行，请等待完成。");
+                return false;
+            }
+
+            _operationRunning = true;
+            UseWaitCursor = true;
+            return true;
+        }
+
+        private void EndDiagnosticOperation()
+        {
+            _operationRunning = false;
+            if (CanUpdateUi)
+                UseWaitCursor = false;
         }
 
         private void LoadOrphanResults(OrphanDiagnostic.ScanResult result)
@@ -312,16 +372,18 @@ namespace Server.WinForms
 
         private void ResetNetworkDiagnostics()
         {
-            foreach (DiagnosticValue value in _networkDiagnostics)
+            foreach (DiagnosticValue value in BaseConnection.Diagnostics.Values)
             {
-                value.Count = 0;
-                value.TotalSize = 0;
-                value.LargestSize = 0;
-                value.TotalTime = TimeSpan.Zero;
-                value.LargestTime = TimeSpan.Zero;
+                lock (value)
+                {
+                    value.Count = 0;
+                    value.TotalSize = 0;
+                    value.LargestSize = 0;
+                    value.TotalTime = TimeSpan.Zero;
+                    value.LargestTime = TimeSpan.Zero;
+                }
             }
 
-            _networkGrid.Refresh();
             RefreshNetworkDiagnostics();
             _reportText.Text = "网络诊断统计已重置。";
             UpdateStatus("网络诊断统计已重置。");
@@ -346,9 +408,17 @@ namespace Server.WinForms
 
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
-            File.WriteAllText(dialog.FileName, text);
-            UpdateStatus($"诊断报告已导出: {dialog.FileName}");
-            MessageBox.Show(this, $"诊断报告已导出到：\r\n{dialog.FileName}", "导出报告", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            try
+            {
+                WinFormsFileWriter.WriteAllTextAtomically(dialog.FileName, text);
+                UpdateStatus($"诊断报告已导出: {dialog.FileName}");
+                MessageBox.Show(this, $"诊断报告已导出到：\r\n{dialog.FileName}", "导出报告", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus("诊断报告导出失败。");
+                MessageBox.Show(this, ex.ToString(), "导出报告失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void CopyReport()
@@ -360,8 +430,7 @@ namespace Server.WinForms
                 return;
             }
 
-            Clipboard.SetText(text);
-            UpdateStatus("诊断报告已复制。");
+            TrySetClipboardText(text, "复制报告", "诊断报告已复制。");
         }
 
         private void CopyCurrentPage()
@@ -380,8 +449,7 @@ namespace Server.WinForms
                 return;
             }
 
-            Clipboard.SetText(text);
-            UpdateStatus($"已复制当前页 {_tabs.SelectedTab.Text}。");
+            TrySetClipboardText(text, "复制当前页", $"已复制当前页 {_tabs.SelectedTab.Text}。");
         }
 
         private void ExportCurrentPage()
@@ -419,9 +487,17 @@ namespace Server.WinForms
 
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
-            File.WriteAllText(dialog.FileName, BuildGridTsv(grid));
-            UpdateStatus($"当前页已导出: {dialog.FileName}");
-            MessageBox.Show(this, $"当前页已导出到：\r\n{dialog.FileName}", "导出当前页", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            try
+            {
+                WinFormsFileWriter.WriteAllTextAtomically(dialog.FileName, BuildGridTsv(grid));
+                UpdateStatus($"当前页已导出: {dialog.FileName}");
+                MessageBox.Show(this, $"当前页已导出到：\r\n{dialog.FileName}", "导出当前页", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus("当前页导出失败。");
+                MessageBox.Show(this, ex.ToString(), "导出当前页失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void UpdateStatus(string message = null)
@@ -445,6 +521,20 @@ namespace Server.WinForms
             }
 
             _statusLabel.Text = string.IsNullOrWhiteSpace(message) ? pageStatus : $"{message}  {pageStatus}";
+        }
+
+        private void TrySetClipboardText(string text, string title, string successMessage)
+        {
+            try
+            {
+                Clipboard.SetText(text);
+                UpdateStatus(successMessage);
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"{title}失败。");
+                MessageBox.Show(this, ex.ToString(), $"{title}失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private static int CountReportedOrphans(OrphanDiagnostic.ScanResult result)

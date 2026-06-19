@@ -14,20 +14,57 @@ namespace Server.WinForms
     {
         private readonly Dictionary<LibraryFile, MapTileLibrary> _libraries = new Dictionary<LibraryFile, MapTileLibrary>();
         private readonly Dictionary<LibraryFile, string> _missingLibraries = new Dictionary<LibraryFile, string>();
+        private string _clientPathConfigSnapshot;
+        private string _clientPathSnapshot;
 
-        public int LoadedLibraryCount => _libraries.Count;
-        public int MissingLibraryCount => _missingLibraries.Count;
+        public int LoadedLibraryCount
+        {
+            get
+            {
+                EnsureClientPathCurrent();
+                return _libraries.Count;
+            }
+        }
+
+        public int MissingLibraryCount
+        {
+            get
+            {
+                EnsureClientPathCurrent();
+                return _missingLibraries.Count;
+            }
+        }
+
         public string LastFailure { get; private set; }
-        public string ClientPath => ResolveClientPath();
+        public string ClientPath
+        {
+            get
+            {
+                EnsureClientPathCurrent();
+                return _clientPathSnapshot;
+            }
+        }
 
         public bool TryGetLibrary(LibraryFile file, out MapTileLibrary library)
         {
+            EnsureClientPathCurrent();
             library = null;
 
             if (file == LibraryFile.None) return false;
 
             if (_libraries.TryGetValue(file, out library))
+            {
+                if (!string.IsNullOrWhiteSpace(library.LoadFailure))
+                {
+                    RememberMissing(file, $"图库读取失败: {library.LoadFailure}");
+                    _libraries.Remove(file);
+                    library.Dispose();
+                    library = null;
+                    return false;
+                }
+
                 return true;
+            }
 
             if (_missingLibraries.ContainsKey(file))
                 return false;
@@ -38,14 +75,15 @@ namespace Server.WinForms
                 return false;
             }
 
-            string clientPath = ResolveClientPath();
-            if (string.IsNullOrWhiteSpace(clientPath))
+            if (string.IsNullOrWhiteSpace(_clientPathSnapshot))
             {
-                RememberMissing(file, "未配置 ClientPath");
+                RememberMissing(file, string.IsNullOrWhiteSpace(LastFailure) ? "未配置 ClientPath" : LastFailure);
                 return false;
             }
 
-            string fullPath = Path.GetFullPath(Path.Combine(clientPath, relativePath));
+            if (!TryResolveLibraryFullPath(file, relativePath, out string fullPath))
+                return false;
+
             if (!File.Exists(fullPath))
             {
                 RememberMissing(file, $"图库不存在: {fullPath}");
@@ -67,8 +105,15 @@ namespace Server.WinForms
 
         public string GetStatusText()
         {
-            if (string.IsNullOrWhiteSpace(ResolveClientPath()))
+            EnsureClientPathCurrent();
+
+            if (string.IsNullOrWhiteSpace(_clientPathSnapshot))
+            {
+                if (!string.IsNullOrWhiteSpace(LastFailure))
+                    return $"显示: 属性图（{LastFailure}）";
+
                 return "显示: 属性图（未配置 ClientPath）";
+            }
 
             if (_libraries.Count == 0 && _missingLibraries.Count == 0)
                 return "显示: 真实地图";
@@ -81,22 +126,22 @@ namespace Server.WinForms
 
         public bool TryGetLibraryPath(LibraryFile file, out string relativePath, out string fullPath)
         {
+            EnsureClientPathCurrent();
             relativePath = null;
             fullPath = null;
 
             if (!Libraries.LibraryList.TryGetValue(file, out relativePath))
                 return false;
 
-            string clientPath = ResolveClientPath();
-            if (string.IsNullOrWhiteSpace(clientPath))
+            if (string.IsNullOrWhiteSpace(_clientPathSnapshot))
                 return true;
 
-            fullPath = Path.GetFullPath(Path.Combine(clientPath, relativePath));
-            return true;
+            return TryResolveLibraryFullPath(file, relativePath, out fullPath);
         }
 
         public bool TryGetMissingReason(LibraryFile file, out string reason)
         {
+            EnsureClientPathCurrent();
             return _missingLibraries.TryGetValue(file, out reason);
         }
 
@@ -106,16 +151,94 @@ namespace Server.WinForms
             LastFailure = reason;
         }
 
-        private static string ResolveClientPath()
+        private static string ResolveClientPath(out string failure)
         {
+            failure = null;
             if (string.IsNullOrWhiteSpace(Config.ClientPath)) return null;
 
-            return Path.IsPathRooted(Config.ClientPath)
-                ? Config.ClientPath
-                : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Config.ClientPath);
+            try
+            {
+                string configuredPath = Config.ClientPath.Trim();
+                string path = Path.IsPathRooted(configuredPath)
+                    ? configuredPath
+                    : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, configuredPath);
+
+                return Path.GetFullPath(path);
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+            {
+                failure = $"ClientPath 无效: {Config.ClientPath} ({ex.Message})";
+                return null;
+            }
+        }
+
+        private bool TryResolveLibraryFullPath(LibraryFile file, string relativePath, out string fullPath)
+        {
+            fullPath = null;
+
+            try
+            {
+                string root = Path.GetFullPath(_clientPathSnapshot);
+                if (Path.IsPathRooted(relativePath))
+                {
+                    RememberMissing(file, $"图库路径必须是相对路径: {relativePath}");
+                    return false;
+                }
+
+                string candidate = Path.GetFullPath(Path.Combine(root, relativePath));
+                if (!IsPathInsideDirectory(root, candidate))
+                {
+                    RememberMissing(file, $"图库路径不能跳出 ClientPath: {relativePath}");
+                    return false;
+                }
+
+                fullPath = candidate;
+                return true;
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+            {
+                RememberMissing(file, $"图库路径无效: {relativePath} ({ex.Message})");
+                return false;
+            }
+        }
+
+        private static bool IsPathInsideDirectory(string rootDirectory, string path)
+        {
+            string normalizedRoot = Path.GetFullPath(rootDirectory)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string normalizedPath = Path.GetFullPath(path)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            return string.Equals(normalizedPath, normalizedRoot, StringComparison.OrdinalIgnoreCase) ||
+                   normalizedPath.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                   normalizedPath.StartsWith(normalizedRoot + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void EnsureClientPathCurrent()
+        {
+            string configuredClientPath = Config.ClientPath?.Trim() ?? string.Empty;
+            string clientPath = ResolveClientPath(out string failure);
+            if (string.Equals(_clientPathConfigSnapshot, configuredClientPath, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(_clientPathSnapshot, clientPath, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.IsNullOrWhiteSpace(failure))
+                    LastFailure = failure;
+
+                return;
+            }
+
+            Clear();
+            _clientPathConfigSnapshot = configuredClientPath;
+            _clientPathSnapshot = clientPath;
+            LastFailure = failure;
         }
 
         public void Dispose()
+        {
+            Clear();
+        }
+
+        private void Clear()
         {
             foreach (MapTileLibrary library in _libraries.Values)
                 library.Dispose();
@@ -127,6 +250,7 @@ namespace Server.WinForms
 
     internal sealed class MapTileLibrary : IDisposable
     {
+        private readonly string _fileName;
         private readonly FileStream _stream;
         private readonly BinaryReader _reader;
         private readonly object _loadLocker = new object();
@@ -136,8 +260,11 @@ namespace Server.WinForms
         private int _version;
         private MapTileImage[] _images;
 
+        public string LoadFailure { get; private set; }
+
         public MapTileLibrary(string fileName)
         {
+            _fileName = fileName;
             _stream = File.OpenRead(fileName);
             _reader = new BinaryReader(_stream);
         }
@@ -158,13 +285,24 @@ namespace Server.WinForms
         {
             if (!CheckImage(index)) return null;
 
-            return _images[index].GetBitmap(_reader);
+            try
+            {
+                return _images[index].GetBitmap(_reader);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or IOException or ArgumentException or ExternalException)
+            {
+                LoadFailure = $"图片 {index} 读取失败: {ex.Message}";
+                SEnvir.Log($"地图图库图片读取失败: {_fileName} #{index}\r\n{ex}");
+                return null;
+            }
         }
 
         private void ReadLibrary()
         {
             lock (_loadLocker)
             {
+                if (_loaded) return;
+
                 if (_loading) return;
                 _loading = true;
             }
@@ -176,7 +314,14 @@ namespace Server.WinForms
                 lock (_reader)
                 {
                     _reader.BaseStream.Seek(0, SeekOrigin.Begin);
-                    header = _reader.ReadBytes(_reader.ReadInt32());
+                    int headerLength = _reader.ReadInt32();
+                    long remaining = _reader.BaseStream.Length - _reader.BaseStream.Position;
+                    if (headerLength <= 0 || headerLength > remaining)
+                        throw new InvalidDataException($"图库头长度无效: {headerLength}。");
+
+                    header = _reader.ReadBytes(headerLength);
+                    if (header.Length != headerLength)
+                        throw new InvalidDataException($"图库头数据不完整: 需要 {headerLength:#,##0} 字节，实际 {header.Length:#,##0} 字节。");
                 }
 
                 using (MemoryStream stream = new MemoryStream(header))
@@ -190,21 +335,40 @@ namespace Server.WinForms
                     if (_version == 0)
                         count = value;
 
+                    long remainingHeaderBytes = reader.BaseStream.Length - reader.BaseStream.Position;
+                    if (count < 0 || count > remainingHeaderBytes)
+                        throw new InvalidDataException($"图库图片数量无效: {count}。");
+
                     _images = new MapTileImage[count];
 
                     for (int i = 0; i < _images.Length; i++)
                     {
+                        if (reader.BaseStream.Position >= reader.BaseStream.Length)
+                            throw new InvalidDataException($"图库头数据不完整: 缺少图片 {i} 的存在标记。");
+
                         if (!reader.ReadBoolean()) continue;
+
+                        if (reader.BaseStream.Length - reader.BaseStream.Position < MapTileImage.HeaderSize)
+                            throw new InvalidDataException($"图库头数据不完整: 图片 {i} 的头部不足 {MapTileImage.HeaderSize} 字节。");
 
                         _images[i] = new MapTileImage(reader, _version);
                     }
                 }
-
-                _loaded = true;
+            }
+            catch (Exception ex)
+            {
+                LoadFailure = ex.Message;
+                _images = Array.Empty<MapTileImage>();
+                SEnvir.Log($"地图图库读取失败: {_fileName}\r\n{ex}");
             }
             finally
             {
-                _loading = false;
+                lock (_loadLocker)
+                {
+                    _loaded = true;
+                    _loading = false;
+                    Monitor.PulseAll(_loadLocker);
+                }
             }
         }
 
@@ -213,8 +377,11 @@ namespace Server.WinForms
             if (!_loaded)
                 ReadLibrary();
 
-            while (_loading && !_loaded)
-                Thread.Sleep(1);
+            lock (_loadLocker)
+            {
+                while (_loading && !_loaded)
+                    Monitor.Wait(_loadLocker);
+            }
 
             return _loaded && index >= 0 && index < _images.Length && _images[index] != null;
         }
@@ -234,6 +401,9 @@ namespace Server.WinForms
 
     internal sealed class MapTileImage : IDisposable
     {
+        public const int HeaderSize = 25;
+        private const int MaxImagePixels = 16777216;
+
         private readonly int _position;
         private readonly int _version;
         private Bitmap _bitmap;
@@ -241,12 +411,12 @@ namespace Server.WinForms
         public short Width { get; }
         public short Height { get; }
 
-        private int ImageDataSize
+        private long ImageDataSize
         {
             get
             {
-                int width = Pad4(Width);
-                int height = Pad4(Height);
+                long width = Pad4(Width);
+                long height = Pad4(Height);
 
                 return _version > 0 ? width * height : width * height / 2;
             }
@@ -268,13 +438,27 @@ namespace Server.WinForms
             if (_bitmap != null) return _bitmap;
             if (_position == 0 || Width <= 0 || Height <= 0) return null;
 
+            long imageDataSize = ImageDataSize;
+            long pixelDataSize = (long)Width * Height * 4;
+            if (imageDataSize <= 0 ||
+                imageDataSize > int.MaxValue ||
+                pixelDataSize > int.MaxValue ||
+                (long)Width * Height > MaxImagePixels)
+                throw new InvalidDataException($"图库图片尺寸无效: {Width}x{Height}。");
+
             byte[] buffer;
 
             lock (reader)
             {
+                if (_position < 0 || _position > reader.BaseStream.Length)
+                    throw new InvalidDataException($"图库图片位置无效: {_position}。");
+
                 reader.BaseStream.Seek(_position, SeekOrigin.Begin);
-                buffer = reader.ReadBytes(ImageDataSize);
+                buffer = reader.ReadBytes((int)imageDataSize);
             }
+
+            if (buffer.Length != imageDataSize)
+                throw new InvalidDataException($"图库图片数据不完整: 位置 {_position}，需要 {imageDataSize:#,##0} 字节，实际 {buffer.Length:#,##0} 字节。");
 
             _bitmap = _version > 0
                 ? DecodeDxt5(buffer, Width, Height)

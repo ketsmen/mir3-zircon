@@ -36,6 +36,7 @@ namespace Server.WinForms
         public event EventHandler BecameActive;
         public event EventHandler<DBObjectReferenceEventArgs> ReferenceOpenRequested;
         public event EventHandler ContentChanged;
+        public event EventHandler FilterCleared;
 
         public MirDbGridControl(Session session, MirDbMetadata metadata, Type itemType, IList source, object rootCollection, bool readOnly, object ownerObject = null)
         {
@@ -68,6 +69,7 @@ namespace Server.WinForms
             _grid.CellDoubleClick += Grid_CellDoubleClick;
             _grid.ColumnHeaderMouseClick += Grid_ColumnHeaderMouseClick;
             _grid.KeyDown += Grid_KeyDown;
+            _grid.CurrentCellDirtyStateChanged += Grid_CurrentCellDirtyStateChanged;
             _grid.CellValueChanged += (_, _) => OnContentChanged();
 
             BuildContextMenu();
@@ -118,8 +120,10 @@ namespace Server.WinForms
             }
         }
 
-        public void RefreshBinding()
+        public void RefreshBinding(bool commitCurrentEdit = false)
         {
+            if (commitCurrentEdit && !EndPendingEdit()) return;
+
             object current = CurrentObject;
             _binding = true;
             try
@@ -137,12 +141,16 @@ namespace Server.WinForms
 
         public void ApplySearch(string text)
         {
+            if (!EndPendingEdit()) return;
+
             _filterText = text ?? string.Empty;
             RefreshBinding();
         }
 
         public void ExportVisibleRows(IWin32Window owner)
         {
+            if (!EndPendingEdit()) return;
+
             if (_grid.Rows.Count == 0)
             {
                 MessageBox.Show(owner, "当前视图没有可导出的行。", "导出当前视图", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -159,20 +167,32 @@ namespace Server.WinForms
 
             if (dialog.ShowDialog(owner) != DialogResult.OK) return;
 
-            File.WriteAllText(dialog.FileName, BuildRowsTsv(_grid.Rows.Cast<DataGridViewRow>()));
-            MessageBox.Show(owner, $"已导出 {_grid.Rows.Count:#,##0} 行到：\r\n{dialog.FileName}", "导出当前视图", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            try
+            {
+                WinFormsFileWriter.WriteAllTextAtomically(dialog.FileName, BuildRowsTsv(_grid.Rows.Cast<DataGridViewRow>()));
+                MessageBox.Show(owner, $"已导出 {_grid.Rows.Count:#,##0} 行到：\r\n{dialog.FileName}", "导出当前视图", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(owner, ex.ToString(), "导出当前视图失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         public void CopyVisibleRows(IWin32Window owner)
         {
+            if (!EndPendingEdit()) return;
+
             if (_grid.Rows.Count == 0)
             {
                 MessageBox.Show(owner, "当前视图没有可复制的行。", "复制当前视图", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            Clipboard.SetText(BuildRowsTsv(_grid.Rows.Cast<DataGridViewRow>()));
-            MessageBox.Show(owner, $"已复制当前视图 {_grid.Rows.Count:#,##0} 行。", "复制当前视图", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            TrySetClipboardText(
+                BuildRowsTsv(_grid.Rows.Cast<DataGridViewRow>()),
+                owner,
+                "复制当前视图",
+                $"已复制当前视图 {_grid.Rows.Count:#,##0} 行。");
         }
 
         public void FocusGrid()
@@ -184,6 +204,22 @@ namespace Server.WinForms
             }
 
             _grid.Focus();
+        }
+
+        public bool EndPendingEdit()
+        {
+            try
+            {
+                if (_grid.IsCurrentCellDirty)
+                    _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+
+                return _grid.EndEdit();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "提交编辑失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
         }
 
         public bool SelectByIndex(int index)
@@ -209,12 +245,18 @@ namespace Server.WinForms
         public void AddNew()
         {
             if (_readOnly) return;
+            if (!EndPendingEdit()) return;
             if (!ConfirmUserDataMutation("新增一行")) return;
 
+            AddNewAfterConfirmed();
+        }
+
+        private void AddNewAfterConfirmed()
+        {
             object item = CreateNewItem();
             if (item == null) return;
 
-            _filterText = string.Empty;
+            ClearFilter();
             RefreshBinding();
             SelectObject(item);
             OnContentChanged();
@@ -223,12 +265,13 @@ namespace Server.WinForms
         public void InsertAfterCurrent()
         {
             if (_readOnly) return;
+            if (!EndPendingEdit()) return;
             if (!ConfirmUserDataMutation("在当前行后插入新行")) return;
 
             object current = CurrentObject;
             if (current is not DBObject dbObject)
             {
-                AddNew();
+                AddNewAfterConfirmed();
                 return;
             }
 
@@ -239,11 +282,11 @@ namespace Server.WinForms
             }
             else
             {
-                AddNew();
+                AddNewAfterConfirmed();
                 return;
             }
 
-            _filterText = string.Empty;
+            ClearFilter();
             RefreshBinding();
             SelectObject(item);
             OnContentChanged();
@@ -252,6 +295,7 @@ namespace Server.WinForms
         public void DuplicateCurrent()
         {
             if (_readOnly) return;
+            if (!EndPendingEdit()) return;
             if (!ConfirmUserDataMutation("复制当前对象为新行")) return;
 
             object current = CurrentObject;
@@ -260,15 +304,25 @@ namespace Server.WinForms
             object item = CreateNewItem();
             if (item == null) return;
 
-            foreach (PropertyInfo property in _metadata.GetValueProperties(_itemType))
+            try
             {
-                if (property.Name == nameof(DBObject.Index) || !CanWrite(property)) continue;
+                foreach (PropertyInfo property in _metadata.GetValueProperties(_itemType))
+                {
+                    if (property.Name == nameof(DBObject.Index) || !CanWrite(property)) continue;
 
-                object value = property.GetValue(current);
-                property.SetValue(item, value);
+                    object value = property.GetValue(current);
+                    property.SetValue(item, value);
+                }
+            }
+            catch (Exception ex)
+            {
+                RemoveAddedRows(new[] { item });
+                RefreshBinding();
+                MessageBox.Show(this, ex.ToString(), "复制当前对象失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
             }
 
-            _filterText = string.Empty;
+            ClearFilter();
             RefreshBinding();
             SelectObject(item);
             OnContentChanged();
@@ -277,6 +331,7 @@ namespace Server.WinForms
         public void DeleteSelected()
         {
             if (_readOnly) return;
+            if (!EndPendingEdit()) return;
 
             List<DBObject> objects = SelectedObjects.OfType<DBObject>().ToList();
             if (objects.Count == 0) return;
@@ -412,7 +467,7 @@ namespace Server.WinForms
             _contextMenu.Items.Add("显示所有列", null, (_, _) => ShowAllColumns());
             _contextMenu.Items.Add("重置列布局", null, (_, _) => ResetColumnLayout());
             _contextMenu.Items.Add(new ToolStripSeparator());
-            _contextMenu.Items.Add("刷新", null, (_, _) => RefreshBinding());
+            _contextMenu.Items.Add("刷新", null, (_, _) => RefreshBinding(true));
             _grid.ContextMenuStrip = _contextMenu;
         }
 
@@ -432,6 +487,7 @@ namespace Server.WinForms
             DataGridViewColumn column = _grid.Columns[e.ColumnIndex];
             PropertyInfo property = _itemType.GetProperty(column.DataPropertyName);
             if (property == null) return;
+            if (!EndPendingEdit()) return;
 
             if (_sortProperty == property)
             {
@@ -448,6 +504,23 @@ namespace Server.WinForms
             RefreshBinding();
             UpdateSortGlyphs();
             BecameActive?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void Grid_CurrentCellDirtyStateChanged(object sender, EventArgs e)
+        {
+            if (_binding || !_grid.IsCurrentCellDirty) return;
+            if (_grid.CurrentCell is not DataGridViewCheckBoxCell &&
+                _grid.CurrentCell is not DataGridViewComboBoxCell)
+                return;
+
+            try
+            {
+                _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.ToString(), "提交编辑失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void UpdateSortGlyphs()
@@ -470,6 +543,7 @@ namespace Server.WinForms
         private void ClearSort()
         {
             if (_sortProperty == null) return;
+            if (!EndPendingEdit()) return;
 
             _sortProperty = null;
             _sortDirection = ListSortDirection.Ascending;
@@ -480,15 +554,18 @@ namespace Server.WinForms
 
         private void CopyCurrentCell()
         {
+            if (!EndPendingEdit()) return;
             if (_grid.CurrentCell == null) return;
 
             string text = Convert.ToString(_grid.CurrentCell.FormattedValue, CultureInfo.CurrentCulture) ?? string.Empty;
             if (!string.IsNullOrEmpty(text))
-                Clipboard.SetText(text);
+                TrySetClipboardText(text, this, "复制单元格");
         }
 
         private void CopySelectedRows()
         {
+            if (!EndPendingEdit()) return;
+
             List<DataGridViewRow> rows = _grid.SelectedCells
                 .Cast<DataGridViewCell>()
                 .Select(x => _grid.Rows[x.RowIndex])
@@ -501,7 +578,7 @@ namespace Server.WinForms
 
             if (rows.Count == 0) return;
 
-            Clipboard.SetText(BuildRowsTsv(rows));
+            TrySetClipboardText(BuildRowsTsv(rows), this, "复制选中行");
         }
 
         private string BuildRowsTsv(IEnumerable<DataGridViewRow> rows)
@@ -519,6 +596,23 @@ namespace Server.WinForms
             }
 
             return string.Join(Environment.NewLine, lines);
+        }
+
+        private bool TrySetClipboardText(string text, IWin32Window owner, string title, string successMessage = null)
+        {
+            try
+            {
+                Clipboard.SetText(text);
+                if (!string.IsNullOrWhiteSpace(successMessage))
+                    MessageBox.Show(owner, successMessage, title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(owner, ex.ToString(), $"{title}失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
         }
 
         private List<DataGridViewColumn> GetVisibleColumns()
@@ -562,6 +656,8 @@ namespace Server.WinForms
 
         private void OpenReference(int rowIndex, int columnIndex, bool showMessage)
         {
+            if (!EndPendingEdit()) return;
+
             if (!TryGetReference(rowIndex, columnIndex, out DBObject dbObject))
             {
                 if (showMessage)
@@ -691,7 +787,6 @@ namespace Server.WinForms
             try
             {
                 string path = GetColumnLayoutPath();
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
 
                 List<string> lines = new List<string>
                 {
@@ -707,7 +802,7 @@ namespace Server.WinForms
                         column.Visible.ToString(CultureInfo.InvariantCulture)));
                 }
 
-                File.WriteAllLines(path, lines);
+                WinFormsFileWriter.WriteAllLinesAtomically(path, lines);
             }
             catch
             {
@@ -760,6 +855,9 @@ namespace Server.WinForms
 
             if (e.Control && e.KeyCode == Keys.V)
             {
+                if (_grid.IsCurrentCellInEditMode && _grid.EditingControl is TextBoxBase)
+                    return;
+
                 PasteClipboardTable();
                 e.Handled = true;
                 e.SuppressKeyPress = true;
@@ -776,77 +874,201 @@ namespace Server.WinForms
 
         private void PasteClipboardTable()
         {
-            if (!Clipboard.ContainsText()) return;
-
-            string text = Clipboard.GetText();
+            if (_readOnly) return;
+            if (!TryGetClipboardText(out string text)) return;
             if (string.IsNullOrWhiteSpace(text)) return;
 
             string[] lines = text.Replace("\r\n", "\n").Replace('\r', '\n')
                 .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
             if (lines.Length == 0) return;
 
-            int firstDataLine = HasVisibleColumnHeader(lines[0]) ? 1 : 0;
+            bool hasColumnHeader = HasVisibleColumnHeader(lines[0]);
+            int firstDataLine = hasColumnHeader ? 1 : 0;
             if (firstDataLine >= lines.Length) return;
+            if (!EndPendingEdit()) return;
 
             int startColumn = _grid.CurrentCell?.ColumnIndex ?? GetFirstVisibleColumnIndex();
             if (startColumn < 0) return;
-            List<DataGridViewColumn> pasteColumns = GetPasteColumns(startColumn);
-            if (pasteColumns.Count == 0) return;
+            List<(DataGridViewColumn Column, int ValueIndex)> pasteTargets = GetPasteTargets(lines[0], hasColumnHeader, startColumn);
+            if (pasteTargets.Count == 0) return;
 
             object startObject = _grid.CurrentRow?.DataBoundItem;
             int startRow = _grid.CurrentCell?.RowIndex ?? 0;
             int dataRows = lines.Length - firstDataLine;
-            int missingRows = startRow + dataRows - _grid.Rows.Count;
-            bool addedRows = false;
+            List<(int RowOffset, PropertyInfo Property, object Value)> changes = new List<(int RowOffset, PropertyInfo Property, object Value)>();
 
-            if (missingRows > 0)
-            {
-                if (!AppendRowsForPaste(missingRows))
-                    return;
-
-                addedRows = true;
-                if (startObject != null)
-                    startRow = FindRowIndex(startObject);
-
-                if (startRow < 0)
-                    startRow = Math.Max(0, _grid.Rows.Count - dataRows);
-            }
-
-            int changed = 0;
-
-            for (int lineIndex = firstDataLine; lineIndex < lines.Length && startRow + lineIndex - firstDataLine < _grid.Rows.Count; lineIndex++)
+            for (int lineIndex = firstDataLine; lineIndex < lines.Length; lineIndex++)
             {
                 string[] values = lines[lineIndex].Split('\t');
-                int targetRow = startRow + lineIndex - firstDataLine;
+                int rowOffset = lineIndex - firstDataLine;
 
-                for (int columnOffset = 0; columnOffset < values.Length && columnOffset < pasteColumns.Count; columnOffset++)
+                foreach ((DataGridViewColumn column, int valueIndex) in pasteTargets)
                 {
-                    DataGridViewColumn column = pasteColumns[columnOffset];
-                    if (column.ReadOnly) continue;
+                    if (valueIndex < 0 || valueIndex >= values.Length) continue;
 
                     PropertyInfo property = _itemType.GetProperty(column.DataPropertyName);
                     if (property == null || !CanWrite(property)) continue;
 
-                    if (!TryConvertCellText(values[columnOffset], property.PropertyType, out object value))
+                    if (!TryConvertCellText(values[valueIndex], property.PropertyType, out object value))
                     {
-                        if (addedRows)
-                            OnContentChanged();
-
-                        MessageBox.Show(this, $"无法把 `{values[columnOffset]}` 写入 {property.Name}。", "粘贴", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        MessageBox.Show(this, $"无法把 `{values[valueIndex]}` 写入 {property.Name}。", "粘贴", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         return;
                     }
 
-                    _grid.Rows[targetRow].Cells[column.Index].Value = value;
-                    changed++;
+                    changes.Add((rowOffset, property, value));
                 }
             }
 
-            if (changed > 0 || addedRows)
+            if (changes.Count == 0) return;
+
+            if (!string.IsNullOrWhiteSpace(_filterText))
             {
+                ClearFilter();
+                RefreshBinding();
+
+                if (startObject != null)
+                {
+                    startRow = FindRowIndex(startObject);
+                    if (startRow < 0)
+                    {
+                        MessageBox.Show(this, "清除过滤后无法定位粘贴起始行。", "粘贴", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                }
+                else
+                {
+                    startRow = 0;
+                }
+            }
+
+            List<object> targetObjects = GetPasteTargetObjects(startRow, dataRows);
+            int missingRows = startRow + dataRows - _grid.Rows.Count;
+            List<object> addedItems = new List<object>();
+
+            if (missingRows > 0)
+            {
+                if (!AppendRowsForPaste(missingRows, out addedItems))
+                    return;
+
+                for (int i = 0; i < targetObjects.Count; i++)
+                {
+                    if (targetObjects[i] != null) continue;
+
+                    int addedIndex = i - (dataRows - missingRows);
+                    if (addedIndex >= 0 && addedIndex < addedItems.Count)
+                        targetObjects[i] = addedItems[addedIndex];
+                }
+            }
+
+            int changed = 0;
+            List<(object Target, PropertyInfo Property, object OldValue)> appliedChanges = new List<(object Target, PropertyInfo Property, object OldValue)>();
+
+            try
+            {
+                foreach (var change in changes)
+                {
+                    if (change.RowOffset < 0 || change.RowOffset >= targetObjects.Count) continue;
+
+                    object target = targetObjects[change.RowOffset];
+                    if (target == null) continue;
+
+                    object oldValue = change.Property.GetValue(target);
+                    change.Property.SetValue(target, change.Value);
+                    appliedChanges.Add((target, change.Property, oldValue));
+                    changed++;
+                }
+            }
+            catch (Exception ex)
+            {
+                for (int i = appliedChanges.Count - 1; i >= 0; i--)
+                {
+                    try
+                    {
+                        var applied = appliedChanges[i];
+                        applied.Property.SetValue(applied.Target, applied.OldValue);
+                    }
+                    catch
+                    {
+                        // 尽量回滚粘贴失败前的写入；单个属性回滚失败时继续处理其他属性。
+                    }
+                }
+
+                RemoveAddedRows(addedItems);
+                RefreshBinding();
+                MessageBox.Show(this, ex.ToString(), "粘贴失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            if (changed > 0 || addedItems.Count > 0)
+            {
+                List<object> pastedTargets = targetObjects.Where(x => x != null).ToList();
+                List<PropertyInfo> pastedProperties = changes.Select(x => x.Property).ToList();
+
                 _grid.EndEdit();
-                _grid.Refresh();
+                RefreshBinding();
+                SelectPasteRange(pastedTargets, pastedProperties);
                 OnContentChanged();
             }
+        }
+
+        private void SelectPasteRange(IReadOnlyList<object> targets, IReadOnlyList<PropertyInfo> properties)
+        {
+            if (targets.Count == 0 || properties.Count == 0) return;
+
+            HashSet<object> targetSet = new HashSet<object>(targets, ReferenceEqualityComparer.Instance);
+            HashSet<string> propertyNames = new HashSet<string>(properties.Select(x => x.Name), StringComparer.Ordinal);
+            List<DataGridViewColumn> columns = _grid.Columns
+                .Cast<DataGridViewColumn>()
+                .Where(x => x.Visible && propertyNames.Contains(x.DataPropertyName))
+                .ToList();
+            if (targetSet.Count == 0 || columns.Count == 0) return;
+
+            _grid.ClearSelection();
+            DataGridViewCell firstCell = null;
+
+            foreach (DataGridViewRow row in _grid.Rows)
+            {
+                object item = row.DataBoundItem;
+                if (item == null || !targetSet.Contains(item)) continue;
+
+                foreach (DataGridViewColumn column in columns)
+                {
+                    DataGridViewCell cell = row.Cells[column.Index];
+                    cell.Selected = true;
+                    firstCell ??= cell;
+                }
+            }
+
+            if (firstCell != null)
+                _grid.CurrentCell = firstCell;
+        }
+
+        private bool TryGetClipboardText(out string text)
+        {
+            try
+            {
+                text = Clipboard.ContainsText() ? Clipboard.GetText() : null;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                text = null;
+                MessageBox.Show(this, ex.ToString(), "读取剪贴板失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+        }
+
+        private List<object> GetPasteTargetObjects(int startRow, int dataRows)
+        {
+            List<object> result = new List<object>();
+
+            for (int i = 0; i < dataRows; i++)
+            {
+                int rowIndex = startRow + i;
+                result.Add(rowIndex >= 0 && rowIndex < _grid.Rows.Count ? _grid.Rows[rowIndex].DataBoundItem : null);
+            }
+
+            return result;
         }
 
         private List<DataGridViewColumn> GetPasteColumns(int startColumn)
@@ -862,6 +1084,30 @@ namespace Server.WinForms
                 .ToList();
         }
 
+        private List<(DataGridViewColumn Column, int ValueIndex)> GetPasteTargets(string headerLine, bool hasColumnHeader, int startColumn)
+        {
+            if (!hasColumnHeader)
+                return GetPasteColumns(startColumn)
+                    .Select((column, index) => (Column: column, ValueIndex: index))
+                    .Where(x => !x.Column.ReadOnly)
+                    .ToList();
+
+            string[] headers = headerLine.Split('\t');
+            List<DataGridViewColumn> visibleColumns = GetVisibleColumns();
+            List<(DataGridViewColumn Column, int ValueIndex)> result = new List<(DataGridViewColumn Column, int ValueIndex)>();
+
+            for (int i = 0; i < headers.Length; i++)
+            {
+                string header = headers[i].Trim();
+                DataGridViewColumn column = visibleColumns.FirstOrDefault(x => string.Equals(x.HeaderText?.Trim(), header, StringComparison.OrdinalIgnoreCase));
+                if (column == null || column.ReadOnly) continue;
+
+                result.Add((column, i));
+            }
+
+            return result;
+        }
+
         private int GetFirstVisibleColumnIndex()
         {
             return _grid.Columns.Cast<DataGridViewColumn>()
@@ -871,21 +1117,25 @@ namespace Server.WinForms
                 .FirstOrDefault(-1);
         }
 
-        private bool AppendRowsForPaste(int count)
+        private bool AppendRowsForPaste(int count, out List<object> addedItems)
         {
+            addedItems = new List<object>();
             if (count <= 0) return true;
             if (!ConfirmUserDataMutation($"粘贴并新增 {count} 行")) return false;
 
-            if (!string.IsNullOrWhiteSpace(_filterText))
-            {
-                _filterText = string.Empty;
-                RefreshBinding();
-            }
+            ClearFilter();
 
             for (int i = 0; i < count; i++)
             {
-                if (CreateNewItem() == null)
+                object item = CreateNewItem();
+                if (item == null)
+                {
+                    RemoveAddedRows(addedItems);
+                    RefreshBinding();
                     return false;
+                }
+
+                addedItems.Add(item);
             }
 
             RefreshBinding();
@@ -905,16 +1155,38 @@ namespace Server.WinForms
             return -1;
         }
 
+        private void RemoveAddedRows(IEnumerable<object> items)
+        {
+            foreach (object item in items)
+            {
+                if (item is DBObject dbObject)
+                {
+                    dbObject.Delete();
+                    continue;
+                }
+
+                if (_source.Contains(item))
+                    _source.Remove(item);
+            }
+        }
+
         private bool HasVisibleColumnHeader(string line)
         {
             string[] values = line.Split('\t');
-            List<DataGridViewColumn> columns = GetVisibleColumns();
-            if (values.Length == 0 || values.Length > columns.Count) return false;
+            if (values.Length == 0) return false;
 
-            for (int i = 0; i < values.Length; i++)
+            HashSet<string> visibleHeaders = new HashSet<string>(
+                GetVisibleColumns()
+                    .Select(x => x.HeaderText?.Trim())
+                    .Where(x => !string.IsNullOrWhiteSpace(x)),
+                StringComparer.OrdinalIgnoreCase);
+            if (visibleHeaders.Count == 0) return false;
+
+            HashSet<string> matchedHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string value in values)
             {
-                string header = columns[i].HeaderText ?? string.Empty;
-                if (!string.Equals(values[i].Trim(), header, StringComparison.OrdinalIgnoreCase))
+                string header = value.Trim();
+                if (string.IsNullOrWhiteSpace(header) || !visibleHeaders.Contains(header) || !matchedHeaders.Add(header))
                     return false;
             }
 
@@ -926,6 +1198,14 @@ namespace Server.WinForms
             if (_binding) return;
 
             ContentChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void ClearFilter()
+        {
+            if (string.IsNullOrWhiteSpace(_filterText)) return;
+
+            _filterText = string.Empty;
+            FilterCleared?.Invoke(this, EventArgs.Empty);
         }
 
         private bool TryConvertCellText(string text, Type targetType, out object value)
@@ -949,23 +1229,24 @@ namespace Server.WinForms
 
                 if (type == typeof(char))
                 {
-                    value = string.IsNullOrEmpty(text) ? '\0' : text[0];
-                    return true;
+                    if (text.Length <= 1)
+                    {
+                        value = string.IsNullOrEmpty(text) ? '\0' : text[0];
+                        return true;
+                    }
+
+                    value = null;
+                    return false;
                 }
 
                 if (type == typeof(bool))
                 {
-                    value = text.Equals("true", StringComparison.OrdinalIgnoreCase) ||
-                            text.Equals("checked", StringComparison.OrdinalIgnoreCase) ||
-                            text.Equals("是", StringComparison.OrdinalIgnoreCase) ||
-                            text == "1";
-                    return true;
+                    return TryConvertBooleanText(text, out value);
                 }
 
                 if (type.IsEnum)
                 {
-                    value = Enum.Parse(type, text, true);
-                    return true;
+                    return TryConvertEnumText(type, text, out value);
                 }
 
                 if (type.IsSubclassOf(typeof(DBObject)))
@@ -973,15 +1254,25 @@ namespace Server.WinForms
 
                 if (type == typeof(Point))
                 {
-                    string[] parts = text.Split(',');
-                    value = new Point(int.Parse(parts[0].Trim(), CultureInfo.InvariantCulture), int.Parse(parts[1].Trim(), CultureInfo.InvariantCulture));
+                    if (!TryParseIntPair(text, out int x, out int y))
+                    {
+                        value = null;
+                        return false;
+                    }
+
+                    value = new Point(x, y);
                     return true;
                 }
 
                 if (type == typeof(Size))
                 {
-                    string[] parts = text.Split(',');
-                    value = new Size(int.Parse(parts[0].Trim(), CultureInfo.InvariantCulture), int.Parse(parts[1].Trim(), CultureInfo.InvariantCulture));
+                    if (!TryParseIntPair(text, out int width, out int height))
+                    {
+                        value = null;
+                        return false;
+                    }
+
+                    value = new Size(width, height);
                     return true;
                 }
 
@@ -1011,6 +1302,99 @@ namespace Server.WinForms
                 value = null;
                 return false;
             }
+        }
+
+        private static bool TryParseIntPair(string text, out int first, out int second)
+        {
+            first = 0;
+            second = 0;
+
+            string[] parts = (text ?? string.Empty).Split(',');
+            return parts.Length == 2 &&
+                   int.TryParse(parts[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out first) &&
+                   int.TryParse(parts[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out second);
+        }
+
+        private static bool TryConvertBooleanText(string text, out object value)
+        {
+            string normalized = text?.Trim() ?? string.Empty;
+
+            if (normalized.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("checked", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("y", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("on", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("是", StringComparison.OrdinalIgnoreCase) ||
+                normalized == "1")
+            {
+                value = true;
+                return true;
+            }
+
+            if (normalized.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("unchecked", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("n", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("off", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("否", StringComparison.OrdinalIgnoreCase) ||
+                normalized == "0" ||
+                normalized.Length == 0)
+            {
+                value = false;
+                return true;
+            }
+
+            value = null;
+            return false;
+        }
+
+        private static bool TryConvertEnumText(Type enumType, string text, out object value)
+        {
+            value = null;
+
+            if (string.IsNullOrWhiteSpace(text))
+                return false;
+
+            try
+            {
+                object parsed = Enum.Parse(enumType, text, true);
+                if (!IsDefinedEnumValue(enumType, parsed))
+                    return false;
+
+                value = parsed;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsDefinedEnumValue(Type enumType, object value)
+        {
+            if (Enum.IsDefined(enumType, value))
+                return true;
+
+            if (enumType.GetCustomAttribute<FlagsAttribute>() == null)
+                return false;
+
+            ulong raw = ToUInt64(value);
+            if (raw == 0)
+                return true;
+
+            ulong allowedBits = 0;
+            foreach (object definedValue in Enum.GetValues(enumType))
+                allowedBits |= ToUInt64(definedValue);
+
+            return (raw & ~allowedBits) == 0;
+        }
+
+        private static ulong ToUInt64(object value)
+        {
+            TypeCode typeCode = Convert.GetTypeCode(value);
+            return typeCode is TypeCode.SByte or TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64
+                ? unchecked((ulong)Convert.ToInt64(value, CultureInfo.InvariantCulture))
+                : Convert.ToUInt64(value, CultureInfo.InvariantCulture);
         }
 
         private bool TryConvertObjectReference(string text, Type objectType, out object value)
@@ -1279,37 +1663,18 @@ namespace Server.WinForms
 
             Type type = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
             if (e.Value == null || !MirDbMetadata.IsSimpleEditable(type)) return;
+            if (type != typeof(Point) &&
+                type != typeof(Size) &&
+                type != typeof(Color) &&
+                type != typeof(TimeSpan) &&
+                type != typeof(DateTime))
+                return;
 
             string text = Convert.ToString(e.Value, CultureInfo.InvariantCulture);
-
-            try
+            if (TryConvertCellText(text, property.PropertyType, out object value))
             {
-                if (type == typeof(Point))
-                {
-                    string[] parts = text.Split(',');
-                    e.Value = new Point(int.Parse(parts[0].Trim()), int.Parse(parts[1].Trim()));
-                    e.ParsingApplied = true;
-                }
-                else if (type == typeof(Size))
-                {
-                    string[] parts = text.Split(',');
-                    e.Value = new Size(int.Parse(parts[0].Trim()), int.Parse(parts[1].Trim()));
-                    e.ParsingApplied = true;
-                }
-                else if (type == typeof(Color))
-                {
-                    e.Value = ColorTranslator.FromHtml(text);
-                    e.ParsingApplied = true;
-                }
-                else if (type == typeof(TimeSpan))
-                {
-                    e.Value = TimeSpan.Parse(text, CultureInfo.InvariantCulture);
-                    e.ParsingApplied = true;
-                }
-            }
-            catch
-            {
-                e.ParsingApplied = false;
+                e.Value = value;
+                e.ParsingApplied = true;
             }
         }
 

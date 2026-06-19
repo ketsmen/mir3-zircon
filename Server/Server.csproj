@@ -52,8 +52,10 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="..\Envir\Custom\Resources.txt" Link="Envir\Custom\Resources.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Envir\Custom\Monsters\*.txt" Link="Envir\Custom\Monsters\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Envir\Custom\Monsters\Templates\**\*" Link="Envir\Custom\Monsters\Templates\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Envir\Custom\Monsters\Examples\**\*" Link="Envir\Custom\Monsters\Examples\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Envir\Custom\Skills\*.txt" Link="Envir\Custom\Skills\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Envir\Custom\Skills\Templates\**\*" Link="Envir\Custom\Skills\Templates\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Envir\Custom\Skills\Examples\**\*" Link="Envir\Custom\Skills\Examples\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

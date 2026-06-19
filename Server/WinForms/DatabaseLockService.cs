@@ -9,7 +9,7 @@ namespace Server.WinForms
     public sealed class DatabaseLockService : IDisposable
     {
         private readonly string _databaseRoot;
-        private readonly List<FileStream> _writeLocks = new List<FileStream>();
+        private readonly List<DatabaseWriteLock> _writeLocks = new List<DatabaseWriteLock>();
 
         public DatabaseLockService(string databaseRoot = @".\Database\")
         {
@@ -26,7 +26,7 @@ namespace Server.WinForms
             {
                 try
                 {
-                    _writeLocks.Add(File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None));
+                    _writeLocks.Add(new DatabaseWriteLock(path, File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None)));
                 }
                 catch (Exception ex)
                 {
@@ -42,8 +42,17 @@ namespace Server.WinForms
 
         public void ReleaseWriteLocks()
         {
-            foreach (FileStream stream in _writeLocks)
-                stream.Dispose();
+            foreach (DatabaseWriteLock writeLock in _writeLocks.ToArray())
+            {
+                try
+                {
+                    writeLock.Stream.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Failed to release database write lock '{writeLock.Path}': {ex}");
+                }
+            }
 
             _writeLocks.Clear();
         }
@@ -72,14 +81,48 @@ namespace Server.WinForms
             string backupRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backup", "Manual");
             Directory.CreateDirectory(backupRoot);
 
-            string stamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH-mm-ss");
+            string stamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH-mm-ss fff");
 
             foreach (string path in GetDatabasePaths())
             {
                 if (!File.Exists(path)) continue;
 
-                string target = Path.Combine(backupRoot, $"{Path.GetFileNameWithoutExtension(path)} {stamp}{Session.Extension}");
-                File.Copy(path, target, true);
+                string target = GetUniqueBackupPath(backupRoot, $"{Path.GetFileNameWithoutExtension(path)} {stamp}");
+                DatabaseWriteLock writeLock = _writeLocks.FirstOrDefault(x => string.Equals(x.Path, path, StringComparison.OrdinalIgnoreCase));
+                if (writeLock != null)
+                    CopyLockedFile(writeLock.Stream, target);
+                else
+                    WinFormsFileWriter.CopyFileAtomically(path, target, false);
+            }
+        }
+
+        private static void CopyLockedFile(FileStream source, string target)
+        {
+            long position = source.CanSeek ? source.Position : 0;
+
+            try
+            {
+                if (source.CanSeek)
+                    source.Position = 0;
+
+                WinFormsFileWriter.CopyStreamAtomically(source, target, false);
+            }
+            finally
+            {
+                if (source.CanSeek)
+                    source.Position = position;
+            }
+        }
+
+        private static string GetUniqueBackupPath(string directory, string baseName)
+        {
+            string target = Path.Combine(directory, baseName + Session.Extension);
+            if (!File.Exists(target)) return target;
+
+            for (int i = 2; ; i++)
+            {
+                target = Path.Combine(directory, $"{baseName} ({i}){Session.Extension}");
+                if (!File.Exists(target)) return target;
             }
         }
 
@@ -97,6 +140,18 @@ namespace Server.WinForms
         {
             yield return Path.Combine(_databaseRoot, "System" + Session.Extension);
             yield return Path.Combine(_databaseRoot, "Users" + Session.Extension);
+        }
+
+        private sealed class DatabaseWriteLock
+        {
+            public DatabaseWriteLock(string path, FileStream stream)
+            {
+                Path = path;
+                Stream = stream;
+            }
+
+            public string Path { get; }
+            public FileStream Stream { get; }
         }
     }
 }

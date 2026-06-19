@@ -2,6 +2,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
@@ -19,23 +20,28 @@ namespace Server
 
             var converterOptions = CreateDBObjectOptions(typeof(T), null, null);
 
-            if (reader.TokenType == JsonTokenType.StartArray)
+            if (reader.TokenType != JsonTokenType.StartArray)
+                throw new JsonException($"Expected StartArray token for '{typeof(T).Name}[]'.");
+
+            bool endArray = false;
+            while (reader.Read())
             {
-                while (reader.Read())
+                if (reader.TokenType == JsonTokenType.EndArray)
                 {
-                    if (reader.TokenType == JsonTokenType.EndArray)
-                    {
-                        break;
-                    }
-
-                    if (reader.TokenType == JsonTokenType.StartObject)
-                    {
-                        T obj = JsonSerializer.Deserialize<T>(ref reader, converterOptions);
-
-                        collection.Add(obj);
-                    }
+                    endArray = true;
+                    break;
                 }
+
+                if (reader.TokenType != JsonTokenType.StartObject)
+                    throw new JsonException($"Expected StartObject token for '{typeof(T).Name}' array item.");
+
+                T obj = JsonSerializer.Deserialize<T>(ref reader, converterOptions);
+
+                collection.Add(obj);
             }
+
+            if (!endArray)
+                throw new JsonException($"Unexpected end of JSON while reading '{typeof(T).Name}[]'.");
 
             return collection.ToArray();
         }
@@ -69,14 +75,19 @@ namespace Server
 
         public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
+            if (reader.TokenType != JsonTokenType.StartObject)
+                throw new JsonException($"Expected StartObject token for '{typeof(T).Name}'.");
+
             T obj = FindObjectOrCreate(ref reader);
 
             var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
+            bool endObject = false;
             while (reader.Read())
             {
                 if (reader.TokenType == JsonTokenType.EndObject)
                 {
+                    endObject = true;
                     break;
                 }
 
@@ -87,7 +98,7 @@ namespace Server
 
                 string propertyName = reader.GetString();
 
-                var property = Array.Find(properties, p => p.Name == propertyName);
+                var property = Array.Find(properties, p => string.Equals(p.Name, propertyName, StringComparison.OrdinalIgnoreCase));
 
                 if (property == null)
                 {
@@ -97,16 +108,24 @@ namespace Server
 
                 // read value
                 reader.Read();
+                if (!CanImportProperty(property))
+                {
+                    reader.Skip();
+                    continue;
+                }
 
                 ReadPropertyValue(ref reader, obj, property);
             }
+
+            if (!endObject)
+                throw new JsonException($"Unexpected end of JSON while reading '{typeof(T).Name}'.");
 
             return obj;
         }
 
         private void ReadPropertyValue(ref Utf8JsonReader reader, T obj, PropertyInfo property)
         {
-            if (property.PropertyType.IsGenericType && property.PropertyType.GetGenericTypeDefinition() == typeof(DBBindingList<>))
+            if (IsDBBindingListProperty(property))
             {
                 if (reader.TokenType != JsonTokenType.StartArray)
                 {
@@ -121,12 +140,17 @@ namespace Server
 
                 var converterOptions = CreateDBObjectOptions(bindingListType, property, existingCollection);
 
+                bool endArray = false;
                 while (reader.Read())
                 {
                     if (reader.TokenType == JsonTokenType.EndArray)
                     {
+                        endArray = true;
                         break;
                     }
+
+                    if (reader.TokenType != JsonTokenType.StartObject)
+                        throw new JsonException($"Expected StartObject token for DBBindingList item at '{property.Name}'.");
 
                     var childObject = JsonSerializer.Deserialize(ref reader, bindingListType, converterOptions);
 
@@ -134,6 +158,9 @@ namespace Server
 
                     collection.Add(childObject);
                 }
+
+                if (!endArray)
+                    throw new JsonException($"Unexpected end of JSON while reading DBBindingList at '{property.Name}'.");
 
                 if (existingCollection != null)
                 {
@@ -167,7 +194,10 @@ namespace Server
             }
             else if (property.PropertyType.IsEnum)
             {
-                var value = (Enum)Enum.Parse(property.PropertyType, reader.GetString());
+                if (reader.TokenType != JsonTokenType.String)
+                    throw new JsonException($"Expected String token for enum '{property.Name}'.");
+
+                Enum value = ParseDefinedEnum(property.PropertyType, reader.GetString(), property.Name);
 
                 property.SetValue(obj, value);
             }
@@ -182,7 +212,7 @@ namespace Server
 
         private void SetAssociationProperty(PropertyInfo parentProperty, T parentObject, object childObject)
         {
-            if (!parentProperty.PropertyType.IsGenericType || parentProperty.PropertyType.GetGenericTypeDefinition() != typeof(DBBindingList<>))
+            if (!IsDBBindingListProperty(parentProperty))
             {
                 return;
             }
@@ -193,7 +223,8 @@ namespace Server
                 .GetProperties(BindingFlags.Public | BindingFlags.Instance)
                 .FirstOrDefault(p => p.PropertyType == typeof(T) && IsAssociationProperty(p, parentProperty));
 
-            childProperty?.SetValue(childObject, parentObject);
+            if (childProperty?.CanWrite == true)
+                childProperty.SetValue(childObject, parentObject);
         }
 
         private static void RemoveMissingObjects(IList existingCollection, IList importedObjects)
@@ -224,7 +255,7 @@ namespace Server
 
             foreach (PropertyInfo property in properties)
             {
-                if (HasIgnoreAttribute(property) || IsAssociationProperty(property, _parentProperty))
+                if (!property.CanRead || HasIgnoreAttribute(property) || IsAssociationProperty(property, _parentProperty))
                 {
                     continue;
                 }
@@ -243,7 +274,7 @@ namespace Server
             {
                 writer.WriteNullValue();
             }
-            else if (property.PropertyType.IsGenericType && property.PropertyType.GetGenericTypeDefinition() == typeof(DBBindingList<>))
+            else if (IsDBBindingListProperty(property))
             {
                 Type bindingListType = property.PropertyType.GetGenericArguments().First();
 
@@ -280,22 +311,25 @@ namespace Server
             var readerAtStart = reader;
 
             var identityProperties = GetIdentityProperties(typeof(T)).ToArray();
+            var jsonIdentityProperties = identityProperties
+                .Where(property => !IsAssociationProperty(property, _parentProperty))
+                .ToArray();
 
-            var identities = new List<string>();
+            var identityValuesByProperty = new Dictionary<PropertyInfo, string[]>();
 
-            if (identityProperties.Length == 0 && _parentProperty != null)
+            if (identityProperties.Length == 0 || jsonIdentityProperties.Length == 0)
             {
                 reader = readerAtStart;
 
                 return Session.GetCollection<T>().CreateNewObject();
             }
 
-            int i = 0;
-
+            bool endObject = false;
             while (reader.Read())
             {
                 if (reader.TokenType == JsonTokenType.EndObject)
                 {
+                    endObject = true;
                     break;
                 }
 
@@ -306,7 +340,7 @@ namespace Server
 
                 string propertyName = reader.GetString();
 
-                var property = Array.Find(identityProperties, p => p.Name == propertyName);
+                var property = Array.Find(jsonIdentityProperties, p => string.Equals(p.Name, propertyName, StringComparison.OrdinalIgnoreCase));
 
                 if (property == null)
                 {
@@ -317,31 +351,55 @@ namespace Server
                 // read value
                 reader.Read();
 
-                object value;
-
                 if (typeof(DBObject).IsAssignableFrom(property.PropertyType))
                 {
-                    value = reader.GetString();
-                }
-                else if (property.PropertyType.IsEnum)
-                {
-                    value = (Enum)Enum.Parse(property.PropertyType, reader.GetString());
+                    if (reader.TokenType != JsonTokenType.String)
+                        throw new JsonException($"Expected String token for object identity '{property.Name}'.");
+
+                    identityValuesByProperty[property] = SplitIdentityValue(reader.GetString()).ToArray();
                 }
                 else
                 {
-                    var converterOptions = CreateOptions();
-                    value = JsonSerializer.Deserialize(ref reader, property.PropertyType, converterOptions);
+                    object value;
+
+                    if (property.PropertyType.IsEnum)
+                    {
+                        if (reader.TokenType != JsonTokenType.String)
+                            throw new JsonException($"Expected String token for enum identity '{property.Name}'.");
+
+                        value = ParseDefinedEnum(property.PropertyType, reader.GetString(), property.Name);
+                    }
+                    else
+                    {
+                        var converterOptions = CreateOptions();
+                        value = JsonSerializer.Deserialize(ref reader, property.PropertyType, converterOptions);
+                    }
+
+                    identityValuesByProperty[property] = new[] { Convert.ToString(value, CultureInfo.InvariantCulture) };
                 }
 
-                identities.AddRange(SplitIdentityValue(value?.ToString()));
-
-                if (++i >= identityProperties.Length)
+                if (identityValuesByProperty.Count >= jsonIdentityProperties.Length)
                 {
                     break;
                 }
             }
 
+            if (!endObject && identityValuesByProperty.Count < jsonIdentityProperties.Length)
+                throw new JsonException($"Unexpected end of JSON while reading identity for '{typeof(T).Name}'.");
+
             reader = readerAtStart;
+
+            var identities = new List<string>();
+            foreach (PropertyInfo identityProperty in jsonIdentityProperties)
+            {
+                if (!identityValuesByProperty.TryGetValue(identityProperty, out string[] values))
+                    throw new JsonException($"Missing identity property '{identityProperty.Name}' for '{typeof(T).Name}'.");
+
+                identities.AddRange(values);
+            }
+
+            if (identities.Count == 0 || identities.Any(string.IsNullOrWhiteSpace))
+                throw new JsonException($"Identity value for '{typeof(T).Name}' cannot be empty.");
 
             var obj = FindObject(identities, _parentProperty);
 
@@ -391,9 +449,12 @@ namespace Server
                 return default;
             }
 
+            if (reader.TokenType != JsonTokenType.String)
+                throw new JsonException($"Expected String token for '{typeof(T).Name}' reference.");
+
             var identityValue = reader.GetString();
 
-            if (identityValue == null)
+            if (string.IsNullOrWhiteSpace(identityValue))
             {
                 return null;
             }
@@ -417,6 +478,12 @@ namespace Server
 
         public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
         {
+            if (value == null)
+            {
+                writer.WriteNullValue();
+                return;
+            }
+
             var identities = new List<string>();
 
             FindAllIdentities(null, typeof(T), GetIdentityProperties(typeof(T)), value, identities);
@@ -450,8 +517,8 @@ namespace Server
     {
         protected Session Session { get; set; }
 
-        private static readonly Dictionary<Type, JsonConverter> _dbObjectReferenceConverterCache = new();
-        private static readonly Dictionary<Type, JsonConverter> _dbObjectConverterCache = new();
+        private readonly Dictionary<Type, JsonConverter> _dbObjectReferenceConverterCache = new();
+        private readonly Dictionary<Type, JsonConverter> _dbObjectConverterCache = new();
 
         public DBObjectBaseConverter(Session session)
         {
@@ -486,9 +553,9 @@ namespace Server
                 }
                 else
                 {
-                    var identity = property.GetValue(obj);
+                    object identity = property.GetValue(obj);
 
-                    identities.Add(identity.ToString());
+                    identities.Add(Convert.ToString(identity, CultureInfo.InvariantCulture) ?? string.Empty);
                 }
             }
         }
@@ -591,7 +658,7 @@ namespace Server
             var childAssociationValue = GetAssociationValueFromProperty(childProperty);
             var parentAssociationValue = GetAssociationValueFromProperty(parentProperty);
 
-            if (parentProperty.PropertyType.IsGenericType && parentProperty.PropertyType.GetGenericTypeDefinition() == typeof(DBBindingList<>))
+            if (IsDBBindingListProperty(parentProperty))
             {
                 Type parentBindingListType = parentProperty.PropertyType.GetGenericArguments().First();
 
@@ -621,14 +688,121 @@ namespace Server
             return associationAttribute.Identity;
         }
 
+        protected static bool IsDBBindingListProperty(PropertyInfo property)
+        {
+            return property.PropertyType.IsGenericType && property.PropertyType.GetGenericTypeDefinition() == typeof(DBBindingList<>);
+        }
+
+        protected static bool CanImportProperty(PropertyInfo property)
+        {
+            return property.CanWrite || IsDBBindingListProperty(property);
+        }
+
         protected static string[] SplitIdentityValue(string value)
         {
-            return value?.Split('/') ?? [];
+            if (value == null) return [];
+
+            List<string> values = new();
+            System.Text.StringBuilder current = new System.Text.StringBuilder();
+
+            for (int i = 0; i < value.Length; i++)
+            {
+                char ch = value[i];
+
+                if (ch == '\\' && i + 1 < value.Length && (value[i + 1] == '/' || value[i + 1] == '\\'))
+                {
+                    current.Append(value[i + 1]);
+                    i++;
+                    continue;
+                }
+
+                if (ch == '/')
+                {
+                    values.Add(current.ToString());
+                    current.Clear();
+                    continue;
+                }
+
+                current.Append(ch);
+            }
+
+            values.Add(current.ToString());
+            return values.ToArray();
         }
 
         protected string JoinIdentityValues(string[] values)
         {
-            return string.Join('/', values);
+            return string.Join('/', values.Select(EscapeIdentityValue));
+        }
+
+        private static string EscapeIdentityValue(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\\", "\\\\")
+                .Replace("/", "\\/");
+        }
+
+        protected static Enum ParseDefinedEnum(Type enumType, string text, string propertyName)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                throw new JsonException($"Enum value for '{propertyName}' cannot be empty.");
+
+            object parsed;
+            try
+            {
+                parsed = Enum.Parse(enumType, text, true);
+            }
+            catch (Exception ex) when (ex is ArgumentException or OverflowException)
+            {
+                throw new JsonException($"Enum value '{text}' is not valid for '{enumType.Name}' at '{propertyName}'.", ex);
+            }
+
+            if (!IsDefinedEnumValue(enumType, parsed))
+                throw new JsonException($"Enum value '{text}' is not valid for '{enumType.Name}' at '{propertyName}'.");
+
+            return (Enum)parsed;
+        }
+
+        private static bool IsDefinedEnumValue(Type enumType, object value)
+        {
+            if (Enum.IsDefined(enumType, value))
+                return true;
+
+            if (enumType.GetCustomAttribute<FlagsAttribute>() == null)
+                return false;
+
+            try
+            {
+                ulong raw = GetEnumBits(value, enumType);
+                if (raw == 0)
+                    return true;
+
+                ulong allowedBits = 0;
+                foreach (object definedValue in Enum.GetValues(enumType))
+                    allowedBits |= GetEnumBits(definedValue, enumType);
+
+                return (raw & ~allowedBits) == 0;
+            }
+            catch (OverflowException)
+            {
+                return false;
+            }
+        }
+
+        private static ulong GetEnumBits(object value, Type enumType)
+        {
+            return Type.GetTypeCode(Enum.GetUnderlyingType(enumType)) switch
+            {
+                TypeCode.SByte => unchecked((ulong)(byte)Convert.ToSByte(value, CultureInfo.InvariantCulture)),
+                TypeCode.Byte => Convert.ToByte(value, CultureInfo.InvariantCulture),
+                TypeCode.Int16 => unchecked((ulong)(ushort)Convert.ToInt16(value, CultureInfo.InvariantCulture)),
+                TypeCode.UInt16 => Convert.ToUInt16(value, CultureInfo.InvariantCulture),
+                TypeCode.Int32 => unchecked((ulong)(uint)Convert.ToInt32(value, CultureInfo.InvariantCulture)),
+                TypeCode.UInt32 => Convert.ToUInt32(value, CultureInfo.InvariantCulture),
+                TypeCode.Int64 => unchecked((ulong)Convert.ToInt64(value, CultureInfo.InvariantCulture)),
+                TypeCode.UInt64 => Convert.ToUInt64(value, CultureInfo.InvariantCulture),
+                _ => throw new OverflowException($"Unsupported enum underlying type for '{enumType.Name}'."),
+            };
         }
     }
 }

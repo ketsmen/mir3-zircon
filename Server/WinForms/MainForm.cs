@@ -125,7 +125,7 @@ namespace Server.WinForms
                 }
             }
 
-            ConfigReader.Save(typeof(Config).Assembly);
+            TrySaveConfig(showSuccess: false);
         }
 
         private bool ConfirmDatabaseEditorsBeforeExit()
@@ -259,7 +259,7 @@ namespace Server.WinForms
             configMenu.DropDownItems.Add("数据库加密设置", null, (_, _) => OpenDatabaseEncryptionSettings());
             configMenu.DropDownItems.Add("数据库同步设置", null, (_, _) => OpenDatabaseSynchronizationSettings());
             configMenu.DropDownItems.Add(new ToolStripSeparator());
-            configMenu.DropDownItems.Add("保存配置", null, (_, _) => ConfigReader.Save(typeof(Config).Assembly));
+            configMenu.DropDownItems.Add("保存配置", null, (_, _) => TrySaveConfig());
 
             ToolStripMenuItem toolsMenu = new ToolStripMenuItem("工具");
             toolsMenu.DropDownItems.Add("地图查看器", null, (_, _) => OpenMapViewer());
@@ -1098,7 +1098,15 @@ namespace Server.WinForms
             string text = string.Join(Environment.NewLine, lines);
             if (!string.IsNullOrEmpty(text))
             {
-                Clipboard.SetText(text);
+                try
+                {
+                    Clipboard.SetText(text);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, ex.ToString(), "复制日志失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+
                 return;
             }
 
@@ -1126,7 +1134,7 @@ namespace Server.WinForms
 
             try
             {
-                File.WriteAllLines(dialog.FileName, logList.Items.Cast<object>().Select(x => x?.ToString() ?? string.Empty));
+                WinFormsFileWriter.WriteAllLinesAtomically(dialog.FileName, logList.Items.Cast<object>().Select(x => x?.ToString() ?? string.Empty));
                 MessageBox.Show(this, $"日志已导出到：\r\n{dialog.FileName}", "导出日志", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
@@ -1348,6 +1356,26 @@ namespace Server.WinForms
             label.Text = text;
         }
 
+        private bool TrySaveConfig(bool showSuccess = true)
+        {
+            try
+            {
+                ConfigReader.Save(typeof(Config).Assembly);
+                if (showSuccess)
+                    SetStatusText(_statusLabel, "配置已保存。");
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                SEnvir.Log($"保存配置失败: {ex}");
+                if (!IsDisposed)
+                    MessageBox.Show(this, ex.ToString(), "保存配置失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+                return false;
+            }
+        }
+
         private void SetMetric(string name, string value)
         {
             if (!_metricLabels.TryGetValue(name, out Label label)) return;
@@ -1412,7 +1440,7 @@ namespace Server.WinForms
                     WindowState = FormWindowState.Maximized;
 
                 if (cache.SplitterDistance > 120)
-                    _workspaceSplit.SplitterDistance = Math.Min(cache.SplitterDistance, Math.Max(120, _workspaceSplit.Width - 160));
+                    TrySetSplitterDistance(_workspaceSplit, cache.SplitterDistance, 120);
 
                 ApplyExpandedNavigation(cache.ExpandedNavigationPaths);
             }
@@ -1435,7 +1463,7 @@ namespace Server.WinForms
                     ExpandedNavigationPaths = GetExpandedNavigationPaths().ToList()
                 };
 
-                File.WriteAllText(UiCachePath, JsonSerializer.Serialize(cache, new JsonSerializerOptions
+                WinFormsFileWriter.WriteAllTextAtomically(UiCachePath, JsonSerializer.Serialize(cache, new JsonSerializerOptions
                 {
                     WriteIndented = true
                 }));
@@ -1455,7 +1483,7 @@ namespace Server.WinForms
 
                 WindowState = FormWindowState.Normal;
                 Size = GetDefaultWindowSize();
-                _workspaceSplit.SplitterDistance = 230;
+                TrySetSplitterDistance(_workspaceSplit, 230, 120);
                 _navigationFilterText.Text = string.Empty;
                 _navigationTree.ExpandAll();
                 MessageBox.Show(this, "界面布局已重置。", "界面布局", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -1514,6 +1542,26 @@ namespace Server.WinForms
             public bool Maximized { get; set; }
             public int SplitterDistance { get; set; }
             public List<string> ExpandedNavigationPaths { get; set; } = new List<string>();
+        }
+
+        private static bool TrySetSplitterDistance(SplitContainer split, int requestedDistance, int preferredMinimumDistance)
+        {
+            if (split == null || requestedDistance <= 0)
+                return false;
+
+            int length = split.Orientation == Orientation.Vertical ? split.ClientSize.Width : split.ClientSize.Height;
+            if (length <= 0)
+                return false;
+
+            int absoluteMinimum = Math.Max(0, split.Panel1MinSize);
+            int absoluteMaximum = length - split.SplitterWidth - Math.Max(0, split.Panel2MinSize);
+            if (absoluteMaximum < absoluteMinimum)
+                return false;
+
+            int effectiveMinimum = Math.Min(Math.Max(preferredMinimumDistance, absoluteMinimum), absoluteMaximum);
+            int distance = Math.Min(Math.Max(requestedDistance, effectiveMinimum), absoluteMaximum);
+            split.SplitterDistance = distance;
+            return true;
         }
 
         private static Size GetDefaultWindowSize()
