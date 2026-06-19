@@ -12,24 +12,25 @@ Mir2 怪物掉落使用 `Envir\Drops` 下的文本文件，运行时解析后由
 ## 支持的 Mir2 语法
 
 - `1/N ItemName`：导入为普通 `DropInfo`。
-- `1/N Gold Amount`：导入为金币掉落，`Mir2Gold = true`，运行时按 Mir2 的 `Amount / 2` 到 `Amount + Amount / 2` 范围生成金币。
+- `1/N Gold Amount` 或 `1/N 金币掉落物品名 Amount=数量`：导入为金币掉落，`Mir2Gold = true`，运行时按 Mir2 的 `Amount / 2` 到 `Amount + Amount / 2` 范围生成金币。
 - `Q`：识别为任务专属行，不导入普通掉落，导入报告会列出，后续应迁移到 Mir3 任务系统。
 - `#INSERT [file]`：导入或启动覆盖阶段在当前位置展开；运行时不保留 include。
 - `GROUP`、`GROUP*`、`GROUP^`：导入为 `DropGroupInfo`，分别对应全部命中、命中后随机取一个物品候选、首个命中即停止。`GROUP*` 中命中的金币会按 Mir2 原逻辑直接累计，随机只作用于物品候选。
 - 嵌套 `GROUP`：导入为 `DropGroupInfo.Parent` 关联。
+- 注释：支持整行 `;` 注释，也支持未加引号区域内的行尾 `;` 或 `//` 注释。
 
 ## 字段映射
 
 - Mir2 文件名匹配 Mir3 `MonsterInfo.MonsterName`，匹配时会忽略空格并忽略大小写。
-- 如果怪物使用了 Mir2 的 `DropPath`，可在掉落目录放置 `DropPathMap.txt`，每行使用 `MonsterName=DropPath` 或 `MonsterName,DropPath`。
+- 如果怪物使用了 Mir2 的 `DropPath`，可在掉落目录放置 `DropPathMap.txt`，每行使用 `MonsterName=DropPath` 或 `MonsterName,DropPath`；支持行尾 `;`/`//` 注释，但映射路径必须留在掉落目录内。
 - Mir2 物品名匹配 Mir3 `ItemInfo.ItemName`，匹配时会忽略空格并忽略大小写。
 - Mir2 `1/N` 的 `N` 写入 `Chance`。
-- Mir2 金币数量写入 `Amount`，并设置 `Mir2Gold`。
+- Mir2 金币行使用 `1/N Gold 数量`，数量写入 `Amount`，并设置 `Mir2Gold`；导入器也兼容旧导出格式 `Gold Amount=数量`，以及本地化金币掉落物品名格式如 `金币 Amount=数量`。如确实需要固定数量金币物品，可显式追加 `Mir2Gold=False`。
 - Mir2 `Q` 不写入普通掉落表，避免任务道具变成世界掉落。
 
 ## 性能设计
 
-服务器启动时会构建 `SEnvir.MonsterDropTable`，把普通掉落和组掉落编译为数组。启动覆盖模式只在启动阶段解析 `.\Envir\Drops`，怪物死亡时不进行文件 IO、正则解析、字符串查找或数据库全表扫描。
+服务器启动时会构建 `SEnvir.MonsterDropTable`，把普通掉落和组掉落编译为数组。启动覆盖模式只在启动阶段解析 `.\Envir\Drops`，怪物死亡时不进行文件 IO、正则解析、字符串查找或数据库全表扫描。如果某个怪物文本不可读、解析出错、`#INSERT` 缺失，或引用了缺失物品，会跳过该怪物的文本覆盖并保留数据库掉落，避免用空/半成品结果遮掉原掉落。
 
 `AccountInfo` 会维护 `UserDropCache`，掉落保底进度按 `ItemInfo` 字典查询，避免每次掉落时线性扫描 `UserDrops`。
 
@@ -52,7 +53,7 @@ Mir2 怪物掉落使用 `Envir\Drops` 下的文本文件，运行时解析后由
 2. 点击“导入 Mir2 掉落”。
 3. 选择 Mir2 服务端运行目录中的 `Envir\Drops` 文件夹。
 4. 推荐选择清空目标怪物现有掉落后重新导入，避免重复掉落。
-5. 查看导入报告，重点处理缺失物品、缺失怪物、任务专属行和失败行。
+5. 查看导入报告，重点处理缺失物品、缺失怪物、任务专属行和失败行。选择清空导入时，如果某个怪物文件存在解析错误或缺失物品，该怪物会跳过覆盖并保留原掉落。
 6. 保存数据库。
 
 本仓库已包含一份 `Envir\Drops` 文本数据；部署时需要将它放到服务端 exe 目录下，或通过 `DropTextOverridePath` 指向实际目录。

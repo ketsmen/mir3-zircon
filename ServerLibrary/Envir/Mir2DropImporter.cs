@@ -3,6 +3,7 @@ using Library;
 using MirDB;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -12,7 +13,7 @@ namespace Server.Envir
 {
     public sealed class Mir2DropImporter
     {
-        private static readonly Regex InsertRegex = new(@"#INSERT\s+\[(.*?)\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex InsertRegex = new(@"^#INSERT\s+\[(.*?)\]\s*(?:(?:;|//).*)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private readonly Session _session;
         private readonly Dictionary<string, MonsterInfo> _monsters;
         private readonly Dictionary<string, ItemInfo> _items;
@@ -43,13 +44,15 @@ namespace Server.Envir
 
             foreach (KeyValuePair<string, string> pair in LoadDropPathMap(dropDirectory, report))
             {
-                string path = ResolveDropFile(dropDirectory, pair.Value);
+                if (!TryResolveDropFile(dropDirectory, pair.Value, report, out string path))
+                    continue;
+
                 mappedFiles.Add(Path.GetFullPath(path));
 
                 ImportFile(dropDirectory, path, pair.Key, replaceExisting, report);
             }
 
-            foreach (string file in Directory.EnumerateFiles(dropDirectory, "*.txt"))
+            foreach (string file in EnumerateDropTextFiles(dropDirectory, report))
             {
                 string fileName = Path.GetFileName(file);
                 if (fileName.Equals("DropPathMap.txt", StringComparison.OrdinalIgnoreCase)) continue;
@@ -75,13 +78,15 @@ namespace Server.Envir
 
             foreach (KeyValuePair<string, string> pair in LoadDropPathMap(dropDirectory, result.Report))
             {
-                string path = ResolveDropFile(dropDirectory, pair.Value);
+                if (!TryResolveDropFile(dropDirectory, pair.Value, result.Report, out string path))
+                    continue;
+
                 mappedFiles.Add(Path.GetFullPath(path));
 
                 BuildCompiledOverrideFile(dropDirectory, path, pair.Key, result);
             }
 
-            foreach (string file in Directory.EnumerateFiles(dropDirectory, "*.txt"))
+            foreach (string file in EnumerateDropTextFiles(dropDirectory, result.Report))
             {
                 string fileName = Path.GetFileName(file);
                 if (fileName.Equals("DropPathMap.txt", StringComparison.OrdinalIgnoreCase)) continue;
@@ -101,13 +106,23 @@ namespace Server.Envir
             Mir2DropImportReport report = new();
             report.MonstersVisited++;
 
+            int beforeFailures = report.Failures.Count;
+            int beforeMissingItems = report.MissingItems.Count;
+            List<Mir2DropNode> nodes = ParseNodes(lines?.ToList() ?? [], monster.MonsterName, report);
+
+            if (replaceExisting && HasImportBlockingParseIssues(report, beforeFailures, beforeMissingItems))
+            {
+                report.Failures.Add($"{monster.MonsterName}: 覆盖导入已跳过，解析存在错误或缺失物品，已保留原掉落。");
+                return report;
+            }
+
             if (replaceExisting)
             {
                 ClearExistingDrops(monster);
                 report.MonstersCleared++;
             }
 
-            foreach (Mir2DropNode node in ParseNodes(lines?.ToList() ?? [], monster.MonsterName, report))
+            foreach (Mir2DropNode node in nodes)
                 ImportNode(monster, null, node, report);
 
             report.MonstersImported++;
@@ -125,7 +140,16 @@ namespace Server.Envir
             List<CompiledDropEntry> entries = [];
             List<CompiledDropGroup> groups = [];
 
-            foreach (Mir2DropNode node in ParseNodes(lines?.ToList() ?? [], monster.MonsterName, report))
+            int beforeFailures = report.Failures.Count;
+            int beforeMissingItems = report.MissingItems.Count;
+            List<Mir2DropNode> nodes = ParseNodes(lines?.ToList() ?? [], monster.MonsterName, report);
+            if (HasImportBlockingParseIssues(report, beforeFailures, beforeMissingItems))
+            {
+                report.Failures.Add($"{monster.MonsterName}: 内联掉落覆盖已跳过，解析存在错误或缺失物品，已保留数据库掉落。");
+                return result;
+            }
+
+            foreach (Mir2DropNode node in nodes)
             {
                 if (node.Children != null)
                 {
@@ -167,14 +191,22 @@ namespace Server.Envir
 
             report.MonstersVisited++;
 
+            int beforeFailures = report.Failures.Count;
+            int beforeMissingItems = report.MissingItems.Count;
+            List<string> lines = ExpandInserts(file, dropDirectory, report, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            List<Mir2DropNode> nodes = ParseNodes(lines, monsterName, report);
+
+            if (replaceExisting && HasImportBlockingParseIssues(report, beforeFailures, beforeMissingItems))
+            {
+                report.Failures.Add($"{monsterName}: 覆盖导入已跳过，解析存在错误或缺失物品，已保留原掉落。来源 {Path.GetFileName(file)}");
+                return;
+            }
+
             if (replaceExisting)
             {
                 ClearExistingDrops(monster);
                 report.MonstersCleared++;
             }
-
-            List<string> lines = ExpandInserts(file, dropDirectory, report, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-            List<Mir2DropNode> nodes = ParseNodes(lines, monsterName, report);
 
             foreach (Mir2DropNode node in nodes)
                 ImportNode(monster, null, node, report);
@@ -200,8 +232,15 @@ namespace Server.Envir
 
             report.MonstersVisited++;
 
+            int beforeFailures = report.Failures.Count;
+            int beforeMissingItems = report.MissingItems.Count;
             List<string> lines = ExpandInserts(file, dropDirectory, report, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
             List<Mir2DropNode> nodes = ParseNodes(lines, monsterName, report);
+            if (HasImportBlockingParseIssues(report, beforeFailures, beforeMissingItems))
+            {
+                report.Failures.Add($"{monsterName}: 文本掉落覆盖已跳过，解析存在错误或缺失物品，已保留数据库掉落。来源 {Path.GetFileName(file)}");
+                return;
+            }
 
             List<CompiledDropEntry> entries = [];
             List<CompiledDropGroup> groups = [];
@@ -237,32 +276,107 @@ namespace Server.Envir
             string path = Path.Combine(dropDirectory, "DropPathMap.txt");
             if (!File.Exists(path)) return result;
 
-            foreach (string rawLine in File.ReadAllLines(path))
+            if (!TryReadAllLines(path, report, out string[] lines))
+                return result;
+
+            for (int i = 0; i < lines.Length; i++)
             {
-                string line = rawLine.Trim();
-                if (string.IsNullOrWhiteSpace(line) || line.StartsWith(";", StringComparison.Ordinal)) continue;
+                string rawLine = lines[i];
+                string line = CleanLine(rawLine);
+                if (string.IsNullOrWhiteSpace(line)) continue;
 
                 string[] parts = line.Contains('=') ? line.Split('=', 2) : line.Split(',', 2);
                 if (parts.Length != 2)
                 {
-                    report.Failures.Add($"DropPathMap.txt 行格式无效: {line}");
+                    report.Failures.Add($"DropPathMap.txt:{i + 1} 行格式无效: {line}");
                     continue;
                 }
 
-                result[parts[0].Trim()] = parts[1].Trim();
+                string monsterName = parts[0].Trim();
+                string dropPath = parts[1].Trim();
+
+                if (string.IsNullOrWhiteSpace(monsterName))
+                {
+                    report.Failures.Add($"DropPathMap.txt:{i + 1} 怪物名不能为空。");
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(dropPath))
+                {
+                    report.Failures.Add($"DropPathMap.txt:{i + 1} `{monsterName}` 的掉落文件路径不能为空。");
+                    continue;
+                }
+
+                if (result.ContainsKey(monsterName))
+                {
+                    report.Failures.Add($"DropPathMap.txt:{i + 1} 怪物 `{monsterName}` 存在重复映射，已保留首次映射。");
+                    continue;
+                }
+
+                result[monsterName] = dropPath;
             }
 
             report.DropPathMappings = result.Count;
             return result;
         }
 
-        private static string ResolveDropFile(string dropDirectory, string dropPath)
+        private static List<string> EnumerateDropTextFiles(string dropDirectory, Mir2DropImportReport report)
         {
-            string path = Path.Combine(dropDirectory, dropPath);
-            if (!Path.HasExtension(path))
-                path += ".txt";
+            try
+            {
+                return Directory.EnumerateFiles(dropDirectory, "*.txt").ToList();
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+                report.Failures.Add($"枚举掉落目录失败 `{dropDirectory}`: {ex.Message}");
+                return [];
+            }
+        }
 
-            return path;
+        private static bool TryResolveDropFile(string dropDirectory, string dropPath, Mir2DropImportReport report, out string path)
+        {
+            path = null;
+
+            if (string.IsNullOrWhiteSpace(dropPath))
+            {
+                report.Failures.Add("掉落文件路径不能为空。");
+                return false;
+            }
+
+            try
+            {
+                string root = Path.GetFullPath(dropDirectory);
+                string candidate = Path.Combine(root, dropPath);
+                if (!Path.HasExtension(candidate))
+                    candidate += ".txt";
+
+                string fullPath = Path.GetFullPath(candidate);
+                if (!IsPathInsideDirectory(root, fullPath))
+                {
+                    report.Failures.Add($"掉落文件路径不能指向目录外: {dropPath}");
+                    return false;
+                }
+
+                path = fullPath;
+                return true;
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
+            {
+                report.Failures.Add($"掉落文件路径无效 `{dropPath}`: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static bool IsPathInsideDirectory(string root, string path)
+        {
+            string normalizedRoot = Path.GetFullPath(root)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string normalizedPath = Path.GetFullPath(path)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            return string.Equals(normalizedPath, normalizedRoot, StringComparison.OrdinalIgnoreCase) ||
+                   normalizedPath.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                   normalizedPath.StartsWith(normalizedRoot + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
         }
 
         private void ClearExistingDrops(MonsterInfo monster)
@@ -274,42 +388,65 @@ namespace Server.Envir
                 monster.DropGroups[i].Delete();
         }
 
+        private static bool HasImportBlockingParseIssues(Mir2DropImportReport report, int beforeFailures, int beforeMissingItems)
+        {
+            return report.Failures.Count > beforeFailures ||
+                   report.MissingItems.Count > beforeMissingItems;
+        }
+
         private List<string> ExpandInserts(string path, string dropDirectory, Mir2DropImportReport report, HashSet<string> stack)
         {
-            string fullPath = Path.GetFullPath(path);
+            if (!TryGetFullPath(path, "掉落文件路径", report, out string fullPath))
+                return [];
+
             if (!stack.Add(fullPath))
             {
                 report.Failures.Add($"循环 #INSERT: {fullPath}");
                 return [];
             }
 
-            List<string> result = [];
-            foreach (string rawLine in File.ReadAllLines(fullPath))
+            try
             {
-                Match match = InsertRegex.Match(rawLine);
-                if (!match.Success)
+                List<string> result = [];
+                if (!TryReadAllLines(fullPath, report, out string[] lines))
+                    return result;
+
+                foreach (string rawLine in lines)
                 {
-                    result.Add(rawLine);
-                    continue;
+                    string line = CleanLine(rawLine);
+                    Match match = InsertRegex.Match(line);
+                    if (!match.Success)
+                    {
+                        if (line.StartsWith("#INSERT", StringComparison.OrdinalIgnoreCase))
+                        {
+                            report.Failures.Add($"{fullPath}: #INSERT 格式必须是整行 #INSERT [file]。");
+                            continue;
+                        }
+
+                        result.Add(rawLine);
+                        continue;
+                    }
+
+                    string includeName = match.Groups[1].Value;
+                    if (!TryResolveDropFile(dropDirectory, includeName, report, out string includePath))
+                        continue;
+
+                    if (!File.Exists(includePath))
+                    {
+                        report.Failures.Add($"找不到 #INSERT 文件: {includeName} 来源 {fullPath}");
+                        continue;
+                    }
+
+                    report.InsertFiles++;
+                    result.AddRange(ExpandInserts(includePath, dropDirectory, report, stack));
                 }
 
-                string includeName = match.Groups[1].Value;
-                string includePath = Path.Combine(dropDirectory, includeName);
-                if (!Path.HasExtension(includePath))
-                    includePath += ".txt";
-
-                if (!File.Exists(includePath))
-                {
-                    report.Failures.Add($"找不到 #INSERT 文件: {includeName} 来源 {fullPath}");
-                    continue;
-                }
-
-                report.InsertFiles++;
-                result.AddRange(ExpandInserts(includePath, dropDirectory, report, stack));
+                return result;
             }
-
-            stack.Remove(fullPath);
-            return result;
+            finally
+            {
+                stack.Remove(fullPath);
+            }
         }
 
         private List<Mir2DropNode> ParseNodes(List<string> lines, string monsterName, Mir2DropImportReport report)
@@ -346,24 +483,23 @@ namespace Server.Envir
                 return null;
             }
 
-            if (parts[1].StartsWith("GROUP", StringComparison.OrdinalIgnoreCase))
+            if (IsGroupToken(parts[1]))
                 return ParseGroup(parts[1], chance, parts.Skip(2), lines, ref index, monsterName, report);
 
             Mir2DropNode node = new()
             {
-                Chance = chance,
-                IsQuestOnly = parts.Any(x => x.Equals("Q", StringComparison.OrdinalIgnoreCase))
+                Chance = chance
             };
 
-            if (!ApplyOptions(node, parts.Skip(2), monsterName, line, report))
-                return null;
-
-            if (parts[1].Equals("Gold", StringComparison.OrdinalIgnoreCase))
+            if (IsGoldToken(parts[1]))
             {
-                if (parts.Count < 3 || !int.TryParse(parts[2], out int gold) || gold <= 0)
+                int gold = 1;
+                IEnumerable<string> options = parts.Skip(2);
+
+                if (parts.Count >= 3 && int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsedGold))
                 {
-                    report.Failures.Add($"{monsterName}: 金币数量无效 `{line}`");
-                    return null;
+                    gold = parsedGold;
+                    options = parts.Skip(3);
                 }
 
                 node.Item = _goldInfo;
@@ -375,11 +511,23 @@ namespace Server.Envir
 
                 node.Amount = gold;
                 node.IsMir2Gold = true;
+                if (!ApplyOptions(node, options, monsterName, line, report))
+                    return null;
+
+                if (node.Amount <= 0)
+                {
+                    report.Failures.Add($"{monsterName}: 金币数量无效 `{line}`");
+                    return null;
+                }
+
                 report.GoldLines++;
                 if (node.IsQuestOnly)
                     report.QuestOnlyLines.Add($"{monsterName}: {line}");
                 return node;
             }
+
+            if (!ApplyOptions(node, parts.Skip(2), monsterName, line, report))
+                return null;
 
             string itemName = NormalizeName(parts[1]);
             if (!_items.TryGetValue(itemName, out ItemInfo item))
@@ -425,7 +573,10 @@ namespace Server.Envir
             };
 
             if (!ApplyOptions(group, options, monsterName, token, report))
+            {
+                SkipGroupBody(lines, ref index);
                 return null;
+            }
 
             bool closed = false;
 
@@ -463,6 +614,38 @@ namespace Server.Envir
 
             report.GroupLines++;
             return group;
+        }
+
+        private static void SkipGroupBody(List<string> lines, ref int index)
+        {
+            int depth = 1;
+
+            while (index < lines.Count && depth > 0)
+            {
+                string line = CleanLine(lines[index]);
+                index++;
+
+                if (line == "{")
+                    depth++;
+                else if (line == "}")
+                    depth--;
+            }
+        }
+
+        private static bool IsGroupToken(string token)
+        {
+            return token.Equals("GROUP", StringComparison.OrdinalIgnoreCase) ||
+                   token.Equals("GROUP*", StringComparison.OrdinalIgnoreCase) ||
+                   token.Equals("GROUP^", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool IsGoldToken(string token)
+        {
+            if (token.Equals("Gold", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            return _goldInfo != null &&
+                   NormalizeName(token).Equals(NormalizeName(_goldInfo.ItemName), StringComparison.OrdinalIgnoreCase);
         }
 
         private bool ImportNode(MonsterInfo monster, DropGroupInfo parent, Mir2DropNode node, Mir2DropImportReport report)
@@ -613,14 +796,18 @@ namespace Server.Envir
                 }
 
                 string[] pair = option.Split('=', 2);
-                if (pair.Length != 2) continue;
+                if (pair.Length != 2)
+                {
+                    report.Failures.Add($"{monsterName}: 未知掉落选项 `{option}` `{line}`");
+                    return false;
+                }
 
                 string key = pair[0];
                 string value = pair[1];
 
                 if (key.Equals("Amount", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (!int.TryParse(value, out int amount) || amount <= 0)
+                    if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int amount) || amount <= 0)
                     {
                         report.Failures.Add($"{monsterName}: Amount 无效 `{line}`");
                         return false;
@@ -632,7 +819,7 @@ namespace Server.Envir
 
                 if (key.Equals("DropSet", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (!int.TryParse(value, out int dropSet) || dropSet < 0)
+                    if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int dropSet) || dropSet < 0)
                     {
                         report.Failures.Add($"{monsterName}: DropSet 无效 `{line}`");
                         return false;
@@ -675,7 +862,11 @@ namespace Server.Envir
                     }
 
                     node.IsMir2Gold = mir2Gold;
+                    continue;
                 }
+
+                report.Failures.Add($"{monsterName}: 未知掉落选项 `{key}` `{line}`");
+                return false;
             }
 
             return true;
@@ -706,8 +897,8 @@ namespace Server.Envir
 
             string[] parts = text.Split('/');
             if (parts.Length != 2) return false;
-            if (!int.TryParse(parts[0], out int numerator) || numerator != 1) return false;
-            if (!int.TryParse(parts[1], out chance)) return false;
+            if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int numerator) || numerator != 1) return false;
+            if (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out chance)) return false;
 
             return chance > 0;
         }
@@ -716,10 +907,99 @@ namespace Server.Envir
         {
             if (line == null) return string.Empty;
 
-            string trimmed = line.Trim();
+            string trimmed = StripComment(line).Trim();
             if (trimmed.StartsWith(";", StringComparison.Ordinal)) return string.Empty;
 
             return trimmed;
+        }
+
+        private static bool TryReadAllLines(string path, Mir2DropImportReport report, out string[] lines)
+        {
+            try
+            {
+                lines = File.ReadAllLines(path);
+                return true;
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+                lines = Array.Empty<string>();
+                report.Failures.Add($"读取掉落文件失败 `{path}`: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static string StripComment(string line)
+        {
+            bool quoted = false;
+            bool escaped = false;
+
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+
+                if (quoted && c == '\\')
+                {
+                    escaped = true;
+                    continue;
+                }
+
+                if (c == '"')
+                {
+                    quoted = !quoted;
+                    continue;
+                }
+
+                if (quoted) continue;
+
+                if (c == ';' && IsSemicolonCommentStart(line, i))
+                    return line[..i];
+
+                if (c == '/' && i + 1 < line.Length && line[i + 1] == '/' && IsSlashCommentStart(line, i))
+                    return line[..i];
+            }
+
+            return line;
+        }
+
+        private static bool TryGetFullPath(string path, string description, Mir2DropImportReport report, out string fullPath)
+        {
+            try
+            {
+                fullPath = Path.GetFullPath(path);
+                return true;
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
+            {
+                fullPath = null;
+                report.Failures.Add($"{description}无效 `{path}`: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static bool IsSlashCommentStart(string line, int index)
+        {
+            return index == 0 || char.IsWhiteSpace(line[index - 1]);
+        }
+
+        private static bool IsSemicolonCommentStart(string line, int index)
+        {
+            if (index == 0)
+                return true;
+
+            if (char.IsWhiteSpace(line[index - 1]))
+                return true;
+
+            for (int i = 0; i < index; i++)
+                if (!char.IsWhiteSpace(line[i]))
+                    return false;
+
+            return true;
         }
 
         private static string NormalizeName(string value)

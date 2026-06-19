@@ -2,6 +2,7 @@ using Library.SystemModels;
 using MirDB;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -38,7 +39,7 @@ namespace Server.Envir
                     continue;
 
                 fileName = GetUniqueFileName(fileName, monster.Index, usedFileNames);
-                File.WriteAllLines(Path.Combine(outputDirectory, fileName + ".txt"), lines, new UTF8Encoding(false));
+                WriteAllLinesAtomically(Path.Combine(outputDirectory, fileName + ".txt"), lines);
                 report.MonstersExported++;
             }
 
@@ -103,6 +104,19 @@ namespace Server.Envir
             if (drop?.Item == null || drop.Chance <= 0)
                 return string.Empty;
 
+            if (drop.Mir2Gold)
+            {
+                List<string> goldParts = new()
+                {
+                    $"1/{drop.Chance}",
+                    "Gold",
+                    Math.Max(drop.Amount, 1).ToString(CultureInfo.InvariantCulture)
+                };
+
+                AddOptions(goldParts, drop.DropSet, drop.PartOnly, drop.EasterEvent, false);
+                return string.Join(" ", goldParts);
+            }
+
             List<string> parts = new()
             {
                 $"1/{drop.Chance}",
@@ -142,6 +156,19 @@ namespace Server.Envir
             if (item?.Item == null || item.Chance <= 0)
                 return string.Empty;
 
+            if (item.Mir2Gold)
+            {
+                List<string> goldParts = new()
+                {
+                    $"1/{item.Chance}",
+                    "Gold",
+                    Math.Max(item.Amount, 1).ToString(CultureInfo.InvariantCulture)
+                };
+
+                AddOptions(goldParts, item.DropSet, item.PartOnly, item.EasterEvent, false);
+                return indent + string.Join(" ", goldParts);
+            }
+
             List<string> parts = new()
             {
                 $"1/{item.Chance}",
@@ -169,7 +196,9 @@ namespace Server.Envir
         private static string QuoteIfNeeded(string value)
         {
             if (string.IsNullOrWhiteSpace(value)) return "\"\"";
-            return value.Any(char.IsWhiteSpace) ? $"\"{value.Replace("\"", "\\\"")}\"" : value;
+            return value.Any(char.IsWhiteSpace) || value.Contains('"') || value.Contains('\\')
+                ? $"\"{value.Replace("\\", "\\\\").Replace("\"", "\\\"")}\""
+                : value;
         }
 
         private static string SafeFileName(string value)
@@ -197,6 +226,52 @@ namespace Server.Envir
                 suffix++;
 
             return $"{indexedName}-{suffix}";
+        }
+
+        private static void WriteAllLinesAtomically(string path, IEnumerable<string> lines)
+        {
+            string tempPath = null;
+
+            try
+            {
+                string directory = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(directory))
+                    Directory.CreateDirectory(directory);
+
+                string fileName = Path.GetFileName(path);
+                tempPath = Path.Combine(string.IsNullOrEmpty(directory) ? "." : directory, $".{fileName}.{Guid.NewGuid():N}.tmp");
+
+                File.WriteAllLines(tempPath, lines, new UTF8Encoding(false));
+                ReplaceOrMoveTempFile(tempPath, path);
+                tempPath = null;
+            }
+            catch
+            {
+                TryDeleteTempFile(tempPath);
+                throw;
+            }
+        }
+
+        private static void TryDeleteTempFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+            }
+        }
+
+        private static void ReplaceOrMoveTempFile(string tempPath, string destinationPath)
+        {
+            if (File.Exists(destinationPath))
+                File.Replace(tempPath, destinationPath, null);
+            else
+                File.Move(tempPath, destinationPath);
         }
     }
 
