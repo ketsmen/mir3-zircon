@@ -631,7 +631,9 @@ namespace Server.Models
                         if (!Compare(check.Operator, SEnvir.Now.Minute, check.IntParameter1)) return false;
                         break;
                     case CompiledNpcCheckType.PKPoint:
-                        if (!Compare(check.Operator, ob.Stats[Stat.PKPoint], check.IntParameter1)) return false;
+                        if (!Compare(check.Operator, ob.Stats[Stat.PKPoint], check.UseRedPointThreshold ? Config.RedPoint : check.IntParameter1) &&
+                            ob.Stats[Stat.Redemption] == 0)
+                            return false;
                         break;
                     case CompiledNpcCheckType.Random:
                         if (check.IntParameter1 <= 0 || !Compare(check.Operator, SEnvir.Random.Next(check.IntParameter1), check.IntParameter2)) return false;

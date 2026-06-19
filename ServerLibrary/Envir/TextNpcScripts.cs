@@ -5,6 +5,7 @@ using MirDB;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -14,7 +15,7 @@ namespace Server.Envir
 {
     public sealed class TextNpcImporter
     {
-        private static readonly Regex IncludeRegex = new(@"#(?:INSERT|INCLUDE)\s+\[(.*?)\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex IncludeRegex = new(@"^#(?:INSERT|INCLUDE)\s+\[(.*?)\]\s*(?:(?:;|//).*)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex PageRegex = new(@"^\[\s*(?<Reference>@?[\w\-.]+(?:\([^]]*\))?)\s*\]$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex ButtonRegex = new(@"\<(?<Text>[^<>/]+)\/(?<Target>@?[^<>]+)\>", RegexOptions.Compiled);
 
@@ -50,6 +51,15 @@ namespace Server.Envir
                 throw new ArgumentException("NPC 文本目录不能为空。", nameof(npcDirectory));
 
             TextNpcLoadResult result = new();
+            try
+            {
+                npcDirectory = Path.GetFullPath(npcDirectory);
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
+            {
+                result.Report.Failures.Add($"NPC 文本目录无效 `{npcDirectory}`: {ex.Message}");
+                return result;
+            }
 
             string infoPath = Path.Combine(npcDirectory, "NPCInfo.txt");
             if (!File.Exists(infoPath))
@@ -61,7 +71,7 @@ namespace Server.Envir
             HashSet<string> duplicateKeys = new(StringComparer.OrdinalIgnoreCase);
             int textIndex = 1;
 
-            foreach (TextNpcScriptLine infoLine in ReadCleanLines(infoPath, npcDirectory, result.Report, []))
+            foreach (TextNpcScriptLine infoLine in ReadCleanLines(infoPath, npcDirectory, result.Report, new HashSet<string>(StringComparer.OrdinalIgnoreCase)))
             {
                 result.Report.InfoLines++;
 
@@ -132,15 +142,23 @@ namespace Server.Envir
                 return null;
             }
 
-            if (!int.TryParse(parts[1], out int x) || !int.TryParse(parts[2], out int y))
+            if (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int x) ||
+                !int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int y))
             {
                 report.Failures.Add($"{line.Source}: NPC 坐标无效 `{parts[1]} {parts[2]}`。");
                 return null;
             }
 
-            if (!int.TryParse(parts[4], out int image) || !int.TryParse(parts[5], out int faceImage))
+            if (!int.TryParse(parts[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out int image) ||
+                !int.TryParse(parts[5], NumberStyles.Integer, CultureInfo.InvariantCulture, out int faceImage))
             {
                 report.Failures.Add($"{line.Source}: NPC Image/FaceImage 必须是数字。");
+                return null;
+            }
+
+            if (!TryResolveScriptPath(npcDirectory, parts[6], out string scriptPath))
+            {
+                report.Failures.Add($"{line.Source}: 脚本路径 `{parts[6]}` 必须位于 NPC 文本目录内。");
                 return null;
             }
 
@@ -153,7 +171,7 @@ namespace Server.Envir
                 Image = image,
                 FaceImage = faceImage,
                 ScriptFile = parts[6],
-                ScriptPath = ResolveScriptPath(npcDirectory, parts[6]),
+                ScriptPath = scriptPath,
                 MapIcon = MapIcon.None,
                 Direction = MirDirection.Down,
                 Class = RequiredClass.All,
@@ -175,23 +193,23 @@ namespace Server.Envir
                 switch (key.ToUpperInvariant())
                 {
                     case "MAPICON":
-                        if (!Enum.TryParse(value, true, out MapIcon mapIcon))
+                        if (!TryParseDefinedEnum(value, out MapIcon mapIcon))
                             report.Failures.Add($"{line.Source}: MapIcon 无效 `{value}`。");
                         else
                             info.MapIcon = mapIcon;
                         break;
                     case "DIRECTION":
-                        if (!Enum.TryParse(value, true, out MirDirection direction))
+                        if (!TryParseDefinedEnum(value, out MirDirection direction))
                             report.Failures.Add($"{line.Source}: Direction 无效 `{value}`。");
                         else
                             info.Direction = direction;
                         break;
                     case "MINLEVEL":
-                        if (!int.TryParse(value, out info.MinLevel))
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out info.MinLevel))
                             report.Failures.Add($"{line.Source}: MinLevel 无效 `{value}`。");
                         break;
                     case "MAXLEVEL":
-                        if (!int.TryParse(value, out info.MaxLevel))
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out info.MaxLevel))
                             report.Failures.Add($"{line.Source}: MaxLevel 无效 `{value}`。");
                         break;
                     case "CLASS":
@@ -203,7 +221,7 @@ namespace Server.Envir
                             report.Failures.Add($"{line.Source}: Days 无效 `{value}`。");
                         break;
                     case "OVERRIDEINDEX":
-                        if (!int.TryParse(value, out info.OverrideIndex))
+                        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out info.OverrideIndex))
                             report.Failures.Add($"{line.Source}: OverrideIndex 无效 `{value}`。");
                         break;
                     default:
@@ -217,7 +235,7 @@ namespace Server.Envir
 
         private CompiledNpcScript CompileScript(string scriptPath, string npcDirectory, TextNpcLoadReport report)
         {
-            List<TextNpcScriptLine> lines = ReadCleanLines(scriptPath, npcDirectory, report, []);
+            List<TextNpcScriptLine> lines = ReadCleanLines(scriptPath, npcDirectory, report, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
             if (lines.Count == 0) return null;
 
             CompiledNpcScript script = new()
@@ -364,7 +382,7 @@ namespace Server.Envir
                 return true;
             }
 
-            if (directive.StartsWith("#SUCCESS", StringComparison.OrdinalIgnoreCase))
+            if (IsDirectiveCommand(directive, "#SUCCESS"))
             {
                 List<string> parts = TokenizeLine(directive);
                 if (parts.Count < 2)
@@ -378,7 +396,7 @@ namespace Server.Envir
                 return true;
             }
 
-            if (directive.StartsWith("#DIALOGTYPE", StringComparison.OrdinalIgnoreCase))
+            if (IsDirectiveCommand(directive, "#DIALOGTYPE"))
             {
                 List<string> parts = TokenizeLine(directive);
                 if (parts.Count < 2)
@@ -387,7 +405,7 @@ namespace Server.Envir
                     return true;
                 }
 
-                if (!Enum.TryParse(parts[1], true, out NPCDialogType dialogType))
+                if (!TryParseDefinedEnum(parts[1], out NPCDialogType dialogType))
                     report.Failures.Add($"{line.Source}: #DIALOGTYPE 无效 `{parts[1]}`。");
                 else
                     page.DialogType = dialogType;
@@ -514,20 +532,23 @@ namespace Server.Envir
                     ParseTimeCheck(line, parts, checks, CompiledNpcCheckType.Minute, 0, 59, report);
                     break;
                 case "CHECKPKPOINT":
-                    if (TryParseComparison(parts.Skip(1).ToList(), Operator.LessThanOrEqual, out Operator pkOp, out int pkValue))
-                        checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.PKPoint, Operator = pkOp, IntParameter1 = pkValue }, line));
+                    if (TryParsePKPointComparison(parts.Skip(1).ToList(), Operator.LessThanOrEqual, out Operator pkOp, out int pkValue, out bool useRedPointThreshold))
+                        checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.PKPoint, Operator = pkOp, IntParameter1 = pkValue, UseRedPointThreshold = useRedPointThreshold }, line));
                     else
-                        report.Failures.Add($"{line.Source}: CHECKPKPOINT 条件格式无效。");
+                        report.Failures.Add($"{line.Source}: CHECKPKPOINT 条件格式无效，应为 CHECKPKPOINT [运算符] 数值|REDPOINT。");
                     break;
                 case "RANDOM":
-                    if (parts.Count >= 2 && int.TryParse(parts[1], out int randomMax) && randomMax > 0)
-                        checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Random, Operator = Operator.Equal, IntParameter1 = randomMax, IntParameter2 = parts.Count >= 3 && int.TryParse(parts[2], out int randomValue) ? randomValue : 0 }, line));
+                    if (parts.Count >= 2 && int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int randomMax) && randomMax > 0)
+                        checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.Random, Operator = Operator.Equal, IntParameter1 = randomMax, IntParameter2 = parts.Count >= 3 && int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int randomValue) ? randomValue : 0 }, line));
                     else
                         report.Failures.Add($"{line.Source}: RANDOM 条件格式无效。");
                     break;
                 case "CHECKNAMELIST":
                     if (parts.Count >= 2)
-                        checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.NameList, StringParameter1 = parts[1], DataType = ParseDataType(parts, 2) }, line));
+                    {
+                        if (TryParseDataType(line, parts, 2, report, out NPCDataType dataType))
+                            checks.Add(WithSource(new CompiledNpcCheck { CheckType = CompiledNpcCheckType.NameList, StringParameter1 = parts[1], DataType = dataType }, line));
+                    }
                     else
                         report.Failures.Add($"{line.Source}: CHECKNAMELIST 条件格式无效。");
                     break;
@@ -597,8 +618,9 @@ namespace Server.Envir
                     ParseValueAction(line, parts, actions, CompiledNpcActionType.ChangeValue, report);
                     break;
                 case "LOCALMESSAGE":
-                    if (parts.Count >= 2)
-                        actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.LocalMessage, StringParameter1 = line.Text.Substring(line.Text.IndexOf(' ') + 1).Trim() }, line));
+                    string message = GetCommandRemainder(line.Text);
+                    if (!string.IsNullOrWhiteSpace(message))
+                        actions.Add(WithSource(new CompiledNpcAction { ActionType = CompiledNpcActionType.LocalMessage, StringParameter1 = message }, line));
                     else
                         report.Failures.Add($"{line.Source}: LOCALMESSAGE 需要消息内容。");
                     break;
@@ -661,7 +683,7 @@ namespace Server.Envir
 
             int count = 1;
             int nameEnd = parts.Count;
-            if (parts.Count >= 3 && int.TryParse(parts[^1], out int parsedCount))
+            if (parts.Count >= 3 && int.TryParse(parts[^1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsedCount))
             {
                 count = parsedCount;
                 nameEnd--;
@@ -691,11 +713,12 @@ namespace Server.Envir
             int amount;
             int nameEnd;
 
-            if (parts.Count >= 4 && TryParseOperator(parts[^2], out op) && int.TryParse(parts[^1], out amount))
+            if (parts.Count >= 4 && TryParseOperator(parts[^2], out op) &&
+                int.TryParse(parts[^1], NumberStyles.Integer, CultureInfo.InvariantCulture, out amount))
             {
                 nameEnd = parts.Count - 2;
             }
-            else if (int.TryParse(parts[^1], out amount))
+            else if (int.TryParse(parts[^1], NumberStyles.Integer, CultureInfo.InvariantCulture, out amount))
             {
                 nameEnd = parts.Count - 1;
             }
@@ -727,11 +750,14 @@ namespace Server.Envir
         private void ParseValueCheck(TextNpcScriptLine line, List<CompiledNpcCheck> checks, TextNpcLoadReport report)
         {
             List<string> parts = TokenizeLine(line.Text);
-            if (parts.Count < 4 || !TryParseOperator(parts[2], out Operator op) || !int.TryParse(parts[3], out int value))
+            if (parts.Count < 4 || !TryParseOperator(parts[2], out Operator op) ||
+                !int.TryParse(parts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
             {
                 report.Failures.Add($"{line.Source}: CHECKVALUE 格式应为 CHECKVALUE 名称 运算符 数值 [DataType]。");
                 return;
             }
+
+            if (!TryParseDataType(line, parts, 4, report, out NPCDataType dataType)) return;
 
             checks.Add(WithSource(new CompiledNpcCheck
             {
@@ -739,13 +765,13 @@ namespace Server.Envir
                 StringParameter1 = parts[1],
                 Operator = op,
                 IntParameter1 = value,
-                DataType = ParseDataType(parts, 4)
+                DataType = dataType
             }, line));
         }
 
         private void ParseIntAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, CompiledNpcActionType type, TextNpcLoadReport report)
         {
-            if (parts.Count >= 2 && int.TryParse(parts[1], out int value))
+            if (parts.Count >= 2 && int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
                 actions.Add(WithSource(new CompiledNpcAction { ActionType = type, IntParameter1 = value }, line));
             else
                 report.Failures.Add($"{line.Source}: {parts[0]} 需要数字参数。");
@@ -761,7 +787,7 @@ namespace Server.Envir
 
             int count = 1;
             int nameEnd = parts.Count;
-            if (parts.Count >= 3 && int.TryParse(parts[^1], out int parsedCount))
+            if (parts.Count >= 3 && int.TryParse(parts[^1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsedCount))
             {
                 count = parsedCount;
                 nameEnd--;
@@ -780,7 +806,9 @@ namespace Server.Envir
 
         private void ParseItemExperienceAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, TextNpcLoadReport report)
         {
-            if (parts.Count < 4 || !int.TryParse(parts[^2], out int count) || !int.TryParse(parts[^1], out int experience))
+            if (parts.Count < 4 ||
+                !int.TryParse(parts[^2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int count) ||
+                !int.TryParse(parts[^1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int experience))
             {
                 report.Failures.Add($"{line.Source}: {parts[0]} 格式应为 {parts[0]} 物品名 数量 经验值。");
                 return;
@@ -799,7 +827,7 @@ namespace Server.Envir
 
         private void ParseCurrencyAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, CompiledNpcActionType type, TextNpcLoadReport report)
         {
-            if (parts.Count < 3 || !int.TryParse(parts[^1], out int amount))
+            if (parts.Count < 3 || !int.TryParse(parts[^1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int amount))
             {
                 report.Failures.Add($"{line.Source}: {parts[0]} 格式应为 {parts[0]} 货币名 数值。");
                 return;
@@ -818,7 +846,9 @@ namespace Server.Envir
 
         private void ParseMoveAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, TextNpcLoadReport report)
         {
-            if (parts.Count < 4 || !int.TryParse(parts[^2], out int x) || !int.TryParse(parts[^1], out int y))
+            if (parts.Count < 4 ||
+                !int.TryParse(parts[^2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int x) ||
+                !int.TryParse(parts[^1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int y))
             {
                 report.Failures.Add($"{line.Source}: MOVE 格式应为 MOVE 地图 X Y。");
                 return;
@@ -843,18 +873,20 @@ namespace Server.Envir
                 return;
             }
 
-            actions.Add(WithSource(new CompiledNpcAction { ActionType = type, StringParameter1 = parts[1], DataType = ParseDataType(parts, 2) }, line));
+            if (TryParseDataType(line, parts, 2, report, out NPCDataType dataType))
+                actions.Add(WithSource(new CompiledNpcAction { ActionType = type, StringParameter1 = parts[1], DataType = dataType }, line));
         }
 
         private void ParseValueAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, CompiledNpcActionType type, TextNpcLoadReport report)
         {
-            if (parts.Count < 3 || !int.TryParse(parts[2], out int value))
+            if (parts.Count < 3 || !int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
             {
                 report.Failures.Add($"{line.Source}: {parts[0]} 格式应为 {parts[0]} 名称 数值 [DataType]。");
                 return;
             }
 
-            actions.Add(WithSource(new CompiledNpcAction { ActionType = type, StringParameter1 = parts[1], IntParameter1 = value, DataType = ParseDataType(parts, 3) }, line));
+            if (TryParseDataType(line, parts, 3, report, out NPCDataType dataType))
+                actions.Add(WithSource(new CompiledNpcAction { ActionType = type, StringParameter1 = parts[1], IntParameter1 = value, DataType = dataType }, line));
         }
 
         private void ParseHorseCheck(TextNpcScriptLine line, List<string> parts, List<CompiledNpcCheck> checks, TextNpcLoadReport report)
@@ -927,7 +959,8 @@ namespace Server.Envir
 
         private void ParseSpecialRefineAction(TextNpcScriptLine line, List<string> parts, List<CompiledNpcAction> actions, TextNpcLoadReport report)
         {
-            if (parts.Count < 3 || !TryParseStat(parts[1], out Stat stat) || !int.TryParse(parts[2], out int amount))
+            if (parts.Count < 3 || !TryParseStat(parts[1], out Stat stat) ||
+                !int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int amount))
             {
                 report.Failures.Add($"{line.Source}: SPECIALREFINE 格式应为 SPECIALREFINE Stat 数值。");
                 return;
@@ -943,7 +976,7 @@ namespace Server.Envir
 
             decimal rate = 1M;
             int nameEnd = parts.Count;
-            if (parts.Count >= 2 && decimal.TryParse(parts[^1], out decimal parsedRate))
+            if (parts.Count >= 2 && decimal.TryParse(parts[^1], NumberStyles.Number, CultureInfo.InvariantCulture, out decimal parsedRate))
             {
                 rate = parsedRate;
                 nameEnd--;
@@ -977,7 +1010,7 @@ namespace Server.Envir
                     continue;
                 }
 
-                if (!Enum.TryParse(part, true, out ItemType type))
+                if (!TryParseDefinedEnum(part, out ItemType type))
                 {
                     report.Failures.Add($"{line.Source}: 未知 ItemType `{part}`。");
                     continue;
@@ -993,10 +1026,14 @@ namespace Server.Envir
 
         private void ParseCurrency(TextNpcScriptLine line, CompiledNpcPage page, TextNpcLoadReport report)
         {
-            if (!_currencies.TryGetValue(NormalizeName(line.Text), out CurrencyInfo currency))
+            string currencyName = string.Join(" ", TokenizeLine(line.Text));
+            if (string.IsNullOrWhiteSpace(currencyName))
+                currencyName = line.Text?.Trim() ?? string.Empty;
+
+            if (!_currencies.TryGetValue(NormalizeName(currencyName), out CurrencyInfo currency))
             {
-                report.MissingCurrencies.Add(line.Text);
-                report.Failures.Add($"{line.Source}: 找不到货币 `{line.Text}`。");
+                report.MissingCurrencies.Add(currencyName);
+                report.Failures.Add($"{line.Source}: 找不到货币 `{currencyName}`。");
                 return;
             }
 
@@ -1027,6 +1064,8 @@ namespace Server.Envir
         {
             foreach (CompiledNpcButton button in block.Buttons)
             {
+                if (CompiledNpcScript.ContainsArgumentToken(button.DestinationKey)) continue;
+
                 string destinationKey = CompiledNpcScript.GetReferencePageKey(button.DestinationKey);
                 if (script.Pages.ContainsKey(destinationKey)) continue;
 
@@ -1036,6 +1075,8 @@ namespace Server.Envir
             foreach (CompiledNpcAction action in block.Actions)
             {
                 if (action.ActionType != CompiledNpcActionType.Goto) continue;
+                if (CompiledNpcScript.ContainsArgumentToken(action.StringParameter1)) continue;
+
                 string destinationKey = CompiledNpcScript.GetReferencePageKey(action.StringParameter1);
                 if (script.Pages.ContainsKey(destinationKey)) continue;
 
@@ -1044,6 +1085,8 @@ namespace Server.Envir
 
             if (!string.IsNullOrWhiteSpace(page.SuccessKey))
             {
+                if (CompiledNpcScript.ContainsArgumentToken(page.SuccessKey)) return;
+
                 string successKey = CompiledNpcScript.GetReferencePageKey(page.SuccessKey);
                 if (!script.Pages.ContainsKey(successKey))
                     report.Failures.Add($"{script.ScriptFile} {page.Key}: #SUCCESS 目标页 `{page.SuccessKey}` 不存在。");
@@ -1052,41 +1095,86 @@ namespace Server.Envir
 
         private List<TextNpcScriptLine> ReadCleanLines(string path, string npcDirectory, TextNpcLoadReport report, HashSet<string> stack)
         {
-            string fullPath = Path.GetFullPath(path);
+            string fullPath;
+            try
+            {
+                fullPath = Path.GetFullPath(path);
+                if (!IsPathInsideDirectory(npcDirectory, fullPath))
+                {
+                    report.Failures.Add($"脚本路径必须位于 NPC 文本目录内: {fullPath}");
+                    return [];
+                }
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
+            {
+                report.Failures.Add($"脚本路径无效 `{path}`: {ex.Message}");
+                return [];
+            }
+
             if (!stack.Add(fullPath))
             {
                 report.Failures.Add($"循环 #INSERT/#INCLUDE: {fullPath}");
                 return [];
             }
 
-            List<TextNpcScriptLine> result = [];
-            string[] lines = File.ReadAllLines(fullPath);
-
-            for (int i = 0; i < lines.Length; i++)
+            try
             {
-                string text = CleanLine(lines[i]);
-                if (string.IsNullOrWhiteSpace(text)) continue;
+                List<TextNpcScriptLine> result = [];
+                string[] lines;
 
-                Match include = IncludeRegex.Match(text);
-                if (!include.Success)
+                try
                 {
-                    result.Add(new TextNpcScriptLine(fullPath, i + 1, text));
-                    continue;
+                    lines = File.ReadAllLines(fullPath);
+                }
+                catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException)
+                {
+                    report.Failures.Add($"{fullPath}: 读取脚本失败: {ex.Message}");
+                    return result;
                 }
 
-                string includePath = ResolveScriptPath(npcDirectory, include.Groups[1].Value);
-                if (!File.Exists(includePath))
+                for (int i = 0; i < lines.Length; i++)
                 {
-                    report.Failures.Add($"{fullPath}:{i + 1}: 找不到 #INSERT/#INCLUDE 文件 `{include.Groups[1].Value}`。");
-                    continue;
+                    string text = CleanLine(lines[i]);
+                    if (string.IsNullOrWhiteSpace(text)) continue;
+
+                    bool includeDirective = text.StartsWith("#INSERT", StringComparison.OrdinalIgnoreCase) ||
+                                            text.StartsWith("#INCLUDE", StringComparison.OrdinalIgnoreCase);
+                    Match include = IncludeRegex.Match(text);
+                    if (!include.Success)
+                    {
+                        if (includeDirective)
+                        {
+                            report.Failures.Add($"{fullPath}:{i + 1}: #INSERT/#INCLUDE 格式必须是整行 #INCLUDE [file]。");
+                            continue;
+                        }
+
+                        result.Add(new TextNpcScriptLine(fullPath, i + 1, text));
+                        continue;
+                    }
+
+                    string includeFile = include.Groups[1].Value;
+                    if (!TryResolveScriptPath(npcDirectory, includeFile, out string includePath))
+                    {
+                        report.Failures.Add($"{fullPath}:{i + 1}: #INSERT/#INCLUDE 文件 `{includeFile}` 必须位于 NPC 文本目录内。");
+                        continue;
+                    }
+
+                    if (!File.Exists(includePath))
+                    {
+                        report.Failures.Add($"{fullPath}:{i + 1}: 找不到 #INSERT/#INCLUDE 文件 `{includeFile}`。");
+                        continue;
+                    }
+
+                    report.IncludeFiles++;
+                    result.AddRange(ReadCleanLines(includePath, npcDirectory, report, stack));
                 }
 
-                report.IncludeFiles++;
-                result.AddRange(ReadCleanLines(includePath, npcDirectory, report, stack));
+                return result;
             }
-
-            stack.Remove(fullPath);
-            return result;
+            finally
+            {
+                stack.Remove(fullPath);
+            }
         }
 
         private static bool TryParseComparison(List<string> parts, Operator defaultOperator, out Operator op, out int value)
@@ -1095,12 +1183,48 @@ namespace Server.Envir
             value = 0;
 
             if (parts.Count == 1)
-                return int.TryParse(parts[0], out value);
+                return int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
 
             if (parts.Count >= 2 && TryParseOperator(parts[0], out op))
-                return int.TryParse(parts[1], out value);
+                return int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
 
             return false;
+        }
+
+        private static bool TryParsePKPointComparison(List<string> parts, Operator defaultOperator, out Operator op, out int value, out bool useRedPointThreshold)
+        {
+            op = defaultOperator;
+            value = 0;
+            useRedPointThreshold = false;
+
+            if (parts.Count == 1)
+                return TryParsePKPointValue(parts[0], out value, out useRedPointThreshold);
+
+            if (parts.Count >= 2 && TryParseOperator(parts[0], out op))
+                return TryParsePKPointValue(parts[1], out value, out useRedPointThreshold);
+
+            return false;
+        }
+
+        private static bool TryParsePKPointValue(string text, out int value, out bool useRedPointThreshold)
+        {
+            useRedPointThreshold = false;
+
+            if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value))
+                return true;
+
+            switch (text.Trim().ToUpperInvariant())
+            {
+                case "REDPOINT":
+                case "CONFIG.REDPOINT":
+                case "DEFAULT":
+                    value = 0;
+                    useRedPointThreshold = true;
+                    return true;
+                default:
+                    value = 0;
+                    return false;
+            }
         }
 
         private static bool TryParseOperator(string text, out Operator op)
@@ -1141,7 +1265,7 @@ namespace Server.Envir
             if (Enum.TryParse(value, true, out horseType) && Enum.IsDefined(typeof(HorseType), horseType))
                 return true;
 
-            if (byte.TryParse(value, out byte raw) && Enum.IsDefined(typeof(HorseType), raw))
+            if (byte.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out byte raw) && Enum.IsDefined(typeof(HorseType), raw))
             {
                 horseType = (HorseType)raw;
                 return true;
@@ -1156,7 +1280,7 @@ namespace Server.Envir
             if (Enum.TryParse(value, true, out element) && Enum.IsDefined(typeof(Element), element))
                 return true;
 
-            if (byte.TryParse(value, out byte raw) && Enum.IsDefined(typeof(Element), raw))
+            if (byte.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out byte raw) && Enum.IsDefined(typeof(Element), raw))
             {
                 element = (Element)raw;
                 return true;
@@ -1171,7 +1295,7 @@ namespace Server.Envir
             if (Enum.TryParse(value, true, out stat) && Enum.IsDefined(typeof(Stat), stat))
                 return true;
 
-            if (int.TryParse(value, out int raw) && Enum.IsDefined(typeof(Stat), raw))
+            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int raw) && Enum.IsDefined(typeof(Stat), raw))
             {
                 stat = (Stat)raw;
                 return true;
@@ -1181,10 +1305,17 @@ namespace Server.Envir
             return false;
         }
 
-        private static NPCDataType ParseDataType(List<string> parts, int index)
+        private static bool TryParseDataType(TextNpcScriptLine line, List<string> parts, int index, TextNpcLoadReport report, out NPCDataType type)
         {
-            if (parts.Count <= index) return NPCDataType.User;
-            return Enum.TryParse(parts[index], true, out NPCDataType type) ? type : NPCDataType.User;
+            type = NPCDataType.User;
+            if (parts.Count <= index) return true;
+
+            if (Enum.TryParse(parts[index], true, out type) && Enum.IsDefined(typeof(NPCDataType), type))
+                return true;
+
+            report.Failures.Add($"{line.Source}: 未知 DataType `{parts[index]}`，应为 None/User/Guild/Account。");
+            type = NPCDataType.User;
+            return false;
         }
 
         private static NPCDialogType GetDialogType(string key)
@@ -1223,7 +1354,7 @@ namespace Server.Envir
 
             foreach (string part in text.Split([',', '|', '+'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                if (!Enum.TryParse(part, true, out RequiredClass parsed)) return false;
+                if (!TryParseDefinedFlag(part, out RequiredClass parsed)) return false;
                 result |= parsed;
             }
 
@@ -1239,7 +1370,7 @@ namespace Server.Envir
             result = 0;
             foreach (string part in text.Split([',', '|', '+'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                if (!Enum.TryParse(part, true, out RequiredGender parsed)) return false;
+                if (!TryParseDefinedFlag(part, out RequiredGender parsed)) return false;
                 result |= parsed;
             }
 
@@ -1257,20 +1388,118 @@ namespace Server.Envir
             result = DaysOfWeek.None;
             foreach (string part in text.Split([',', '|', '+'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                if (!Enum.TryParse(part, true, out DaysOfWeek parsed)) return false;
+                if (!TryParseDefinedFlag(part, out DaysOfWeek parsed)) return false;
                 result |= parsed;
             }
 
             return result != DaysOfWeek.None;
         }
 
-        private static string ResolveScriptPath(string npcDirectory, string scriptFile)
+        private static bool IsDirectiveCommand(string text, string command)
         {
-            string path = Path.Combine(npcDirectory, scriptFile);
-            if (!Path.HasExtension(path))
-                path += ".txt";
+            return text.StartsWith(command, StringComparison.OrdinalIgnoreCase) &&
+                   (text.Length == command.Length || char.IsWhiteSpace(text[command.Length]));
+        }
 
-            return path;
+        private static bool TryParseDefinedEnum<TEnum>(string value, out TEnum result) where TEnum : struct, Enum
+        {
+            return Enum.TryParse(value, true, out result) &&
+                   Enum.IsDefined(typeof(TEnum), result);
+        }
+
+        private static bool TryParseDefinedFlag<TEnum>(string value, out TEnum result) where TEnum : struct, Enum
+        {
+            if (!Enum.TryParse(value, true, out result))
+                return false;
+
+            if (!TryGetEnumBits(result, out ulong parsed))
+                return false;
+
+            ulong allowed = 0;
+
+            foreach (TEnum defined in Enum.GetValues<TEnum>())
+            {
+                if (!TryGetEnumBits(defined, out ulong definedBits))
+                    return false;
+
+                allowed |= definedBits;
+            }
+
+            return (parsed & ~allowed) == 0;
+        }
+
+        private static bool TryGetEnumBits<TEnum>(TEnum value, out ulong bits) where TEnum : struct, Enum
+        {
+            bits = 0;
+
+            try
+            {
+                switch (Type.GetTypeCode(Enum.GetUnderlyingType(typeof(TEnum))))
+                {
+                    case TypeCode.SByte:
+                        bits = unchecked((ulong)(byte)Convert.ToSByte(value, CultureInfo.InvariantCulture));
+                        return true;
+                    case TypeCode.Byte:
+                        bits = Convert.ToByte(value, CultureInfo.InvariantCulture);
+                        return true;
+                    case TypeCode.Int16:
+                        bits = unchecked((ulong)(ushort)Convert.ToInt16(value, CultureInfo.InvariantCulture));
+                        return true;
+                    case TypeCode.UInt16:
+                        bits = Convert.ToUInt16(value, CultureInfo.InvariantCulture);
+                        return true;
+                    case TypeCode.Int32:
+                        bits = unchecked((ulong)(uint)Convert.ToInt32(value, CultureInfo.InvariantCulture));
+                        return true;
+                    case TypeCode.UInt32:
+                        bits = Convert.ToUInt32(value, CultureInfo.InvariantCulture);
+                        return true;
+                    case TypeCode.Int64:
+                        bits = unchecked((ulong)Convert.ToInt64(value, CultureInfo.InvariantCulture));
+                        return true;
+                    case TypeCode.UInt64:
+                        bits = Convert.ToUInt64(value, CultureInfo.InvariantCulture);
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+            catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
+            {
+                return false;
+            }
+        }
+
+        private static bool TryResolveScriptPath(string npcDirectory, string scriptFile, out string path)
+        {
+            path = null;
+
+            try
+            {
+                path = Path.Combine(npcDirectory, scriptFile);
+                if (!Path.HasExtension(path))
+                    path += ".txt";
+
+                path = Path.GetFullPath(path);
+                return IsPathInsideDirectory(npcDirectory, path);
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
+            {
+                SEnvir.Log($"NPC 脚本路径无效 `{scriptFile}`: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static bool IsPathInsideDirectory(string directory, string path)
+        {
+            string normalizedDirectory = Path.GetFullPath(directory)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string normalizedPath = Path.GetFullPath(path)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            return string.Equals(normalizedPath, normalizedDirectory, StringComparison.OrdinalIgnoreCase) ||
+                   normalizedPath.StartsWith(normalizedDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                   normalizedPath.StartsWith(normalizedDirectory + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
         }
 
         private static void AddLookup<T>(Dictionary<string, T> lookup, string key, T value)
@@ -1290,26 +1519,23 @@ namespace Server.Envir
         {
             if (line == null) return string.Empty;
 
-            string trimmed = line.Trim();
+            string trimmed = StripComment(line).Trim();
             if (trimmed.Length == 0) return string.Empty;
-            if (trimmed.StartsWith(";", StringComparison.Ordinal) || trimmed.StartsWith("//", StringComparison.Ordinal)) return string.Empty;
 
             return trimmed;
         }
 
-        public static List<string> TokenizeLine(string line)
+        private static string StripComment(string line)
         {
-            List<string> tokens = [];
-            if (string.IsNullOrWhiteSpace(line)) return tokens;
+            bool quoted = false;
+            bool escaped = false;
 
-            StringBuilder current = new();
-            bool quoted = false, escaped = false;
-
-            foreach (char c in line)
+            for (int i = 0; i < line.Length; i++)
             {
+                char c = line[i];
+
                 if (escaped)
                 {
-                    current.Append(c);
                     escaped = false;
                     continue;
                 }
@@ -1326,24 +1552,103 @@ namespace Server.Envir
                     continue;
                 }
 
+                if (quoted) continue;
+
+                if (c == ';' && IsSemicolonCommentStart(line, i))
+                    return line[..i];
+
+                if (c == '/' && i + 1 < line.Length && line[i + 1] == '/' && IsSlashCommentStart(line, i))
+                    return line[..i];
+            }
+
+            return line;
+        }
+
+        private static bool IsSlashCommentStart(string line, int index)
+        {
+            return index == 0 || char.IsWhiteSpace(line[index - 1]);
+        }
+
+        private static bool IsSemicolonCommentStart(string line, int index)
+        {
+            if (index == 0)
+                return true;
+
+            if (char.IsWhiteSpace(line[index - 1]))
+                return true;
+
+            for (int i = 0; i < index; i++)
+                if (!char.IsWhiteSpace(line[i]))
+                    return false;
+
+            return true;
+        }
+
+        public static List<string> TokenizeLine(string line)
+        {
+            List<string> tokens = [];
+            if (string.IsNullOrWhiteSpace(line)) return tokens;
+
+            StringBuilder current = new();
+            bool quoted = false, escaped = false, tokenStarted = false;
+
+            foreach (char c in line)
+            {
+                if (escaped)
+                {
+                    current.Append(c);
+                    tokenStarted = true;
+                    escaped = false;
+                    continue;
+                }
+
+                if (quoted && c == '\\')
+                {
+                    escaped = true;
+                    continue;
+                }
+
+                if (c == '"')
+                {
+                    quoted = !quoted;
+                    tokenStarted = true;
+                    continue;
+                }
+
                 if (!quoted && char.IsWhiteSpace(c))
                 {
-                    if (current.Length > 0)
+                    if (tokenStarted)
                     {
                         tokens.Add(current.ToString());
                         current.Clear();
+                        tokenStarted = false;
                     }
 
                     continue;
                 }
 
                 current.Append(c);
+                tokenStarted = true;
             }
 
-            if (current.Length > 0)
+            if (tokenStarted)
                 tokens.Add(current.ToString());
 
             return tokens;
+        }
+
+        private static string GetCommandRemainder(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line)) return string.Empty;
+
+            int index = 0;
+            while (index < line.Length && !char.IsWhiteSpace(line[index]))
+                index++;
+
+            while (index < line.Length && char.IsWhiteSpace(line[index]))
+                index++;
+
+            return index >= line.Length ? string.Empty : line[index..].Trim();
         }
     }
 
@@ -1452,6 +1757,9 @@ namespace Server.Envir
 
         public static string NormalizePageReference(string reference)
         {
+            reference = (reference ?? string.Empty).Trim();
+            if (ContainsArgumentToken(reference)) return reference;
+
             return ParsePageReference(reference).ToReference();
         }
 
@@ -1476,7 +1784,7 @@ namespace Server.Envir
 
             return ArgumentTokenRegex.Replace(value, match =>
             {
-                return arguments != null && int.TryParse(match.Groups["Index"].Value, out int index) && index >= 0 && index < arguments.Count
+                return arguments != null && int.TryParse(match.Groups["Index"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index) && index >= 0 && index < arguments.Count
                     ? arguments[index] ?? string.Empty
                     : string.Empty;
             });
@@ -1671,6 +1979,7 @@ namespace Server.Envir
         public RequiredGender Gender = RequiredGender.None;
         public DaysOfWeek Days = DaysOfWeek.None;
         public NPCDataType DataType = NPCDataType.User;
+        public bool UseRedPointThreshold;
     }
 
     public sealed class CompiledNpcAction

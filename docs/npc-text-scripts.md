@@ -39,7 +39,7 @@ MapFile X Y NPCName Image FaceImage ScriptFile [MapIcon=None] [Direction=Down] [
 Consumable Scroll Weapon Armour
 ```
 
-支持 `#INSERT [file]` 和 `#INCLUDE [file]`。解析器会检测循环引用。
+脚本、`NPCInfo.txt` 和 include 文件支持未加引号区域内的行尾 `;` 或 `//` 注释。支持单独成行的 `#INSERT [file]` 和 `#INCLUDE [file]`，include 路径必须位于 NPC 文本目录内，解析器会检测循环引用。
 
 ## 页面参数
 
@@ -88,11 +88,15 @@ CHECKGENDER Male
 DAYOFWEEK Weekend
 HOUR >= 20
 MINUTE < 30
-CHECKPKPOINT <= 200
+CHECKPKPOINT <= REDPOINT
 RANDOM 10
 CHECKNAMELIST DailyGift User
 CHECKVALUE DailyCount >= 1 User
 ```
+
+`CHECKPKPOINT` 的数值可以写成数字，也可以写 `REDPOINT`/`CONFIG.REDPOINT`/`DEFAULT` 表示跟随服务器 `Config.RedPoint`。文本运行时会保留旧数据库条件的 Redemption 例外：角色有 Redemption 时不会因 PK 点比较失败而拦截。如果脚本需要导入旧数据库，不要用数字 `0` 表示 PK 点阈值，因为旧数据库会把 `0` 当作 `Config.RedPoint`。
+
+名称列表和值命令的可选 `DataType` 支持 `None`、`User`、`Guild`、`Account`；省略时默认为 `User`。
 
 `#ELSESAY` 和 `#ELSEACT` 会在条件失败时执行。
 

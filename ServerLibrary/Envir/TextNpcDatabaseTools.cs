@@ -4,6 +4,7 @@ using MirDB;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -53,6 +54,8 @@ namespace Server.Envir
             TextNpcLoadResult loadResult = loader.Build(npcDirectory, strictMode);
             report.LoadReport = loadResult.Report;
 
+            List<CompiledTextNpcInfo> validatedNpcs = [];
+
             foreach (CompiledTextNpcInfo info in loadResult.NPCs)
             {
                 if (!ValidateForDatabase(info, report))
@@ -61,14 +64,21 @@ namespace Server.Envir
                     continue;
                 }
 
-                if (mode == TextNpcDatabaseImportMode.ValidateOnly)
-                {
-                    report.NpcsValidated++;
-                    continue;
-                }
-
-                ImportNpc(info, mode, report);
+                report.NpcsValidated++;
+                validatedNpcs.Add(info);
             }
+
+            if (mode == TextNpcDatabaseImportMode.ValidateOnly)
+                return report;
+
+            if (loadResult.Report.Failures.Count > 0)
+                report.Failures.Add("解析阶段存在错误，非验证导入已阻止；请修正文本 NPC 后重新导入。");
+
+            if (report.Failures.Count > 0)
+                return report;
+
+            foreach (CompiledTextNpcInfo info in validatedNpcs)
+                ImportNpc(info, mode, report);
 
             return report;
         }
@@ -98,6 +108,14 @@ namespace Server.Envir
                         check.CheckType == CompiledNpcCheckType.Minute)
                     {
                         report.Failures.Add(FormatIssue(info, page, check.Source, $"条件 `{check.CheckType}` 当前仅支持文本运行时，旧数据库条件没有等价映射。"));
+                        result = false;
+                    }
+
+                    if (check.CheckType == CompiledNpcCheckType.PKPoint &&
+                        check.IntParameter1 == 0 &&
+                        !check.UseRedPointThreshold)
+                    {
+                        report.Failures.Add(FormatIssue(info, page, check.Source, "CHECKPKPOINT 使用数字 0 不能无损导入旧数据库；旧数据库会把 0 解释为 Config.RedPoint，请改用 REDPOINT 表示默认红名阈值。"));
                         result = false;
                     }
 
@@ -188,43 +206,60 @@ namespace Server.Envir
 
         private void ImportNpc(CompiledTextNpcInfo info, TextNpcDatabaseImportMode mode, TextNpcDatabaseImportReport report)
         {
+            ImportReportCounters counters = ImportReportCounters.Capture(report);
+            int failureCount = report.Failures.Count;
             NPCInfo target = FindTargetNpc(info);
-            bool created = false;
+            NpcImportSnapshot snapshot = target == null ? null : new NpcImportSnapshot(target);
+            List<NPCPage> createdPages = [];
+            NPCInfo createdNpc = null;
+            MapRegion createdRegion = null;
 
-            if (target == null)
+            try
             {
-                target = _npcs.CreateNewObject();
-                created = true;
-                report.NpcsCreated++;
+                Dictionary<string, NpcPageBuild> pageBuilds = CreatePages(info, createdPages);
+
+                foreach (NpcPageBuild build in pageBuilds.Values)
+                {
+                    PopulatePage(info, build.SourcePage, build.SourcePage.MainBlock, build.MainPage, pageBuilds, build.ElsePage, true, report);
+
+                    if (build.ElsePage != null)
+                        PopulatePage(info, build.SourcePage, build.SourcePage.ElseBlock, build.ElsePage, pageBuilds, null, false, report);
+                }
+
+                if (report.Failures.Count > failureCount)
+                    throw new InvalidOperationException("生成旧数据库 NPC 对象时出现映射错误。");
+
+                if (target == null)
+                {
+                    target = _npcs.CreateNewObject();
+                    createdNpc = target;
+                }
+
+                NPCPage oldEntryPage = target.EntryPage;
+                ApplyNpcInfo(target, info, out createdRegion);
+                target.EntryPage = pageBuilds.TryGetValue("@MAIN", out NpcPageBuild entry) ? entry.MainPage : pageBuilds.Values.First().MainPage;
+
+                if (createdNpc != null)
+                    report.NpcsCreated++;
+                else if (mode == TextNpcDatabaseImportMode.ReplaceExisting)
+                {
+                    DeleteOwnedPageTree(target, oldEntryPage);
+                    report.NpcsReplaced++;
+                }
+                else
+                {
+                    report.NpcsMerged++;
+                    report.NpcsUpdated++;
+                }
+
+                report.NpcsImported++;
             }
-            else if (mode == TextNpcDatabaseImportMode.ReplaceExisting)
+            catch (Exception ex)
             {
-                ClearOwnedPageTree(target);
-                report.NpcsReplaced++;
+                counters.Restore(report);
+                RollbackNpcImport(target, createdNpc, snapshot, createdPages, createdRegion);
+                report.Failures.Add($"{info.NPCName}: 导入失败，已回滚本 NPC: {ex.Message}");
             }
-            else
-            {
-                report.NpcsMerged++;
-            }
-
-            ApplyNpcInfo(target, info);
-
-            Dictionary<string, NpcPageBuild> pageBuilds = CreatePages(info);
-
-            foreach (NpcPageBuild build in pageBuilds.Values)
-            {
-                PopulatePage(info, build.SourcePage, build.SourcePage.MainBlock, build.MainPage, pageBuilds, build.ElsePage, true, report);
-
-                if (build.ElsePage != null)
-                    PopulatePage(info, build.SourcePage, build.SourcePage.ElseBlock, build.ElsePage, pageBuilds, null, false, report);
-            }
-
-            target.EntryPage = pageBuilds.TryGetValue("@MAIN", out NpcPageBuild entry) ? entry.MainPage : pageBuilds.Values.First().MainPage;
-
-            if (!created && mode != TextNpcDatabaseImportMode.ReplaceExisting)
-                report.NpcsUpdated++;
-
-            report.NpcsImported++;
         }
 
         private NPCInfo FindTargetNpc(CompiledTextNpcInfo info)
@@ -243,15 +278,16 @@ namespace Server.Envir
                 RegionContains(x.Region, info.Location));
         }
 
-        private void ApplyNpcInfo(NPCInfo target, CompiledTextNpcInfo info)
+        private void ApplyNpcInfo(NPCInfo target, CompiledTextNpcInfo info, out MapRegion createdRegion)
         {
+            createdRegion = null;
             target.NPCName = info.NPCName;
             target.Image = info.Image;
             target.FaceImage = info.FaceImage;
             target.MapIcon = info.MapIcon;
 
             if (target.Region == null || target.Region.Map != info.Map || !RegionContains(target.Region, info.Location))
-                target.Region = CreateSinglePointRegion(info);
+                target.Region = createdRegion = CreateSinglePointRegion(info);
         }
 
         private MapRegion CreateSinglePointRegion(CompiledTextNpcInfo info)
@@ -265,14 +301,14 @@ namespace Server.Envir
             return region;
         }
 
-        private Dictionary<string, NpcPageBuild> CreatePages(CompiledTextNpcInfo info)
+        private Dictionary<string, NpcPageBuild> CreatePages(CompiledTextNpcInfo info, List<NPCPage> createdPages)
         {
             Dictionary<string, NpcPageBuild> result = new(StringComparer.OrdinalIgnoreCase);
 
             foreach (CompiledNpcPage sourcePage in info.Script.Pages.Values)
             {
-                NPCPage main = CreatePage(info, sourcePage, sourcePage.Key);
-                NPCPage elsePage = sourcePage.ElseBlock.IsEmpty ? null : CreatePage(info, sourcePage, $"{sourcePage.Key}_ELSE");
+                NPCPage main = CreatePage(info, sourcePage, sourcePage.Key, createdPages);
+                NPCPage elsePage = sourcePage.ElseBlock.IsEmpty ? null : CreatePage(info, sourcePage, $"{sourcePage.Key}_ELSE", createdPages);
 
                 result[sourcePage.Key] = new NpcPageBuild
                 {
@@ -285,9 +321,10 @@ namespace Server.Envir
             return result;
         }
 
-        private NPCPage CreatePage(CompiledTextNpcInfo info, CompiledNpcPage sourcePage, string key)
+        private NPCPage CreatePage(CompiledTextNpcInfo info, CompiledNpcPage sourcePage, string key, List<NPCPage> createdPages)
         {
             NPCPage page = _pages.CreateNewObject();
+            createdPages?.Add(page);
             page.Description = $"{info.NPCName}:{key}";
             page.DialogType = sourcePage.DialogType;
             page.Currency = sourcePage.Currency;
@@ -470,6 +507,8 @@ namespace Server.Envir
                     break;
                 case CompiledNpcCheckType.PKPoint:
                     check.CheckType = NPCCheckType.PKPoints;
+                    if (source.UseRedPointThreshold)
+                        check.IntParameter1 = 0;
                     break;
                 case CompiledNpcCheckType.Random:
                     check.CheckType = NPCCheckType.Random;
@@ -580,11 +619,11 @@ namespace Server.Envir
             return action;
         }
 
-        private void ClearOwnedPageTree(NPCInfo npc)
+        private void DeleteOwnedPageTree(NPCInfo npc, NPCPage entryPage)
         {
-            if (npc.EntryPage == null) return;
+            if (entryPage == null) return;
 
-            HashSet<NPCPage> ownPages = CollectPages(npc.EntryPage);
+            HashSet<NPCPage> ownPages = CollectPages(entryPage);
             HashSet<NPCPage> otherPages = [];
 
             foreach (NPCInfo other in _npcs.Binding)
@@ -595,10 +634,28 @@ namespace Server.Envir
                     otherPages.Add(page);
             }
 
-            npc.EntryPage = null;
-
             foreach (NPCPage page in ownPages.Where(x => !otherPages.Contains(x)).ToArray())
                 DeletePage(page);
+        }
+
+        private static void RollbackNpcImport(
+            NPCInfo target,
+            NPCInfo createdNpc,
+            NpcImportSnapshot snapshot,
+            List<NPCPage> createdPages,
+            MapRegion createdRegion)
+        {
+            if (target != null && snapshot != null)
+                snapshot.Restore(target);
+
+            foreach (NPCPage page in createdPages)
+                DeletePage(page);
+
+            if (createdNpc != null)
+                createdNpc.Delete();
+
+            if (createdRegion != null)
+                createdRegion.Delete();
         }
 
         private static HashSet<NPCPage> CollectPages(NPCPage entryPage)
@@ -695,6 +752,86 @@ namespace Server.Envir
             public NPCPage MainPage;
             public NPCPage ElsePage;
         }
+
+        private sealed class NpcImportSnapshot
+        {
+            private readonly string _npcName;
+            private readonly int _image;
+            private readonly int _faceImage;
+            private readonly MapIcon _mapIcon;
+            private readonly MapRegion _region;
+            private readonly NPCPage _entryPage;
+
+            public NpcImportSnapshot(NPCInfo npc)
+            {
+                _npcName = npc.NPCName;
+                _image = npc.Image;
+                _faceImage = npc.FaceImage;
+                _mapIcon = npc.MapIcon;
+                _region = npc.Region;
+                _entryPage = npc.EntryPage;
+            }
+
+            public void Restore(NPCInfo npc)
+            {
+                npc.NPCName = _npcName;
+                npc.Image = _image;
+                npc.FaceImage = _faceImage;
+                npc.MapIcon = _mapIcon;
+                npc.Region = _region;
+                npc.EntryPage = _entryPage;
+            }
+        }
+
+        private readonly struct ImportReportCounters
+        {
+            private readonly int _npcsImported;
+            private readonly int _npcsCreated;
+            private readonly int _npcsUpdated;
+            private readonly int _npcsReplaced;
+            private readonly int _npcsMerged;
+            private readonly int _pagesCreated;
+            private readonly int _buttonsCreated;
+            private readonly int _checksCreated;
+            private readonly int _actionsCreated;
+            private readonly int _goodsCreated;
+            private readonly int _typesCreated;
+
+            private ImportReportCounters(TextNpcDatabaseImportReport report)
+            {
+                _npcsImported = report.NpcsImported;
+                _npcsCreated = report.NpcsCreated;
+                _npcsUpdated = report.NpcsUpdated;
+                _npcsReplaced = report.NpcsReplaced;
+                _npcsMerged = report.NpcsMerged;
+                _pagesCreated = report.PagesCreated;
+                _buttonsCreated = report.ButtonsCreated;
+                _checksCreated = report.ChecksCreated;
+                _actionsCreated = report.ActionsCreated;
+                _goodsCreated = report.GoodsCreated;
+                _typesCreated = report.TypesCreated;
+            }
+
+            public static ImportReportCounters Capture(TextNpcDatabaseImportReport report)
+            {
+                return new ImportReportCounters(report);
+            }
+
+            public void Restore(TextNpcDatabaseImportReport report)
+            {
+                report.NpcsImported = _npcsImported;
+                report.NpcsCreated = _npcsCreated;
+                report.NpcsUpdated = _npcsUpdated;
+                report.NpcsReplaced = _npcsReplaced;
+                report.NpcsMerged = _npcsMerged;
+                report.PagesCreated = _pagesCreated;
+                report.ButtonsCreated = _buttonsCreated;
+                report.ChecksCreated = _checksCreated;
+                report.ActionsCreated = _actionsCreated;
+                report.GoodsCreated = _goodsCreated;
+                report.TypesCreated = _typesCreated;
+            }
+        }
     }
 
     public sealed class TextNpcDatabaseExporter
@@ -703,30 +840,43 @@ namespace Server.Envir
 
         public TextNpcExportReport Export(string npcDirectory, IEnumerable<NPCInfo> npcs, bool overwrite)
         {
-            if (string.IsNullOrWhiteSpace(npcDirectory))
-                throw new ArgumentException("NPC 导出目录不能为空。", nameof(npcDirectory));
-
-            npcDirectory = Path.GetFullPath(npcDirectory);
-            Directory.CreateDirectory(npcDirectory);
-
             TextNpcExportReport report = new();
+            if (string.IsNullOrWhiteSpace(npcDirectory))
+            {
+                report.Failures.Add("NPC 导出目录不能为空。");
+                return report;
+            }
+
+            try
+            {
+                npcDirectory = Path.GetFullPath(npcDirectory);
+                Directory.CreateDirectory(npcDirectory);
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+            {
+                report.Failures.Add($"创建 NPC 导出目录失败: {npcDirectory} ({ex.Message})");
+                return report;
+            }
+
             string infoPath = Path.Combine(npcDirectory, "NPCInfo.txt");
             string todoReportPath = Path.Combine(npcDirectory, TextNpcExportReport.DefaultTodoReportFileName);
-            if (File.Exists(infoPath) && !overwrite)
-                throw new IOException($"导出文件已存在: {infoPath}");
-            if (File.Exists(todoReportPath) && !overwrite)
-                throw new IOException($"导出文件已存在: {todoReportPath}");
 
             report.InfoPath = infoPath;
             report.TodoReportPath = todoReportPath;
 
+            if (!CanWriteOutput(infoPath, overwrite, report, "NPCInfo.txt") ||
+                !CanWriteOutput(todoReportPath, overwrite, report, TextNpcExportReport.DefaultTodoReportFileName))
+                return report;
+
             StringBuilder info = new();
+            List<(string Path, string Text, string Description)> scriptOutputs = [];
 
             foreach (NPCInfo npc in npcs.Where(x => x != null).OrderBy(x => x.Index))
             {
                 report.NpcsVisited++;
 
                 string scriptFile = $"{SanitizeFileName(npc.NPCName)}_{npc.Index}.txt";
+                string scriptPath = Path.Combine(npcDirectory, scriptFile);
                 if (npc.Region?.Map == null)
                 {
                     report.NpcsSkipped++;
@@ -743,20 +893,35 @@ namespace Server.Envir
 
                 Point point = npc.Region.PointList?.FirstOrDefault() ?? npc.Region.PointRegion?.FirstOrDefault() ?? Point.Empty;
 
+                if (!BuildScript(scriptPath, npc, overwrite, report, out string scriptText))
+                {
+                    report.NpcsSkipped++;
+                    continue;
+                }
+
+                scriptOutputs.Add((scriptPath, scriptText, scriptFile));
                 info.AppendLine($"{Quote(npc.Region.Map.FileName)} {point.X} {point.Y} {Quote(npc.NPCName)} {npc.Image} {npc.FaceImage} {Quote(scriptFile)} MapIcon={npc.MapIcon} OverrideIndex={npc.Index}");
-                ExportScript(Path.Combine(npcDirectory, scriptFile), npc, overwrite, report);
                 report.NpcsExported++;
             }
 
-            File.WriteAllText(infoPath, info.ToString(), Encoding.UTF8);
-            File.WriteAllText(todoReportPath, report.BuildTodoDetailsText(), Encoding.UTF8);
+            bool scriptsWritten = true;
+            foreach ((string path, string text, string description) in scriptOutputs)
+                scriptsWritten &= TryWriteAllText(path, text, report, description);
+
+            if (scriptsWritten)
+                TryWriteAllText(infoPath, info.ToString(), report, "NPCInfo.txt");
+            else
+                report.Failures.Add("部分 NPC 脚本写入失败，NPCInfo.txt 未更新，避免生成引用缺失脚本的索引。");
+
+            TryWriteAllText(todoReportPath, report.BuildTodoDetailsText(), report, TextNpcExportReport.DefaultTodoReportFileName);
             return report;
         }
 
-        private static void ExportScript(string path, NPCInfo npc, bool overwrite, TextNpcExportReport report)
+        private static bool BuildScript(string path, NPCInfo npc, bool overwrite, TextNpcExportReport report, out string scriptText)
         {
-            if (File.Exists(path) && !overwrite)
-                throw new IOException($"导出文件已存在: {path}");
+            scriptText = string.Empty;
+            if (!CanWriteOutput(path, overwrite, report, Path.GetFileName(path)))
+                return false;
 
             string scriptFile = Path.GetFileName(path);
             Dictionary<NPCPage, string> keys = BuildPageKeys(npc.EntryPage);
@@ -821,7 +986,62 @@ namespace Server.Envir
                 report.PagesExported++;
             }
 
-            File.WriteAllText(path, script.ToString(), Encoding.UTF8);
+            scriptText = script.ToString();
+            return true;
+        }
+
+        private static bool CanWriteOutput(string path, bool overwrite, TextNpcExportReport report, string description)
+        {
+            if (overwrite || !File.Exists(path))
+                return true;
+
+            report.Failures.Add($"{description} 已存在，未覆盖: {path}");
+            return false;
+        }
+
+        private static bool TryWriteAllText(string path, string text, TextNpcExportReport report, string description)
+        {
+            string tempPath = null;
+
+            try
+            {
+                string directory = Path.GetDirectoryName(path);
+                string fileName = Path.GetFileName(path);
+                tempPath = Path.Combine(string.IsNullOrEmpty(directory) ? "." : directory, $".{fileName}.{Guid.NewGuid():N}.tmp");
+
+                File.WriteAllText(tempPath, text, Encoding.UTF8);
+                ReplaceOrMoveTempFile(tempPath, path);
+                tempPath = null;
+                return true;
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+            {
+                TryDeleteTempFile(tempPath);
+                report.Failures.Add($"{description} 写入失败: {path} ({ex.Message})");
+                return false;
+            }
+        }
+
+        private static void TryDeleteTempFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+            }
+        }
+
+        private static void ReplaceOrMoveTempFile(string tempPath, string destinationPath)
+        {
+            if (File.Exists(destinationPath))
+                File.Replace(tempPath, destinationPath, null);
+            else
+                File.Move(tempPath, destinationPath);
         }
 
         private static Dictionary<NPCPage, string> BuildPageKeys(NPCPage entryPage)
@@ -1024,7 +1244,7 @@ namespace Server.Envir
                     }
                     break;
                 case NPCCheckType.PKPoints:
-                    script.AppendLine($"CHECKPKPOINT {OperatorText(check.Operator)} {(check.IntParameter1 == 0 ? Config.RedPoint : check.IntParameter1)}");
+                    script.AppendLine($"CHECKPKPOINT {OperatorText(check.Operator)} {FormatPKPointValue(check.IntParameter1)}");
                     report.ChecksExported++;
                     break;
                 case NPCCheckType.Random:
@@ -1216,7 +1436,7 @@ namespace Server.Envir
                     continue;
                 }
 
-                script.AppendLine($"{Quote(good.Item.ItemName)} {good.Rate}");
+                script.AppendLine($"{Quote(good.Item.ItemName)} {good.Rate.ToString(CultureInfo.InvariantCulture)}");
                 report.GoodsExported++;
             }
         }
@@ -1254,7 +1474,7 @@ namespace Server.Envir
 
             return DbButtonRegex.Replace(say, match =>
             {
-                if (!int.TryParse(match.Groups["ID"].Value, out int id)) return match.Value;
+                if (!int.TryParse(match.Groups["ID"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int id)) return match.Value;
                 if (id == 0) return $"<{match.Groups["Text"].Value}/@EXIT>";
                 if (!buttons.TryGetValue(id, out NPCButton button))
                 {
@@ -1355,12 +1575,17 @@ namespace Server.Envir
             };
         }
 
+        private static string FormatPKPointValue(int value)
+        {
+            return value == 0 ? "REDPOINT" : value.ToString(CultureInfo.InvariantCulture);
+        }
+
         private static string FormatHorseType(int value)
         {
             if (value >= byte.MinValue && value <= byte.MaxValue && Enum.IsDefined(typeof(HorseType), (byte)value))
                 return ((HorseType)(byte)value).ToString();
 
-            return value.ToString();
+            return value.ToString(CultureInfo.InvariantCulture);
         }
 
         private static string FormatElement(int value)
@@ -1368,7 +1593,7 @@ namespace Server.Envir
             if (value >= byte.MinValue && value <= byte.MaxValue && Enum.IsDefined(typeof(Element), (byte)value))
                 return ((Element)(byte)value).ToString();
 
-            return value.ToString();
+            return value.ToString(CultureInfo.InvariantCulture);
         }
 
         private static string Quote(string value)
@@ -1436,6 +1661,7 @@ namespace Server.Envir
         public int TodoLines;
         public List<string> Todos { get; } = [];
         public List<TextNpcExportTodo> TodoDetails { get; } = [];
+        public List<string> Failures { get; } = [];
 
         public string ToDisplayText()
         {
@@ -1443,7 +1669,7 @@ namespace Server.Envir
                 $"输出 NPCInfo: {InfoPath}\r\n" +
                 $"TODO 明细报告: {TodoReportPath}\r\n" +
                 $"访问NPC={NpcsVisited}, 导出NPC={NpcsExported}, 跳过NPC={NpcsSkipped}, 页面={PagesExported}, 按钮={ButtonsExported}\r\n" +
-                $"条件={ChecksExported}, 动作={ActionsExported}, 商品={GoodsExported}, 类型={TypesExported}, TODO={TodoLines}";
+                $"条件={ChecksExported}, 动作={ActionsExported}, 商品={GoodsExported}, 类型={TypesExported}, TODO={TodoLines}, 失败={Failures.Count}";
         }
 
         public string BuildTodoDetailsText()
@@ -1457,12 +1683,21 @@ namespace Server.Envir
             builder.AppendLine("汇总");
             builder.AppendLine($"访问NPC={NpcsVisited}, 导出NPC={NpcsExported}, 跳过NPC={NpcsSkipped}");
             builder.AppendLine($"页面={PagesExported}, 按钮={ButtonsExported}, 条件={ChecksExported}, 动作={ActionsExported}, 商品={GoodsExported}, 类型={TypesExported}");
-            builder.AppendLine($"TODO={TodoLines}");
+            builder.AppendLine($"TODO={TodoLines}, 失败={Failures.Count}");
             builder.AppendLine();
+
+            if (Failures.Count > 0)
+            {
+                builder.AppendLine("失败明细");
+                foreach (string failure in Failures)
+                    builder.AppendLine("- " + failure);
+                builder.AppendLine();
+            }
 
             if (TodoDetails.Count == 0)
             {
-                builder.AppendLine("当前导出没有产生 TODO。");
+                if (Failures.Count == 0)
+                    builder.AppendLine("当前导出没有产生 TODO。");
                 return builder.ToString();
             }
 
