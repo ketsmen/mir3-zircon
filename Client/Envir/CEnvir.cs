@@ -49,9 +49,11 @@ namespace Client.Envir
 
         public static Dictionary<LibraryFile, MirLibrary> LibraryList = new Dictionary<LibraryFile, MirLibrary>();
         public static Dictionary<string, MirLibrary> DynamicLibraryList = new Dictionary<string, MirLibrary>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object DynamicLibraryLock = new object();
         public static List<string> DynamicLibraryDiagnostics = new List<string>();
         private static readonly object DynamicLibraryDiagnosticLock = new object();
         public static Dictionary<int, CustomSkillInfo> ClientCustomSkillOverrideList = new Dictionary<int, CustomSkillInfo>();
+        private static readonly object ClientCustomSkillOverrideLock = new object();
 
         public static ClientUserItem[] Storage, MainStorage, PartsStorage, MainPartsStorage;
 
@@ -103,13 +105,17 @@ namespace Client.Envir
                 return false;
             }
 
-            if (DynamicLibraryList.TryGetValue(resource.Key, out library))
-                return library != null;
+            string cacheKey = GetCustomLibraryCacheKey(resource);
+
+            lock (DynamicLibraryLock)
+            {
+                if (DynamicLibraryList.TryGetValue(cacheKey, out library))
+                    return library != null;
+            }
 
             if (!File.Exists(fullPath))
             {
                 AddDynamicLibraryDiagnostic($"缺少自定义资源文件: {resource.Key} -> {resource.RelativePath}");
-                DynamicLibraryList[resource.Key] = null;
                 return false;
             }
 
@@ -118,22 +124,36 @@ namespace Client.Envir
 
             try
             {
-                library = new MirLibrary(fullPath);
-                DynamicLibraryList[resource.Key] = library;
+                MirLibrary loadedLibrary = new MirLibrary(fullPath);
+
+                lock (DynamicLibraryLock)
+                {
+                    if (DynamicLibraryList.TryGetValue(cacheKey, out library))
+                    {
+                        loadedLibrary.Dispose();
+                        return library != null;
+                    }
+
+                    library = loadedLibrary;
+                    DynamicLibraryList[cacheKey] = library;
+                }
+
                 return true;
             }
             catch (Exception ex)
             {
                 AddDynamicLibraryDiagnostic($"自定义资源加载失败: {resource.Key} -> {resource.RelativePath}, {ex.Message}");
-                DynamicLibraryList[resource.Key] = null;
                 return false;
             }
         }
 
         public static bool TryGetCustomSkill(int magicInfoIndex, out CustomSkillInfo skill)
         {
-            if (ClientCustomSkillOverrideList.TryGetValue(magicInfoIndex, out skill) && skill?.Enabled == true)
-                return true;
+            lock (ClientCustomSkillOverrideLock)
+            {
+                if (ClientCustomSkillOverrideList.TryGetValue(magicInfoIndex, out skill))
+                    return skill?.Enabled == true;
+            }
 
             skill = Globals.CustomSkillInfoList?.Binding.FirstOrDefault(x => x?.Magic?.Index == magicInfoIndex && x.Enabled);
             return skill != null;
@@ -194,7 +214,10 @@ namespace Client.Envir
                     skill.Effects.Add(effect);
                 }
 
-            ClientCustomSkillOverrideList[info.MagicIndex] = skill;
+            lock (ClientCustomSkillOverrideLock)
+            {
+                ClientCustomSkillOverrideList[info.MagicIndex] = skill;
+            }
         }
 
         public static void SyncClientCustomSkillOverride(int magicInfoIndex, S.ClientCustomSkillInfo info)
@@ -206,7 +229,10 @@ namespace Client.Envir
             }
 
             if (magicInfoIndex > 0)
-                ClientCustomSkillOverrideList.Remove(magicInfoIndex);
+                lock (ClientCustomSkillOverrideLock)
+                {
+                    ClientCustomSkillOverrideList[magicInfoIndex] = null;
+                }
         }
 
         private static CustomResourceLibraryInfo CreateRuntimeCustomResource(S.ClientCustomResourceLibraryInfo info)
@@ -226,22 +252,40 @@ namespace Client.Envir
             };
         }
 
+        private static string GetCustomLibraryCacheKey(CustomResourceLibraryInfo resource)
+        {
+            return string.Join("|",
+                resource.Key?.Trim() ?? string.Empty,
+                resource.RelativePath?.Trim() ?? string.Empty,
+                resource.LibraryFile,
+                resource.Hash?.Trim() ?? string.Empty,
+                resource.Version?.Trim() ?? string.Empty);
+        }
+
         private static bool TryGetSafeCustomPath(string relativePath, out string fullPath)
         {
             fullPath = null;
 
-            if (string.IsNullOrWhiteSpace(relativePath) || Path.IsPathRooted(relativePath))
+            try
+            {
+                if (string.IsNullOrWhiteSpace(relativePath) || Path.IsPathRooted(relativePath))
+                    return false;
+
+                string normalized = relativePath.Replace('/', Path.DirectorySeparatorChar).TrimStart(Path.DirectorySeparatorChar);
+                if (normalized.Contains(".." + Path.DirectorySeparatorChar) || normalized.Equals("..", StringComparison.Ordinal))
+                    return false;
+
+                string customRoot = Path.GetFullPath(Path.Combine(Application.StartupPath, "Data", "Custom"));
+                fullPath = Path.GetFullPath(Path.Combine(Application.StartupPath, normalized));
+
+                return fullPath.StartsWith(customRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(fullPath, customRoot, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+            {
+                fullPath = null;
                 return false;
-
-            string normalized = relativePath.Replace('/', Path.DirectorySeparatorChar).TrimStart(Path.DirectorySeparatorChar);
-            if (normalized.Contains(".." + Path.DirectorySeparatorChar) || normalized.Equals("..", StringComparison.Ordinal))
-                return false;
-
-            string customRoot = Path.GetFullPath(Path.Combine(Application.StartupPath, "Data", "Custom"));
-            fullPath = Path.GetFullPath(Path.Combine(Application.StartupPath, normalized));
-
-            return fullPath.StartsWith(customRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(fullPath, customRoot, StringComparison.OrdinalIgnoreCase);
+            }
         }
 
         private static bool HashMatches(string fullPath, string expectedHash)
@@ -334,17 +378,57 @@ namespace Client.Envir
             if (!Directory.Exists(path))
                 Directory.CreateDirectory(path);
 
-            if (File.Exists(path + "\\CheckSum.bin"))
+            string checkSumPath = Path.Combine(path, "CheckSum.bin");
+            if (File.Exists(checkSumPath))
             {
-                using (BinaryReader E = new BinaryReader(File.OpenRead(path + "\\CheckSum.bin")))
+                using (BinaryReader E = new BinaryReader(File.OpenRead(checkSumPath)))
                     C = E.ReadString();
             }
             else
             {
-                using (BinaryWriter E = new BinaryWriter(File.Create(path + "\\CheckSum.bin")))
-                    E.Write(C = Functions.RandomString(Random, 20));
+                string generated = Functions.RandomString(Random, 20);
+                WriteCheckSumAtomically(checkSumPath, generated);
+                C = generated;
             }
 
+        }
+
+        private static void WriteCheckSumAtomically(string path, string value)
+        {
+            string fullPath = Path.GetFullPath(path);
+            string directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            string tempDirectory = string.IsNullOrEmpty(directory) ? "." : directory;
+            string tempPath = Path.Combine(tempDirectory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+
+            try
+            {
+                using (BinaryWriter writer = new BinaryWriter(File.Create(tempPath)))
+                    writer.Write(value);
+
+                File.Move(tempPath, fullPath);
+            }
+            catch
+            {
+                TryDeleteTempFile(tempPath);
+                throw;
+            }
+        }
+
+        private static void TryDeleteTempFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+            }
         }
 
         public static void SaveChatLoop()
@@ -1213,12 +1297,25 @@ namespace Client.Envir
 
             con?.Disconnect();
 
-            foreach (MirLibrary library in DynamicLibraryList.Values.Where(x => x != null))
+            List<MirLibrary> dynamicLibraries;
+            lock (DynamicLibraryLock)
+            {
+                dynamicLibraries = DynamicLibraryList.Values.Where(x => x != null).ToList();
+                DynamicLibraryList.Clear();
+            }
+
+            foreach (MirLibrary library in dynamicLibraries)
                 library.Dispose();
 
-            DynamicLibraryList.Clear();
-            DynamicLibraryDiagnostics.Clear();
-            ClientCustomSkillOverrideList.Clear();
+            lock (DynamicLibraryDiagnosticLock)
+            {
+                DynamicLibraryDiagnostics.Clear();
+            }
+
+            lock (ClientCustomSkillOverrideLock)
+            {
+                ClientCustomSkillOverrideList.Clear();
+            }
         }
         public static KeyBindInfo GetKeyBind(KeyBindAction action)
         {

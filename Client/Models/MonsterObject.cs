@@ -251,6 +251,7 @@ namespace Client.Models
             BodyLibrary = null;
             UsingCustomVisual = false;
             CustomAnimationMap = null;
+            CustomAnimationLibraryMap = null;
 
             Frames = new Dictionary<MirAnimation, Frame>(FrameSet.DefaultMonster);
 

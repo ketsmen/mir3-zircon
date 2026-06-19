@@ -7,6 +7,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Server.Envir
 {
@@ -87,6 +88,8 @@ namespace Server.Envir
 
     public sealed class CustomSystemTextLoader
     {
+        private static readonly Regex IncludeRegex = new(@"^#(?:INSERT|INCLUDE)\s+\[(.*?)\]\s*(?:(?:;|//).*)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
         private static readonly HashSet<string> BoolActionOptions = new(StringComparer.OrdinalIgnoreCase)
         {
             "SuppressDrops",
@@ -300,6 +303,126 @@ namespace Server.Envir
             "FollowTarget",
         };
 
+        private static readonly HashSet<string> IntegerTextKeys = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "AI",
+            "Index",
+            "Level",
+            "ViewRange",
+            "CoolEye",
+            "AttackDelay",
+            "MoveDelay",
+            "FaceImage",
+            "Icon",
+            "MinBasePower",
+            "MaxBasePower",
+            "MinLevelPower",
+            "MaxLevelPower",
+            "BaseCost",
+            "LevelCost",
+            "NeedLevel1",
+            "NeedLevel2",
+            "NeedLevel3",
+            "Experience1",
+            "Experience2",
+            "Experience3",
+            "DefaultFrameDelay",
+            "FrameBase",
+            "BaseIndex",
+            "ShapeIndex",
+            "BodyShape",
+            "ShapeFrameOffset",
+            "BodyOffset",
+            "Variant",
+            "AnimationVariant",
+            "Start",
+            "StartIndex",
+            "End",
+            "EndIndex",
+            "FrameCount",
+            "DirectionCount",
+            "DirectionOffset",
+            "FrameDelay",
+            "OffsetX",
+            "OffsetY",
+            "Priority",
+            "EffectStart",
+            "EffectStartIndex",
+            "EffectEnd",
+            "EffectEndIndex",
+            "EffectFrameCount",
+            "EffectFrameDelay",
+            "EffectOffsetX",
+            "EffectOffsetY",
+            "EffectStartLight",
+            "EffectEndLight",
+            "EffectStartDelay",
+            "EffectDuration",
+            "EffectTriggerFrame",
+            "StartLight",
+            "EndLight",
+            "DamageProxyRevealDelay",
+            "DamageProxyRange",
+            "HarvestCount",
+            "PoisonValue",
+            "PoisonRate",
+            "PoisonTicks",
+            "PoisonFrequency",
+            "ProtectionRadius",
+            "ProtectionCheckInterval",
+            "AttackRange",
+            "ChaseRange",
+            "ReturnRange",
+            "MaxMinions",
+            "SkillChance",
+            "RoamDelay",
+            "Chance",
+            "Cooldown",
+            "MaxExecutions",
+            "Radius",
+            "MinHealthPercent",
+            "MaxHealthPercent",
+            "FixedPower",
+            "PowerRate",
+            "Distance",
+            "MinOffset",
+            "MaxOffset",
+            "Delay",
+            "TargetChance",
+            "EmptyLocationChance",
+            "MaxTargets",
+            "RandomTargetCount",
+            "RandomTargets",
+            "FixedCount",
+            "Count",
+            "RandomCount",
+            "MinionDuration",
+            "SummonDuration",
+            "BuffExtra",
+            "Duration",
+            "TickRate",
+            "Range",
+            "Length",
+            "Width",
+            "Angle",
+            "WaveCount",
+            "Waves",
+            "WaveInterval",
+            "KnockbackDistance",
+            "PushDistance",
+            "PullDistance",
+            "DurationPowerRate",
+            "CastDelay",
+            "ProjectileSpeed",
+            "MaxSummons",
+        };
+
+        private static readonly HashSet<string> DecimalTextKeys = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Experience",
+            "Scale",
+        };
+
         private readonly Session _session;
         private readonly Dictionary<string, MonsterInfo> _monsters;
         private readonly Dictionary<int, MonsterInfo> _monstersByIndex;
@@ -342,15 +465,15 @@ namespace Server.Envir
             Dictionary<string, CustomResourceLibraryInfo> resources = new(_resources, StringComparer.OrdinalIgnoreCase);
 
             LoadResources(directory, result, resources, createDetached: true);
-            IndexMonsterFilePrimaries(directory, createDetached: true, allowMissingPrimaryObject: false, includeTemplates: false);
-            Dictionary<string, bool> damageProxyMonsters = BuildDamageProxyMonsterLookup(directory, includeTemplates: false);
+            IndexMonsterFilePrimaries(directory, result.Report, createDetached: true, allowMissingPrimaryObject: false, includeTemplates: false);
+            Dictionary<string, bool> damageProxyMonsters = BuildDamageProxyMonsterLookup(directory, result.Report, includeTemplates: false);
             LoadSkillFiles(directory, result, resources, damageProxyMonsters, createDetached: true, allowMissingPrimaryObject: false, strictMode: strictMode, replaceExisting: false, includeTemplates: false);
             LoadMonsterFiles(directory, result, resources, createDetached: true, allowMissingPrimaryObject: false, strictMode, replaceExisting: false, includeTemplates: false);
 
             return result;
         }
 
-        internal CustomSystemTextLoadResult BuildForDatabaseImport(string directory, CustomSystemImportMode mode)
+        internal CustomSystemTextLoadResult BuildForDatabaseImport(string directory, CustomSystemImportMode mode, bool includeTemplatesInValidation = false)
         {
             CustomSystemTextLoadResult result = new();
             if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
@@ -362,12 +485,13 @@ namespace Server.Envir
             Dictionary<string, CustomResourceLibraryInfo> resources = new(_resources, StringComparer.OrdinalIgnoreCase);
 
             bool validateOnly = mode == CustomSystemImportMode.ValidateOnly;
+            bool includeTemplates = validateOnly && includeTemplatesInValidation;
 
             LoadResources(directory, result, resources, createDetached: validateOnly);
-            IndexMonsterFilePrimaries(directory, createDetached: validateOnly, allowMissingPrimaryObject: true, includeTemplates: validateOnly);
-            Dictionary<string, bool> damageProxyMonsters = BuildDamageProxyMonsterLookup(directory, includeTemplates: validateOnly);
-            LoadSkillFiles(directory, result, resources, damageProxyMonsters, createDetached: validateOnly, allowMissingPrimaryObject: true, strictMode: true, replaceExisting: mode == CustomSystemImportMode.ReplaceExisting, includeTemplates: validateOnly);
-            LoadMonsterFiles(directory, result, resources, createDetached: validateOnly, allowMissingPrimaryObject: true, strictMode: true, replaceExisting: mode == CustomSystemImportMode.ReplaceExisting, includeTemplates: validateOnly);
+            IndexMonsterFilePrimaries(directory, result.Report, createDetached: validateOnly, allowMissingPrimaryObject: true, includeTemplates: includeTemplates);
+            Dictionary<string, bool> damageProxyMonsters = BuildDamageProxyMonsterLookup(directory, result.Report, includeTemplates: includeTemplates);
+            LoadSkillFiles(directory, result, resources, damageProxyMonsters, createDetached: validateOnly, allowMissingPrimaryObject: true, strictMode: true, replaceExisting: mode == CustomSystemImportMode.ReplaceExisting, includeTemplates: includeTemplates);
+            LoadMonsterFiles(directory, result, resources, createDetached: validateOnly, allowMissingPrimaryObject: true, strictMode: true, replaceExisting: mode == CustomSystemImportMode.ReplaceExisting, includeTemplates: includeTemplates);
 
             return result;
         }
@@ -377,7 +501,9 @@ namespace Server.Envir
             string path = Path.Combine(directory, "Resources.txt");
             if (!File.Exists(path)) return;
 
-            foreach (CustomTextLine line in ReadCleanLines(path, directory, result.Report, []))
+            HashSet<string> fileResourceKeys = new(StringComparer.OrdinalIgnoreCase);
+
+            foreach (CustomTextLine line in ReadCleanLines(path, directory, result.Report, new HashSet<string>(StringComparer.OrdinalIgnoreCase)))
             {
                 List<string> tokens = Tokenize(line.Text);
                 if (tokens.Count < 1)
@@ -387,6 +513,19 @@ namespace Server.Envir
                 }
 
                 string key = tokens[0].Trim();
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    result.Report.Failures.Add($"{line.Source}: Resources.txt Key 不能为空。");
+                    continue;
+                }
+
+                string normalizedKey = Normalize(key);
+                if (!fileResourceKeys.Add(normalizedKey))
+                {
+                    result.Report.Failures.Add($"{line.Source}: Resources.txt 存在重复资源 Key `{key}`。");
+                    continue;
+                }
+
                 int optionStart = 1;
                 string relativePath = null;
 
@@ -416,11 +555,13 @@ namespace Server.Envir
                     continue;
                 }
 
-                CustomResourceLibraryInfo resource = createDetached ? new CustomResourceLibraryInfo() : resources.GetValueOrDefault(Normalize(key));
+                CustomResourceLibraryInfo resource = createDetached ? new CustomResourceLibraryInfo() : resources.GetValueOrDefault(normalizedKey);
                 if (!createDetached)
                     resource ??= _session.GetCollection<CustomResourceLibraryInfo>().CreateNewObject();
                 else if (resource == null)
                     continue;
+
+                bool isNewResource = string.IsNullOrWhiteSpace(resource.Key);
 
                 resource.Key = key;
                 resource.RelativePath = relativePath;
@@ -428,27 +569,27 @@ namespace Server.Envir
                 resource.DisplayName = GetOption(options, "DisplayName", resource.DisplayName);
                 resource.Hash = GetOption(options, "Hash", resource.Hash);
                 resource.Version = GetOption(options, "Version", resource.Version);
-                resource.Enabled = GetBool(options, "Enabled", true);
-                resource.Scope = GetEnum(options, "Scope", CustomResourceScope.Both, result.Report, line.Source);
+                resource.Enabled = GetBool(options, "Enabled", isNewResource ? true : resource.Enabled);
+                resource.Scope = GetEnum(options, "Scope", isNewResource ? CustomResourceScope.Both : resource.Scope, result.Report, line.Source);
 
-                resources[Normalize(key)] = resource;
+                resources[normalizedKey] = resource;
                 result.Resources.Add(resource);
                 result.Report.ResourcesLoaded++;
             }
         }
 
-        private void IndexMonsterFilePrimaries(string directory, bool createDetached, bool allowMissingPrimaryObject, bool includeTemplates)
+        private void IndexMonsterFilePrimaries(string directory, CustomSystemTextReport report, bool createDetached, bool allowMissingPrimaryObject, bool includeTemplates)
         {
             string monstersDirectory = Path.Combine(directory, "Monsters");
             if (!Directory.Exists(monstersDirectory)) return;
 
-            foreach (string file in EnumerateCustomTextFiles(monstersDirectory, includeTemplates))
+            foreach (string file in EnumerateCustomTextFiles(monstersDirectory, includeTemplates, report))
             {
-                CustomTextDocument document = ReadDocument(file, directory, new CustomSystemTextReport());
+                CustomTextDocument document = ReadDocument(file, directory, report);
                 CustomTextSection monsterSection = document.First("Monster");
                 if (monsterSection == null) continue;
 
-                MonsterInfo monster = ResolveMonster(monsterSection.Values, file, new CustomSystemTextReport(), allowMissingPrimaryObject, createDetached);
+                MonsterInfo monster = ResolveMonster(monsterSection.Values, file, report, allowMissingPrimaryObject, createDetached);
                 if (monster == null) continue;
 
                 if (createDetached)
@@ -458,7 +599,7 @@ namespace Server.Envir
             }
         }
 
-        private Dictionary<string, bool> BuildDamageProxyMonsterLookup(string directory, bool includeTemplates)
+        private Dictionary<string, bool> BuildDamageProxyMonsterLookup(string directory, CustomSystemTextReport report, bool includeTemplates)
         {
             Dictionary<string, bool> result = new(StringComparer.OrdinalIgnoreCase);
 
@@ -468,9 +609,12 @@ namespace Server.Envir
             string monstersDirectory = Path.Combine(directory, "Monsters");
             if (!Directory.Exists(monstersDirectory)) return result;
 
-            foreach (string file in EnumerateCustomTextFiles(monstersDirectory, includeTemplates))
+            foreach (string file in EnumerateCustomTextFiles(monstersDirectory, includeTemplates, report))
             {
-                CustomTextDocument document = ReadDocument(file, directory, new CustomSystemTextReport());
+                int beforeFailures = report.Failures.Count;
+                CustomTextDocument document = ReadDocument(file, directory, report);
+                if (report.Failures.Count > beforeFailures) continue;
+
                 CustomTextSection monsterSection = document.First("Monster");
                 CustomTextSection behaviorSection = document.First("Behavior");
                 if (monsterSection == null || behaviorSection == null) continue;
@@ -523,13 +667,14 @@ namespace Server.Envir
 
             Dictionary<string, CustomSkillInfo> customSkillsByMagic = BuildCustomSkillLookup(result);
 
-            foreach (string file in EnumerateCustomTextFiles(monstersDirectory, includeTemplates))
+            foreach (string file in EnumerateCustomTextFiles(monstersDirectory, includeTemplates, result.Report))
             {
                 int beforeFailures = result.Report.Failures.Count;
                 CustomTextDocument document = ReadDocument(file, directory, result.Report);
                 if (document.Sections.Count == 0) continue;
 
                 ValidateKnownBooleanFields(document, result.Report);
+                ValidateKnownNumericFields(document, result.Report);
 
                 CustomTextSection monsterSection = document.First("Monster");
                 if (monsterSection == null)
@@ -567,13 +712,14 @@ namespace Server.Envir
                 CustomTextSection visualSection = document.First("Visual");
                 if (visualSection != null)
                 {
-                    CustomMonsterVisualInfo visual = createDetached ? new CustomMonsterVisualInfo() : null;
+                    CustomMonsterVisualInfo visual = createDetached ? CreateDetachedCustomMonsterVisual() : null;
                     if (!createDetached)
                     {
                         visual ??= _session.GetCollection<CustomMonsterVisualInfo>().Binding.FirstOrDefault(x => x.Monster == monster);
                         visual ??= _session.GetCollection<CustomMonsterVisualInfo>().CreateNewObject();
                     }
                     if (visual == null) continue;
+                    EnsureVisualChildren(visual);
                     if (replaceExisting)
                         ClearVisualChildren(visual);
                     else if (!createDetached)
@@ -596,13 +742,14 @@ namespace Server.Envir
                 CustomTextSection behaviorSection = document.First("Behavior");
                 if (behaviorSection != null)
                 {
-                    CustomMonsterBehaviorInfo behavior = createDetached ? new CustomMonsterBehaviorInfo() : null;
+                    CustomMonsterBehaviorInfo behavior = createDetached ? CreateDetachedCustomMonsterBehavior() : null;
                     if (!createDetached)
                     {
                         behavior ??= _session.GetCollection<CustomMonsterBehaviorInfo>().Binding.FirstOrDefault(x => x.Monster == monster);
                         behavior ??= _session.GetCollection<CustomMonsterBehaviorInfo>().CreateNewObject();
                     }
                     if (behavior == null) continue;
+                    EnsureBehaviorChildren(behavior);
                     if (replaceExisting)
                         ClearBehaviorChildren(behavior);
                     else if (!createDetached)
@@ -748,6 +895,12 @@ namespace Server.Envir
                 ValidateKnownBooleanOptions(section.Values, report, section.Source);
         }
 
+        private static void ValidateKnownNumericFields(CustomTextDocument document, CustomSystemTextReport report)
+        {
+            foreach (CustomTextSection section in document.Sections)
+                ValidateKnownNumericOptions(section.Values, report, section.Source, section.Name);
+        }
+
         private static void ValidateKnownBooleanOptions(Dictionary<string, string> values, CustomSystemTextReport report, string source)
         {
             foreach (KeyValuePair<string, string> pair in values)
@@ -757,6 +910,32 @@ namespace Server.Envir
 
                 report.Failures.Add($"{source}: `{pair.Key}` 布尔值无效: {pair.Value}，应为 True/False/1/0/yes/no。");
             }
+        }
+
+        private static void ValidateKnownNumericOptions(Dictionary<string, string> values, CustomSystemTextReport report, string source, string sectionName = null)
+        {
+            foreach (KeyValuePair<string, string> pair in values)
+            {
+                if (IntegerTextKeys.Contains(pair.Key) || IsSectionScopedIntegerKey(sectionName, pair.Key))
+                {
+                    if (!int.TryParse(pair.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                        report.Failures.Add($"{source}: `{pair.Key}` 数值无效: {pair.Value}，应为整数。");
+
+                    continue;
+                }
+
+                if (DecimalTextKeys.Contains(pair.Key) &&
+                    !decimal.TryParse(pair.Value, NumberStyles.Number, CultureInfo.InvariantCulture, out _))
+                    report.Failures.Add($"{source}: `{pair.Key}` 数值无效: {pair.Value}，应为数字。");
+            }
+        }
+
+        private static bool IsSectionScopedIntegerKey(string sectionName, string key)
+        {
+            return key.Equals("Value", StringComparison.OrdinalIgnoreCase) &&
+                   !string.IsNullOrWhiteSpace(sectionName) &&
+                   (sectionName.Equals("AIRule", StringComparison.OrdinalIgnoreCase) ||
+                    sectionName.Equals("Rule", StringComparison.OrdinalIgnoreCase));
         }
 
         private static void ValidateUniqueNamedSections(IEnumerable<CustomTextSection> sections, string sectionName, CustomSystemTextReport report, string fileName)
@@ -802,13 +981,14 @@ namespace Server.Envir
             string skillsDirectory = Path.Combine(directory, "Skills");
             if (!Directory.Exists(skillsDirectory)) return;
 
-            foreach (string file in EnumerateCustomTextFiles(skillsDirectory, includeTemplates))
+            foreach (string file in EnumerateCustomTextFiles(skillsDirectory, includeTemplates, result.Report))
             {
                 int beforeFailures = result.Report.Failures.Count;
                 CustomTextDocument document = ReadDocument(file, directory, result.Report);
                 if (document.Sections.Count == 0) continue;
 
                 ValidateKnownBooleanFields(document, result.Report);
+                ValidateKnownNumericFields(document, result.Report);
 
                 CustomTextSection magicSection = document.First("Magic");
                 CustomTextSection skillSection = document.First("Skill");
@@ -825,13 +1005,14 @@ namespace Server.Envir
                 if (magic == null) continue;
                 IndexMagic(magic);
 
-                CustomSkillInfo skill = createDetached ? new CustomSkillInfo() : null;
+                CustomSkillInfo skill = createDetached ? CreateDetachedCustomSkill() : null;
                 if (!createDetached)
                 {
                     skill ??= _session.GetCollection<CustomSkillInfo>().Binding.FirstOrDefault(x => x.Magic == magic);
                     skill ??= _session.GetCollection<CustomSkillInfo>().CreateNewObject();
                 }
                 if (skill == null) continue;
+                EnsureSkillChildren(skill);
                 if (replaceExisting)
                     ClearSkillChildren(skill);
                 else if (!createDetached)
@@ -843,8 +1024,9 @@ namespace Server.Envir
                 foreach (CustomTextSection section in document.Sections.Where(x => x.Name.Equals("Effect", StringComparison.OrdinalIgnoreCase)))
                 {
                     CustomSkillEffectInfo effect = ResolveSkillEffect(skill, section.Values, resources, createDetached, replaceExisting);
+                    bool isNewEffect = effect.Skill == null;
+                    ApplySkillEffect(effect, section.Values, resources, result.Report, section.Source, isNewEffect);
                     effect.Skill = skill;
-                    ApplySkillEffect(effect, section.Values, resources, result.Report, section.Source);
                     skill.Effects?.Add(effect);
                 }
 
@@ -868,7 +1050,7 @@ namespace Server.Envir
         {
             MonsterInfo monster = null;
 
-            if (values.TryGetValue("Index", out string indexValue) && int.TryParse(indexValue, out int index))
+            if (values.TryGetValue("Index", out string indexValue) && int.TryParse(indexValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index))
                 _monstersByIndex.TryGetValue(index, out monster);
 
             string name = GetValue(values, "Name", Path.GetFileNameWithoutExtension(file));
@@ -1034,7 +1216,7 @@ namespace Server.Envir
         {
             MagicInfo magic = null;
 
-            if (values.TryGetValue("Index", out string indexValue) && int.TryParse(indexValue, out int index))
+            if (values.TryGetValue("Index", out string indexValue) && int.TryParse(indexValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index))
                 _magicsByIndex.TryGetValue(index, out magic);
 
             string name = GetValue(values, "Name", Path.GetFileNameWithoutExtension(file));
@@ -1228,6 +1410,8 @@ namespace Server.Envir
                     report.Failures.Add($"{source}: Behavior.PoisonTicks 必须大于 0。");
                 if (behavior.PoisonFrequency <= 0)
                     report.Failures.Add($"{source}: Behavior.PoisonFrequency 必须大于 0，单位为秒。");
+                if (behavior.PoisonFrequency >= 100)
+                    report.Failures.Add($"{source}: Behavior.PoisonFrequency 单位为秒，当前值 {behavior.PoisonFrequency} 过大；如果需要毫秒级毒跳间隔，请使用 AIAction.TickRate。");
             }
 
             if (behavior.HarvestCount < 0)
@@ -1507,7 +1691,8 @@ namespace Server.Envir
                         report.Failures.Add($"{source}: AIAction `{action.Name}` 的 ClassPowerRates 倍率 `{parts[1]}` 必须是非负整数。");
                 }
 
-            ValidateBuffStatsFromTargetOption(action, report, source);
+            ValidateBuffStatsScaleOption(action, "BuffStatsFromTarget", report, source);
+            ValidateBuffStatsScaleOption(action, "BuffStatsFromSelf", report, source);
             ValidateBuffTypeActionOption(action, "RequireHasBuff", report, source);
             ValidateBuffTypeActionOption(action, "RequireMissingBuff", report, source);
             ValidatePowerSourceActionOption(action, "TargetHealthPower", report, source);
@@ -1525,7 +1710,7 @@ namespace Server.Envir
                 or CustomAiActionType.Sequence
                 or CustomAiActionType.ScheduleAction;
 
-            foreach (string token in SplitActionOptionTokens(action.Options))
+            foreach (string token in SplitActionOptionTokens(action.Options, splitBareItems: allowsActionReferences))
             {
                 string[] parts = token.Split('=', 2, StringSplitOptions.TrimEntries);
                 if (parts.Length != 2)
@@ -1601,19 +1786,18 @@ namespace Server.Envir
             string value = GetActionOptionValue(action.Options, optionName);
             if (string.IsNullOrWhiteSpace(value)) return;
 
-            if (bool.TryParse(value, out _)) return;
-            if (value == "1" || value == "0") return;
+            if (TryParseTextBool(value, out _)) return;
 
-            report.Failures.Add($"{source}: AIAction `{action.Name}` 的 {optionName} `{value}` 必须是 True/False/1/0。");
+            report.Failures.Add($"{source}: AIAction `{action.Name}` 的 {optionName} `{value}` 必须是 True/False/1/0/yes/no。");
         }
 
-        private static void ValidateBuffStatsFromTargetOption(CustomMonsterAiActionInfo action, CustomSystemTextReport report, string source)
+        private static void ValidateBuffStatsScaleOption(CustomMonsterAiActionInfo action, string optionName, CustomSystemTextReport report, string source)
         {
-            string value = GetActionOptionValue(action.Options, "BuffStatsFromTarget");
+            string value = GetActionOptionValue(action.Options, optionName);
             if (string.IsNullOrWhiteSpace(value)) return;
 
             if (action.Action != CustomAiActionType.AddBuff)
-                report.Failures.Add($"{source}: AIAction `{action.Name}` 配置 BuffStatsFromTarget 时 Type 应为 AddBuff。");
+                report.Failures.Add($"{source}: AIAction `{action.Name}` 配置 {optionName} 时 Type 应为 AddBuff。");
 
             foreach (string token in value.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
@@ -1634,7 +1818,7 @@ namespace Server.Envir
                     string[] statParts = rateParts[0].Split('>', 2, StringSplitOptions.TrimEntries);
                     if (statParts.Length != 2)
                     {
-                        report.Failures.Add($"{source}: AIAction `{action.Name}` 的 BuffStatsFromTarget 项 `{token}` 必须写成 来源Stat>目标Stat:倍率 或 来源Stat:目标Stat:倍率。");
+                        report.Failures.Add($"{source}: AIAction `{action.Name}` 的 {optionName} 项 `{token}` 必须写成 来源Stat>目标Stat:倍率 或 来源Stat:目标Stat:倍率。");
                         continue;
                     }
 
@@ -1644,18 +1828,18 @@ namespace Server.Envir
                 }
                 else
                 {
-                    report.Failures.Add($"{source}: AIAction `{action.Name}` 的 BuffStatsFromTarget 项 `{token}` 必须写成 来源Stat>目标Stat:倍率 或 来源Stat:目标Stat:倍率。");
+                    report.Failures.Add($"{source}: AIAction `{action.Name}` 的 {optionName} 项 `{token}` 必须写成 来源Stat>目标Stat:倍率 或 来源Stat:目标Stat:倍率。");
                     continue;
                 }
 
                 if (!Enum.TryParse(sourceStat, true, out Stat parsedSource) || parsedSource == Stat.None)
-                    report.Failures.Add($"{source}: AIAction `{action.Name}` 的 BuffStatsFromTarget 来源 Stat `{sourceStat}` 无效。");
+                    report.Failures.Add($"{source}: AIAction `{action.Name}` 的 {optionName} 来源 Stat `{sourceStat}` 无效。");
 
                 if (!Enum.TryParse(destinationStat, true, out Stat parsedDestination) || parsedDestination == Stat.None)
-                    report.Failures.Add($"{source}: AIAction `{action.Name}` 的 BuffStatsFromTarget 目标 Stat `{destinationStat}` 无效。");
+                    report.Failures.Add($"{source}: AIAction `{action.Name}` 的 {optionName} 目标 Stat `{destinationStat}` 无效。");
 
                 if (!int.TryParse(rateValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int rate) || rate < 0)
-                    report.Failures.Add($"{source}: AIAction `{action.Name}` 的 BuffStatsFromTarget 倍率 `{rateValue}` 必须是非负整数。");
+                    report.Failures.Add($"{source}: AIAction `{action.Name}` 的 {optionName} 倍率 `{rateValue}` 必须是非负整数。");
             }
         }
 
@@ -1712,7 +1896,7 @@ namespace Server.Envir
                     continue;
                 }
 
-                if (parts.Length == 2 && (!int.TryParse(parts[1], out int weight) || weight <= 0))
+                if (parts.Length == 2 && (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int weight) || weight <= 0))
                     report.Failures.Add($"{source}: AIAction `{action.Name}` 的 {optionName} 项 `{token}` 权重必须大于 0。");
             }
         }
@@ -1770,15 +1954,14 @@ namespace Server.Envir
             if (action.SpawnMonster == null && string.IsNullOrWhiteSpace(flagName))
                 report.Failures.Add($"{source}: AIAction `{action.Name}` 使用 RecallMonstersByFlag 时必须配置 SpawnMonster 或 Options=MonsterFlag=...。");
 
-            if (!string.IsNullOrWhiteSpace(flagName) && !Enum.TryParse(flagName, true, out MonsterFlag _))
-                report.Failures.Add($"{source}: AIAction `{action.Name}` 的 MonsterFlag `{flagName}` 不是有效 MonsterFlag 枚举。");
-
             string directionName = GetActionOptionValue(action.Options, "OriginDirection");
             if (string.IsNullOrWhiteSpace(directionName))
                 directionName = GetActionOptionValue(action.Options, "OffsetDirection");
 
-            if (!string.IsNullOrWhiteSpace(directionName) && !Enum.TryParse(directionName, true, out MirDirection _))
-                report.Failures.Add($"{source}: AIAction `{action.Name}` 的 OriginDirection `{directionName}` 不是有效 MirDirection 枚举。");
+            if (!string.IsNullOrWhiteSpace(directionName) &&
+                !DynamicDirectionOptions.Contains(directionName) &&
+                !Enum.TryParse(directionName, true, out MirDirection _))
+                report.Failures.Add($"{source}: AIAction `{action.Name}` 的 OriginDirection `{directionName}` 不是有效方向。可用 MirDirection、Target、CurrentTarget、AwayFromTarget。");
         }
 
         private static void ValidateCustomSkillReference(
@@ -1978,19 +2161,72 @@ namespace Server.Envir
 
             foreach (string token in SplitConditionTokens(rule.Conditions))
             {
-                string name = token.TrimStart('!').Split(':', 2, StringSplitOptions.TrimEntries)[0];
+                string[] parts = token.TrimStart('!').Split(':', StringSplitOptions.TrimEntries);
+                string name = parts[0];
                 if (!Enum.TryParse(name, true, out CustomAiConditionType condition))
                 {
                     report.Failures.Add($"{source}: AIRule `{rule.Name}` 的 Conditions 包含未知条件 `{name}`。");
                     continue;
                 }
 
-                if (RuleConditionRequiresBuff(condition) && rule.BuffType == BuffType.None && !ConditionTokenHasValue(token, 1))
-                    report.Failures.Add($"{source}: AIRule `{rule.Name}` 的 Conditions 条件 `{condition}` 必须在条件参数或 BuffType 中指定 Buff。");
-
-                if (RuleConditionRequiresCounter(condition) && string.IsNullOrWhiteSpace(rule.CounterName) && !ConditionTokenHasValue(token, 2))
-                    report.Failures.Add($"{source}: AIRule `{rule.Name}` 的 Conditions 条件 `{condition}` 必须在条件参数或 CounterName 中指定计数器名。");
+                ValidateRuleConditionArguments(rule, condition, parts, report, source);
             }
+        }
+
+        private static void ValidateRuleConditionArguments(CustomMonsterAiRuleInfo rule, CustomAiConditionType condition, string[] parts, CustomSystemTextReport report, string source)
+        {
+            if (RuleConditionRequiresBuff(condition))
+            {
+                if (ConditionPartHasValue(parts, 1))
+                {
+                    string buffName = parts[1];
+                    if (!Enum.TryParse(buffName, true, out BuffType parsed) || parsed == BuffType.None)
+                        report.Failures.Add($"{source}: AIRule `{rule.Name}` 的 Conditions 条件 `{condition}` Buff 参数 `{buffName}` 无效。");
+                }
+                else if (rule.BuffType == BuffType.None)
+                {
+                    report.Failures.Add($"{source}: AIRule `{rule.Name}` 的 Conditions 条件 `{condition}` 必须在条件参数或 BuffType 中指定 Buff。");
+                }
+
+                return;
+            }
+
+            if (RuleConditionRequiresCounter(condition))
+            {
+                bool hasCounterName = !string.IsNullOrWhiteSpace(rule.CounterName);
+
+                if (ConditionPartHasValue(parts, 1) &&
+                    !int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                    hasCounterName = true;
+
+                if (ConditionPartHasValue(parts, 2) &&
+                    !int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                    hasCounterName = true;
+
+                if (ConditionPartHasValue(parts, 3))
+                    hasCounterName = true;
+
+                if (ConditionPartHasValue(parts, 1) &&
+                    ConditionPartHasValue(parts, 2) &&
+                    int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out _) &&
+                    int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                {
+                    report.Failures.Add($"{source}: AIRule `{rule.Name}` 的 Conditions 条件 `{condition}` 不能同时把 `{parts[1]}` 和 `{parts[2]}` 都作为数值参数，必须至少提供一个计数器名。");
+                }
+
+                if (!hasCounterName)
+                    report.Failures.Add($"{source}: AIRule `{rule.Name}` 的 Conditions 条件 `{condition}` 必须在条件参数或 CounterName 中指定计数器名。");
+
+                return;
+            }
+
+            if (RuleConditionUsesNumericValue(condition) && ConditionPartHasValue(parts, 1) &&
+                !int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                report.Failures.Add($"{source}: AIRule `{rule.Name}` 的 Conditions 条件 `{condition}` 数值参数 `{parts[1]}` 必须是整数。");
+
+            if (RuleConditionUsesRadius(condition) && ConditionPartHasValue(parts, 2) &&
+                !int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                report.Failures.Add($"{source}: AIRule `{rule.Name}` 的 Conditions 条件 `{condition}` 半径参数 `{parts[2]}` 必须是整数。");
         }
 
         private static IEnumerable<string> SplitConditionTokens(string conditions)
@@ -2001,10 +2237,29 @@ namespace Server.Envir
                 .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         }
 
-        private static bool ConditionTokenHasValue(string token, int partIndex)
+        private static bool ConditionPartHasValue(string[] parts, int partIndex)
         {
-            string[] parts = token.TrimStart('!').Split(':', StringSplitOptions.TrimEntries);
             return parts.Length > partIndex && !string.IsNullOrWhiteSpace(parts[partIndex]);
+        }
+
+        private static bool RuleConditionUsesNumericValue(CustomAiConditionType condition)
+        {
+            return condition is CustomAiConditionType.HealthBelow
+                or CustomAiConditionType.HealthAbove
+                or CustomAiConditionType.TargetHealthBelow
+                or CustomAiConditionType.TargetHealthAbove
+                or CustomAiConditionType.TargetCountAtLeast
+                or CustomAiConditionType.TargetDistanceBelow
+                or CustomAiConditionType.TargetDistanceAbove
+                or CustomAiConditionType.TargetInLine
+                or CustomAiConditionType.TargetOutOfLine
+                or CustomAiConditionType.MinionCountBelow
+                or CustomAiConditionType.MinionCountAbove;
+        }
+
+        private static bool RuleConditionUsesRadius(CustomAiConditionType condition)
+        {
+            return condition is CustomAiConditionType.TargetCountAtLeast;
         }
 
         private static bool IsEnemyTargetSelector(CustomAiTargetSelectorType target)
@@ -2019,8 +2274,10 @@ namespace Server.Envir
 
         private void ApplySkill(CustomSkillInfo skill, MagicInfo magic, Dictionary<string, string> values, CustomSystemTextReport report, string source)
         {
+            bool isNew = skill.Magic == null;
+
             skill.Magic = magic;
-            skill.Enabled = GetBool(values, "Enabled", true);
+            skill.Enabled = GetBool(values, "Enabled", isNew ? true : skill.Enabled);
             skill.Template = GetEnum(values, "Template", CustomSkillTemplate.DirectDamage, report, source);
             skill.TargetRule = GetEnum(values, "TargetRule", CustomSkillTargetRule.Enemy, report, source);
             skill.Range = GetInt(values, "Range", skill.Range == 0 ? Globals.MagicRange : skill.Range);
@@ -2061,7 +2318,7 @@ namespace Server.Envir
             ValidateSkillFields(skill, report, source);
         }
 
-        private static void ApplySkillEffect(CustomSkillEffectInfo effect, Dictionary<string, string> values, Dictionary<string, CustomResourceLibraryInfo> resources, CustomSystemTextReport report, string source)
+        private static void ApplySkillEffect(CustomSkillEffectInfo effect, Dictionary<string, string> values, Dictionary<string, CustomResourceLibraryInfo> resources, CustomSystemTextReport report, string source, bool isNew)
         {
             effect.Resource = ResolveResource(values, "Resource", resources, report, source);
             effect.Stage = GetEnum(values, "Stage", CustomSkillEffectStage.Cast, report, source);
@@ -2077,7 +2334,7 @@ namespace Server.Envir
             effect.Blend = GetBool(values, "Blend", effect.Blend);
             effect.Loop = GetBool(values, "Loop", effect.Loop);
             effect.Duration = GetInt(values, "Duration", effect.Duration);
-            effect.FollowTarget = GetBool(values, "FollowTarget", true);
+            effect.FollowTarget = GetBool(values, "FollowTarget", isNew ? true : effect.FollowTarget);
 
             if (effect.Resource != null)
             {
@@ -2094,7 +2351,7 @@ namespace Server.Envir
             string value = GetValue(values, key, null);
             if (string.IsNullOrWhiteSpace(value)) return null;
 
-            if (int.TryParse(value, out int index) && _magicsByIndex.TryGetValue(index, out MagicInfo byIndex))
+            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index) && _magicsByIndex.TryGetValue(index, out MagicInfo byIndex))
                 return byIndex;
 
             if (_magics.TryGetValue(Normalize(value), out MagicInfo byName))
@@ -2110,7 +2367,7 @@ namespace Server.Envir
             string value = GetValue(values, key, null);
             if (string.IsNullOrWhiteSpace(value)) return null;
 
-            if (int.TryParse(value, out int index) && _monstersByIndex.TryGetValue(index, out MonsterInfo byIndex))
+            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index) && _monstersByIndex.TryGetValue(index, out MonsterInfo byIndex))
                 return byIndex;
 
             if (_monsters.TryGetValue(Normalize(value), out MonsterInfo byName))
@@ -2134,10 +2391,172 @@ namespace Server.Envir
             return null;
         }
 
+        private static CustomMonsterVisualInfo CreateDetachedCustomMonsterVisual()
+        {
+            CustomMonsterVisualInfo visual = new()
+            {
+                Scale = 1F,
+                DrawShadow = true,
+                KeepCorpse = true,
+                DefaultFrameDelay = 100,
+            };
+
+            EnsureVisualChildren(visual);
+            return visual;
+        }
+
+        private static void EnsureVisualChildren(CustomMonsterVisualInfo visual)
+        {
+            if (visual == null || visual.Animations != null) return;
+
+            visual.Animations = new DBBindingList<CustomMonsterAnimationInfo>(
+                visual,
+                typeof(CustomMonsterVisualInfo).GetProperty(nameof(CustomMonsterVisualInfo.Animations)));
+        }
+
+        private static CustomMonsterAnimationInfo CreateDetachedCustomMonsterAnimation()
+        {
+            return new CustomMonsterAnimationInfo
+            {
+                DirectionCount = 8,
+                DirectionOffset = 10,
+                FrameDelay = 100,
+                EffectFrameDelay = 100,
+                EffectTriggerFrame = -1,
+            };
+        }
+
+        private static CustomMonsterBehaviorInfo CreateDetachedCustomMonsterBehavior()
+        {
+            CustomMonsterBehaviorInfo behavior = new()
+            {
+                Template = CustomMonsterBehaviorTemplate.Melee,
+                CanBeKilled = true,
+                CanAttackPlayers = true,
+                HiddenBlocks = true,
+                HiddenCanAttack = true,
+                HiddenCanBeAttacked = true,
+                ProtectionCheckInterval = 1000,
+                AttackRange = 1,
+                ChaseRange = 12,
+                ReturnRange = 16,
+                MaxMinions = 20,
+                SkillChance = 25,
+                RoamDelay = 2000,
+                DamageProxyRevealDelay = 500,
+                DamageProxySpawnEffect = Effect.CursedDoll,
+                DamageProxyNameFormat = "{Target} Doll",
+                PoisonRate = 10,
+                PoisonTicks = 5,
+                PoisonFrequency = 2,
+                UseBaseFallback = true,
+            };
+
+            EnsureBehaviorChildren(behavior);
+            return behavior;
+        }
+
+        private static void EnsureBehaviorChildren(CustomMonsterBehaviorInfo behavior)
+        {
+            if (behavior == null) return;
+
+            behavior.Skills ??= new DBBindingList<CustomMonsterSkillInfo>(
+                behavior,
+                typeof(CustomMonsterBehaviorInfo).GetProperty(nameof(CustomMonsterBehaviorInfo.Skills)));
+
+            behavior.Rules ??= new DBBindingList<CustomMonsterAiRuleInfo>(
+                behavior,
+                typeof(CustomMonsterBehaviorInfo).GetProperty(nameof(CustomMonsterBehaviorInfo.Rules)));
+
+            behavior.Actions ??= new DBBindingList<CustomMonsterAiActionInfo>(
+                behavior,
+                typeof(CustomMonsterBehaviorInfo).GetProperty(nameof(CustomMonsterBehaviorInfo.Actions)));
+        }
+
+        private static CustomMonsterSkillInfo CreateDetachedCustomMonsterSkill()
+        {
+            return new CustomMonsterSkillInfo
+            {
+                Chance = 25,
+                Cooldown = 3000,
+                Range = 8,
+                Target = CustomAiTargetSelectorType.CurrentTarget,
+                MaxHealthPercent = 100,
+            };
+        }
+
+        private static CustomMonsterAiRuleInfo CreateDetachedCustomMonsterAiRule()
+        {
+            return new CustomMonsterAiRuleInfo
+            {
+                Trigger = CustomAiTriggerType.OnTargetTick,
+                Condition = CustomAiConditionType.Always,
+                ConditionJoin = CustomAiConditionJoin.And,
+                Chance = 100,
+                MaxHealthPercent = 100,
+            };
+        }
+
+        private static CustomMonsterAiActionInfo CreateDetachedCustomMonsterAiAction()
+        {
+            return new CustomMonsterAiActionInfo
+            {
+                Target = CustomAiTargetSelectorType.CurrentTarget,
+                PowerSource = CustomAiPowerSource.DC,
+                PowerRate = 100,
+                Delay = 500,
+                TargetChance = 100,
+                Duration = 3000,
+                TickRate = 1000,
+                PoisonCanKill = true,
+                BuffVisible = true,
+            };
+        }
+
+        private static CustomSkillInfo CreateDetachedCustomSkill()
+        {
+            CustomSkillInfo skill = new()
+            {
+                Enabled = true,
+                Template = CustomSkillTemplate.DirectDamage,
+                TargetRule = CustomSkillTargetRule.Enemy,
+                Range = Globals.MagicRange,
+                Shape = CustomSkillShape.Circle,
+                WaveCount = 1,
+                PowerRate = 100,
+                TickRate = 1000,
+                MaxSummons = 1,
+                BuffVisible = true,
+                CastDelay = 500,
+                ProjectileSpeed = Globals.ProjectileSpeed,
+            };
+
+            EnsureSkillChildren(skill);
+            return skill;
+        }
+
+        private static void EnsureSkillChildren(CustomSkillInfo skill)
+        {
+            if (skill == null || skill.Effects != null) return;
+
+            skill.Effects = new DBBindingList<CustomSkillEffectInfo>(
+                skill,
+                typeof(CustomSkillInfo).GetProperty(nameof(CustomSkillInfo.Effects)));
+        }
+
+        private static CustomSkillEffectInfo CreateDetachedCustomSkillEffect()
+        {
+            return new CustomSkillEffectInfo
+            {
+                FrameDelay = 100,
+                FollowTarget = true,
+            };
+        }
+
         private CustomMonsterAnimationInfo ResolveAnimation(CustomMonsterVisualInfo visual, Dictionary<string, string> values, bool createDetached, bool replaceExisting)
         {
             if (createDetached || replaceExisting || visual?.Animations == null)
-                return createDetached ? new CustomMonsterAnimationInfo() : _session.GetCollection<CustomMonsterAnimationInfo>().CreateNewObject();
+                return createDetached ? CreateDetachedCustomMonsterAnimation() : _session.GetCollection<CustomMonsterAnimationInfo>().CreateNewObject();
 
             CustomMonsterAnimationType action = GetEnum(values, "Action", CustomMonsterAnimationType.Standing);
             int variant = GetInt(values, "Variant", 0);
@@ -2149,7 +2568,7 @@ namespace Server.Envir
         private CustomMonsterSkillInfo ResolveMonsterSkill(CustomMonsterBehaviorInfo behavior, Dictionary<string, string> values, bool createDetached, bool replaceExisting)
         {
             if (createDetached || replaceExisting || behavior?.Skills == null)
-                return createDetached ? new CustomMonsterSkillInfo() : _session.GetCollection<CustomMonsterSkillInfo>().CreateNewObject();
+                return createDetached ? CreateDetachedCustomMonsterSkill() : _session.GetCollection<CustomMonsterSkillInfo>().CreateNewObject();
 
             MagicInfo magic = TryResolveMagicReference(values, "Magic");
             CustomAiTargetSelectorType target = GetEnum(values, "Target", CustomAiTargetSelectorType.CurrentTarget);
@@ -2162,7 +2581,7 @@ namespace Server.Envir
         private CustomMonsterAiRuleInfo ResolveAiRule(CustomMonsterBehaviorInfo behavior, Dictionary<string, string> values, bool createDetached, bool replaceExisting)
         {
             if (createDetached || replaceExisting || behavior?.Rules == null)
-                return createDetached ? new CustomMonsterAiRuleInfo() : _session.GetCollection<CustomMonsterAiRuleInfo>().CreateNewObject();
+                return createDetached ? CreateDetachedCustomMonsterAiRule() : _session.GetCollection<CustomMonsterAiRuleInfo>().CreateNewObject();
 
             string name = GetValue(values, "Name", null);
             if (!string.IsNullOrWhiteSpace(name))
@@ -2189,7 +2608,7 @@ namespace Server.Envir
         private CustomMonsterAiActionInfo ResolveAiAction(CustomMonsterBehaviorInfo behavior, Dictionary<string, string> values, bool createDetached, bool replaceExisting)
         {
             if (createDetached || replaceExisting || behavior?.Actions == null)
-                return createDetached ? new CustomMonsterAiActionInfo() : _session.GetCollection<CustomMonsterAiActionInfo>().CreateNewObject();
+                return createDetached ? CreateDetachedCustomMonsterAiAction() : _session.GetCollection<CustomMonsterAiActionInfo>().CreateNewObject();
 
             string name = GetValue(values, "Name", null);
             if (!string.IsNullOrWhiteSpace(name))
@@ -2216,7 +2635,7 @@ namespace Server.Envir
         private CustomSkillEffectInfo ResolveSkillEffect(CustomSkillInfo skill, Dictionary<string, string> values, Dictionary<string, CustomResourceLibraryInfo> resources, bool createDetached, bool replaceExisting)
         {
             if (createDetached || replaceExisting || skill?.Effects == null)
-                return createDetached ? new CustomSkillEffectInfo() : _session.GetCollection<CustomSkillEffectInfo>().CreateNewObject();
+                return createDetached ? CreateDetachedCustomSkillEffect() : _session.GetCollection<CustomSkillEffectInfo>().CreateNewObject();
 
             CustomSkillEffectStage stage = GetEnum(values, "Stage", CustomSkillEffectStage.Cast);
             CustomResourceLibraryInfo resource = TryResolveResource(values, "Resource", resources);
@@ -2237,7 +2656,7 @@ namespace Server.Envir
             string value = GetValue(values, key, null);
             if (string.IsNullOrWhiteSpace(value)) return null;
 
-            if (int.TryParse(value, out int index) && _magicsByIndex.TryGetValue(index, out MagicInfo byIndex))
+            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index) && _magicsByIndex.TryGetValue(index, out MagicInfo byIndex))
                 return byIndex;
 
             return _magics.TryGetValue(Normalize(value), out MagicInfo byName) ? byName : null;
@@ -2253,19 +2672,49 @@ namespace Server.Envir
 
         private static bool ValidateRelativePath(string relativePath, string source, CustomSystemTextReport report)
         {
+            relativePath = relativePath?.Trim();
+
             if (string.IsNullOrWhiteSpace(relativePath))
             {
                 report.Failures.Add($"{source}: 资源路径不能为空。");
                 return false;
             }
 
-            if (Path.IsPathRooted(relativePath) || relativePath.Contains(".."))
+            if (Path.IsPathRooted(relativePath) || ContainsParentDirectorySegment(relativePath))
             {
                 report.Failures.Add($"{source}: 资源路径必须是客户端目录内的相对路径，不能包含绝对路径或 `..`: {relativePath}");
                 return false;
             }
 
+            try
+            {
+                string clientRoot = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, "__ClientRoot"));
+                string customRoot = Path.GetFullPath(Path.Combine(clientRoot, "Data", "Custom"));
+                string fullPath = Path.GetFullPath(Path.Combine(clientRoot, relativePath));
+
+                if (!IsPathInsideDirectory(customRoot, fullPath) ||
+                    string.Equals(
+                        fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                        customRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    report.Failures.Add($"{source}: 资源路径必须位于客户端 Data\\Custom 目录下: {relativePath}");
+                    return false;
+                }
+            }
+            catch (Exception ex) when (IsTextPathException(ex))
+            {
+                report.Failures.Add($"{source}: 资源路径无效 `{relativePath}`: {ex.Message}");
+                return false;
+            }
+
             return true;
+        }
+
+        private static bool ContainsParentDirectorySegment(string path)
+        {
+            return path.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries)
+                .Any(segment => segment == "..");
         }
 
         private static bool TryParseStat(string value, out Stat stat)
@@ -2353,7 +2802,7 @@ namespace Server.Envir
             CustomTextDocument document = new();
             CustomTextSection current = null;
 
-            foreach (CustomTextLine line in ReadCleanLines(path, rootDirectory, report, []))
+            foreach (CustomTextLine line in ReadCleanLines(path, rootDirectory, report, new HashSet<string>(StringComparer.OrdinalIgnoreCase)))
             {
                 if (line.Text.StartsWith("[", StringComparison.Ordinal) && line.Text.EndsWith("]", StringComparison.Ordinal))
                 {
@@ -2403,7 +2852,17 @@ namespace Server.Envir
         private static List<CustomTextLine> ReadCleanLines(string path, string rootDirectory, CustomSystemTextReport report, HashSet<string> stack)
         {
             List<CustomTextLine> result = [];
-            string fullPath = Path.GetFullPath(path);
+            string fullPath;
+
+            try
+            {
+                fullPath = Path.GetFullPath(path);
+            }
+            catch (Exception ex) when (IsTextPathException(ex))
+            {
+                report.Failures.Add($"文本路径无效 `{path}`: {ex.Message}");
+                return result;
+            }
 
             if (!stack.Add(fullPath))
             {
@@ -2411,74 +2870,173 @@ namespace Server.Envir
                 return result;
             }
 
-            string[] lines = File.ReadAllLines(fullPath);
-            for (int i = 0; i < lines.Length; i++)
+            try
             {
-                string text = StripComment(lines[i]).Trim();
-                if (string.IsNullOrWhiteSpace(text)) continue;
+                string[] lines;
 
-                if (text.StartsWith("#INSERT", StringComparison.OrdinalIgnoreCase) || text.StartsWith("#INCLUDE", StringComparison.OrdinalIgnoreCase))
+                try
                 {
-                    int start = text.IndexOf('[');
-                    int end = text.IndexOf(']');
-                    if (start < 0 || end <= start)
-                    {
-                        report.Failures.Add($"{Path.GetFileName(fullPath)}:{i + 1}: #INSERT/#INCLUDE 格式必须是 #INCLUDE [file]。");
-                        continue;
-                    }
-
-                    string include = text.Substring(start + 1, end - start - 1);
-                    string includePath = ResolveIncludePath(rootDirectory, include, report, $"{Path.GetFileName(fullPath)}:{i + 1}");
-                    if (includePath == null)
-                        continue;
-
-                    if (!File.Exists(includePath))
-                    {
-                        report.Failures.Add($"{Path.GetFileName(fullPath)}:{i + 1}: 找不到 include 文件 `{include}`。");
-                        continue;
-                    }
-
-                    result.AddRange(ReadCleanLines(includePath, rootDirectory, report, stack));
-                    continue;
+                    lines = File.ReadAllLines(fullPath);
+                }
+                catch (Exception ex) when (IsTextPathException(ex) || ex is UnauthorizedAccessException)
+                {
+                    report.Failures.Add($"{Path.GetFileName(fullPath)}: 读取文本失败: {ex.Message}");
+                    return result;
                 }
 
-                result.Add(new CustomTextLine(fullPath, i + 1, text));
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    string text = StripComment(lines[i]).Trim();
+                    if (string.IsNullOrWhiteSpace(text)) continue;
+
+                    if (text.StartsWith("#INSERT", StringComparison.OrdinalIgnoreCase) || text.StartsWith("#INCLUDE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Match includeMatch = IncludeRegex.Match(text);
+                        if (!includeMatch.Success)
+                        {
+                            report.Failures.Add($"{Path.GetFileName(fullPath)}:{i + 1}: #INSERT/#INCLUDE 格式必须是整行 #INCLUDE [file]。");
+                            continue;
+                        }
+
+                        string include = includeMatch.Groups[1].Value.Trim();
+                        string includePath = ResolveIncludePath(rootDirectory, include, report, $"{Path.GetFileName(fullPath)}:{i + 1}");
+                        if (includePath == null)
+                            continue;
+
+                        if (!File.Exists(includePath))
+                        {
+                            report.Failures.Add($"{Path.GetFileName(fullPath)}:{i + 1}: 找不到 include 文件 `{include}`。");
+                            continue;
+                        }
+
+                        result.AddRange(ReadCleanLines(includePath, rootDirectory, report, stack));
+                        continue;
+                    }
+
+                    result.Add(new CustomTextLine(fullPath, i + 1, text));
+                }
+            }
+            finally
+            {
+                stack.Remove(fullPath);
             }
 
-            stack.Remove(fullPath);
             return result;
         }
 
         private static string ResolveIncludePath(string rootDirectory, string include, CustomSystemTextReport report, string source)
         {
-            if (string.IsNullOrWhiteSpace(include) || Path.IsPathRooted(include))
+            if (string.IsNullOrWhiteSpace(include))
             {
                 report.Failures.Add($"{source}: include 路径必须是自定义目录内的相对路径: {include}");
                 return null;
             }
 
-            string root = Path.GetFullPath(rootDirectory);
-            string includePath = Path.GetFullPath(Path.Combine(root, include));
+            try
+            {
+                if (Path.IsPathRooted(include))
+                {
+                    report.Failures.Add($"{source}: include 路径必须是自定义目录内的相对路径: {include}");
+                    return null;
+                }
 
-            bool insideRoot = includePath.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-                              string.Equals(includePath, root, StringComparison.OrdinalIgnoreCase);
-            if (insideRoot)
-                return includePath;
+                string root = Path.GetFullPath(rootDirectory);
+                string includePath = Path.Combine(root, include);
+                if (!Path.HasExtension(includePath))
+                    includePath += ".txt";
+
+                includePath = Path.GetFullPath(includePath);
+
+                if (IsPathInsideDirectory(root, includePath))
+                    return includePath;
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
+            {
+                report.Failures.Add($"{source}: include 路径无效 `{include}`: {ex.Message}");
+                return null;
+            }
 
             report.Failures.Add($"{source}: include 路径不能跳出自定义目录: {include}");
             return null;
         }
 
+        private static bool IsTextPathException(Exception ex)
+        {
+            return ex is ArgumentException or IOException or NotSupportedException;
+        }
+
+        private static bool IsPathInsideDirectory(string rootDirectory, string path)
+        {
+            string normalizedRoot = Path.GetFullPath(rootDirectory)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string normalizedPath = Path.GetFullPath(path)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            return string.Equals(normalizedPath, normalizedRoot, StringComparison.OrdinalIgnoreCase) ||
+                   normalizedPath.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                   normalizedPath.StartsWith(normalizedRoot + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+
         private static string StripComment(string line)
         {
             if (line == null) return string.Empty;
-            int index = line.IndexOf(';');
-            if (index >= 0) line = line[..index];
 
-            index = line.IndexOf("//", StringComparison.Ordinal);
-            if (index >= 0) line = line[..index];
+            bool quoted = false;
+            bool escaped = false;
+
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+
+                if (quoted && c == '\\')
+                {
+                    escaped = true;
+                    continue;
+                }
+
+                if (c == '"')
+                {
+                    quoted = !quoted;
+                    continue;
+                }
+
+                if (quoted)
+                    continue;
+
+                if (c == ';' && IsSemicolonCommentStart(line, i))
+                    return line[..i];
+
+                if (c == '/' && i + 1 < line.Length && line[i + 1] == '/' && IsSlashCommentStart(line, i))
+                    return line[..i];
+            }
 
             return line;
+        }
+
+        private static bool IsSlashCommentStart(string line, int index)
+        {
+            return index == 0 || char.IsWhiteSpace(line[index - 1]);
+        }
+
+        private static bool IsSemicolonCommentStart(string line, int index)
+        {
+            if (index == 0)
+                return true;
+
+            if (char.IsWhiteSpace(line[index - 1]))
+                return true;
+
+            for (int i = 0; i < index; i++)
+                if (!char.IsWhiteSpace(line[i]))
+                    return false;
+
+            return true;
         }
 
         private static List<string> Tokenize(string line)
@@ -2488,12 +3046,35 @@ namespace Server.Envir
 
             StringBuilder builder = new();
             bool quoted = false;
+            bool preserveQuote = false;
             for (int i = 0; i < line.Length; i++)
             {
                 char c = line[i];
+                if (quoted && c == '\\' && i + 1 < line.Length && line[i + 1] == '"')
+                {
+                    if (preserveQuote)
+                        builder.Append('\\');
+                    builder.Append('"');
+                    i++;
+                    continue;
+                }
+
                 if (c == '"')
                 {
-                    quoted = !quoted;
+                    if (!quoted)
+                    {
+                        preserveQuote = IsOptionsToken(builder) && !IsWholeOptionsValueQuote(builder);
+                        if (preserveQuote)
+                            builder.Append(c);
+                        quoted = true;
+                    }
+                    else
+                    {
+                        if (preserveQuote)
+                            builder.Append(c);
+                        quoted = false;
+                        preserveQuote = false;
+                    }
                     continue;
                 }
 
@@ -2507,13 +3088,6 @@ namespace Server.Envir
                     continue;
                 }
 
-                if (c == '\\' && i + 1 < line.Length && line[i + 1] == '"')
-                {
-                    builder.Append('"');
-                    i++;
-                    continue;
-                }
-
                 builder.Append(c);
             }
 
@@ -2521,6 +3095,24 @@ namespace Server.Envir
                 result.Add(builder.ToString());
 
             return result;
+        }
+
+        private static bool IsOptionsToken(StringBuilder builder)
+        {
+            const string prefix = "Options=";
+            if (builder.Length < prefix.Length) return false;
+
+            for (int i = 0; i < prefix.Length; i++)
+                if (char.ToUpperInvariant(builder[i]) != char.ToUpperInvariant(prefix[i]))
+                    return false;
+
+            return true;
+        }
+
+        private static bool IsWholeOptionsValueQuote(StringBuilder builder)
+        {
+            const string prefix = "Options=";
+            return builder.Length == prefix.Length && IsOptionsToken(builder);
         }
 
         private static Dictionary<string, string> ParseOptions(IEnumerable<string> tokens)
@@ -2540,7 +3132,7 @@ namespace Server.Envir
             List<(string Name, int Weight)> result = [];
             if (string.IsNullOrWhiteSpace(value)) return result;
 
-            foreach (string token in SplitActionOptionTokens(value))
+            foreach (string token in SplitActionOptionTokens(value, splitBareItems: true))
             {
                 if (token.Contains('=', StringComparison.Ordinal))
                     continue;
@@ -2558,27 +3150,110 @@ namespace Server.Envir
             return result;
         }
 
-        private static IEnumerable<string> SplitActionOptionTokens(string options)
+        private static IEnumerable<string> SplitActionOptionTokens(string options, bool splitBareItems = false)
         {
             if (string.IsNullOrWhiteSpace(options)) yield break;
 
-            foreach (string token in options.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            int start = 0;
+            bool quoted = false;
+            bool escaped = false;
+
+            for (int i = 0; i < options.Length; i++)
+            {
+                char c = options[i];
+
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+
+                if (quoted && c == '\\')
+                {
+                    escaped = true;
+                    continue;
+                }
+
+                if (c == '"')
+                {
+                    quoted = !quoted;
+                    continue;
+                }
+
+                if (c != ',' || quoted || !ShouldSplitActionOptionComma(options, i, splitBareItems)) continue;
+
+                string token = options[start..i].Trim();
                 if (!string.IsNullOrWhiteSpace(token))
                     yield return token;
+
+                start = i + 1;
+            }
+
+            string last = options[start..].Trim();
+            if (!string.IsNullOrWhiteSpace(last))
+                yield return last;
         }
 
         private static string GetActionOptionValue(string options, string key)
         {
             if (string.IsNullOrWhiteSpace(options)) return null;
 
-            foreach (string token in SplitActionOptionTokens(options))
+            foreach (string token in SplitActionOptionTokens(options, splitBareItems: false))
             {
                 string[] parts = token.Split('=', 2, StringSplitOptions.TrimEntries);
                 if (parts.Length == 2 && parts[0].Equals(key, StringComparison.OrdinalIgnoreCase))
-                    return parts[1];
+                    return TrimOptionQuotes(parts[1]);
             }
 
             return null;
+        }
+
+        private static bool ShouldSplitActionOptionComma(string options, int commaIndex, bool splitBareItems)
+        {
+            if (splitBareItems)
+                return true;
+
+            int index = commaIndex + 1;
+            while (index < options.Length && char.IsWhiteSpace(options[index]))
+                index++;
+
+            if (index >= options.Length || options[index] == '"')
+                return false;
+
+            bool hasName = false;
+            for (; index < options.Length; index++)
+            {
+                char c = options[index];
+
+                if (c == '=')
+                    return hasName;
+
+                if (c == ',')
+                    return false;
+
+                if (char.IsWhiteSpace(c))
+                    continue;
+
+                if (char.IsLetterOrDigit(c) || c == '_')
+                {
+                    hasName = true;
+                    continue;
+                }
+
+                return false;
+            }
+
+            return false;
+        }
+
+        private static string TrimOptionQuotes(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return value;
+
+            value = value.Trim();
+            return value.Length >= 2 && value[0] == '"' && value[^1] == '"'
+                ? value[1..^1].Replace("\\\"", "\"")
+                : value;
         }
 
         private static string GetOption(Dictionary<string, string> values, string key, string defaultValue)
@@ -2634,16 +3309,86 @@ namespace Server.Envir
 
         private static T GetEnum<T>(Dictionary<string, string> values, string key, T defaultValue) where T : struct
         {
-            return values.TryGetValue(key, out string value) && Enum.TryParse(value, true, out T result) ? result : defaultValue;
+            return values.TryGetValue(key, out string value) &&
+                   Enum.TryParse(value, true, out T result) &&
+                   IsDefinedEnumValue(result)
+                ? result
+                : defaultValue;
         }
 
         private static T GetEnum<T>(Dictionary<string, string> values, string key, T defaultValue, CustomSystemTextReport report, string source) where T : struct
         {
             if (!values.TryGetValue(key, out string value)) return defaultValue;
-            if (Enum.TryParse(value, true, out T result)) return result;
+            if (Enum.TryParse(value, true, out T result) && IsDefinedEnumValue(result)) return result;
 
             report.Failures.Add($"{source}: `{key}` 枚举值无效: {value}，类型 {typeof(T).Name}。");
             return defaultValue;
+        }
+
+        private static bool IsDefinedEnumValue<T>(T value) where T : struct
+        {
+            Type enumType = typeof(T);
+            if (!enumType.IsEnum) return false;
+
+            if (!Attribute.IsDefined(enumType, typeof(FlagsAttribute)))
+                return Enum.IsDefined(enumType, value);
+
+            if (!TryGetEnumBits(value, enumType, out ulong raw))
+                return false;
+
+            ulong allowed = 0;
+
+            foreach (object defined in Enum.GetValues(enumType))
+            {
+                if (!TryGetEnumBits(defined, enumType, out ulong definedBits))
+                    return false;
+
+                allowed |= definedBits;
+            }
+
+            return (raw & ~allowed) == 0;
+        }
+
+        private static bool TryGetEnumBits(object value, Type enumType, out ulong bits)
+        {
+            bits = 0;
+
+            try
+            {
+                switch (Type.GetTypeCode(Enum.GetUnderlyingType(enumType)))
+                {
+                    case TypeCode.SByte:
+                        bits = unchecked((ulong)(byte)Convert.ToSByte(value, CultureInfo.InvariantCulture));
+                        return true;
+                    case TypeCode.Byte:
+                        bits = Convert.ToByte(value, CultureInfo.InvariantCulture);
+                        return true;
+                    case TypeCode.Int16:
+                        bits = unchecked((ulong)(ushort)Convert.ToInt16(value, CultureInfo.InvariantCulture));
+                        return true;
+                    case TypeCode.UInt16:
+                        bits = Convert.ToUInt16(value, CultureInfo.InvariantCulture);
+                        return true;
+                    case TypeCode.Int32:
+                        bits = unchecked((ulong)(uint)Convert.ToInt32(value, CultureInfo.InvariantCulture));
+                        return true;
+                    case TypeCode.UInt32:
+                        bits = Convert.ToUInt32(value, CultureInfo.InvariantCulture);
+                        return true;
+                    case TypeCode.Int64:
+                        bits = unchecked((ulong)Convert.ToInt64(value, CultureInfo.InvariantCulture));
+                        return true;
+                    case TypeCode.UInt64:
+                        bits = Convert.ToUInt64(value, CultureInfo.InvariantCulture);
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+            catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
+            {
+                return false;
+            }
         }
 
         private static Stats GetStats(Dictionary<string, string> values, string key, Stats defaultValue, CustomSystemTextReport report, string source)
@@ -2682,18 +3427,39 @@ namespace Server.Envir
             return stats.Count == 0 ? null : stats;
         }
 
-        private static IEnumerable<string> EnumerateCustomTextFiles(string directory, bool includeTemplates)
+        private static List<string> EnumerateCustomTextFiles(string directory, bool includeTemplates, CustomSystemTextReport report)
         {
-            foreach (string file in Directory.EnumerateFiles(directory, "*.txt", SearchOption.TopDirectoryOnly))
-                yield return file;
+            List<string> files = [];
 
-            if (!includeTemplates) yield break;
+            try
+            {
+                files.AddRange(Directory.EnumerateFiles(directory, "*.txt", SearchOption.TopDirectoryOnly)
+                    .OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
+            }
+            catch (Exception ex) when (IsTextPathException(ex) || ex is UnauthorizedAccessException)
+            {
+                report.Failures.Add($"枚举自定义文本目录失败 `{directory}`: {ex.Message}");
+                return files;
+            }
+
+            if (!includeTemplates)
+                return files;
 
             string templatesDirectory = Path.Combine(directory, "Templates");
-            if (!Directory.Exists(templatesDirectory)) yield break;
+            if (!Directory.Exists(templatesDirectory))
+                return files;
 
-            foreach (string file in Directory.EnumerateFiles(templatesDirectory, "*.txt", SearchOption.AllDirectories))
-                yield return file;
+            try
+            {
+                files.AddRange(Directory.EnumerateFiles(templatesDirectory, "*.txt", SearchOption.AllDirectories)
+                    .OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
+            }
+            catch (Exception ex) when (IsTextPathException(ex) || ex is UnauthorizedAccessException)
+            {
+                report.Failures.Add($"枚举自定义模板目录失败 `{templatesDirectory}`: {ex.Message}");
+            }
+
+            return files;
         }
 
         private static bool IsTemplateTextFile(string directory, string file)
@@ -2701,7 +3467,7 @@ namespace Server.Envir
             string templatesDirectory = Path.GetFullPath(Path.Combine(directory, "Templates"));
             string fullPath = Path.GetFullPath(file);
 
-            return fullPath.StartsWith(templatesDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            return IsPathInsideDirectory(templatesDirectory, fullPath);
         }
 
         private static LibraryFile GetLibraryFile(Dictionary<string, string> values, string source, CustomSystemTextReport report)
@@ -2753,9 +3519,12 @@ namespace Server.Envir
         {
             CustomSystemTextLoader loader = new(_session);
 
-            CustomSystemTextLoadResult validation = loader.BuildForDatabaseImport(directory, CustomSystemImportMode.ValidateOnly);
+            bool includeTemplatesInValidation = mode == CustomSystemImportMode.ValidateOnly;
+            CustomSystemTextLoadResult validation = loader.BuildForDatabaseImport(directory, CustomSystemImportMode.ValidateOnly, includeTemplatesInValidation);
             CustomSystemTextReport report = validation.Report;
             report.Mode = mode;
+
+            AddMissingDropItemFailures(report);
 
             if (mode == CustomSystemImportMode.ValidateOnly || report.Failures.Count > 0)
                 return report;
@@ -2765,9 +3534,17 @@ namespace Server.Envir
             report = load.Report;
             report.Mode = mode;
 
+            AddMissingDropItemFailures(report);
+            ApplyImportCounts(report, load);
+
             if (report.Failures.Count > 0)
                 return report;
 
+            return report;
+        }
+
+        private static void ApplyImportCounts(CustomSystemTextReport report, CustomSystemTextLoadResult load)
+        {
             report.ResourcesImported = load.Resources.Count;
             report.MonsterVisualsImported = load.Visuals.Count;
             report.MonsterBehaviorsImported = load.Behaviors.Count;
@@ -2775,7 +3552,17 @@ namespace Server.Envir
             report.MonsterDropEntriesImported = load.Report.MonsterDropEntriesImported;
             report.MonsterDropGroupsImported = load.Report.MonsterDropGroupsImported;
             report.SkillsImported = load.Skills.Count;
-            return report;
+        }
+
+        private static void AddMissingDropItemFailures(CustomSystemTextReport report)
+        {
+            HashSet<string> existingFailures = new(report.Failures, StringComparer.OrdinalIgnoreCase);
+            foreach (string item in report.MissingItems.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                string failure = $"[Drops] 引用的物品 `{item}` 不存在，数据库导入已阻止。";
+                if (existingFailures.Add(failure))
+                    report.Failures.Add(failure);
+            }
         }
     }
 
@@ -2793,12 +3580,11 @@ namespace Server.Envir
             if (string.IsNullOrWhiteSpace(directory))
                 throw new ArgumentException("输出目录不能为空。", nameof(directory));
 
-            Directory.CreateDirectory(directory);
-            Directory.CreateDirectory(Path.Combine(directory, "Monsters"));
-            Directory.CreateDirectory(Path.Combine(directory, "Skills"));
-
             CustomSystemTextReport report = new();
             report.Mode = CustomSystemImportMode.Export;
+            if (!TryCreateExportDirectories(directory, report))
+                return report;
+
             ExportResources(Path.Combine(directory, "Resources.txt"), overwrite, report);
             ExportMonsters(Path.Combine(directory, "Monsters"), overwrite, report);
             ExportSkills(Path.Combine(directory, "Skills"), overwrite, report);
@@ -2810,12 +3596,11 @@ namespace Server.Envir
             if (string.IsNullOrWhiteSpace(directory))
                 throw new ArgumentException("输出目录不能为空。", nameof(directory));
 
-            Directory.CreateDirectory(directory);
-            Directory.CreateDirectory(Path.Combine(directory, "Monsters"));
-            Directory.CreateDirectory(Path.Combine(directory, "Skills"));
-
             CustomSystemTextReport report = new();
             report.Mode = CustomSystemImportMode.Export;
+            if (!TryCreateExportDirectories(directory, report))
+                return report;
+
             report.TodoDetails.Add("本报告由全量数据库怪物/技能导出生成。没有 CustomMonsterBehaviorInfo 或 CustomSkillInfo 的旧数据只导出可编辑骨架；旧 C# AI 和旧 MagicObject 逻辑需要继续按 TODO 迁移。");
 
             ExportResources(Path.Combine(directory, "Resources.txt"), overwrite, report);
@@ -2834,6 +3619,7 @@ namespace Server.Envir
             }
 
             List<string> lines = [];
+            int exported = 0;
             foreach (CustomResourceLibraryInfo resource in _session.GetCollection<CustomResourceLibraryInfo>().Binding.Where(x => x != null).OrderBy(x => x.Key))
             {
                 List<string> parts = [Quote(resource.Key)];
@@ -2851,10 +3637,11 @@ namespace Server.Envir
                 parts.Add($"Enabled={resource.Enabled}");
 
                 lines.Add(string.Join(' ', parts));
-                report.ResourcesExported++;
+                exported++;
             }
 
-            File.WriteAllLines(path, lines, new UTF8Encoding(false));
+            if (TryWriteAllLines(path, lines, report, "Resources.txt"))
+                report.ResourcesExported += exported;
         }
 
         private void ExportMonsters(string directory, bool overwrite, CustomSystemTextReport report, bool includeAllDatabaseMonsters = false)
@@ -2900,7 +3687,9 @@ namespace Server.Envir
                 Mir2DropExportReport dropReport = new();
                 List<string> dropLines = new Mir2DropExporter(_session).BuildMonsterLines(monster, dropReport);
 
-                File.WriteAllText(path, BuildMonsterText(monster, visual, behavior, dropLines, migration, includeAllDatabaseMonsters), new UTF8Encoding(false));
+                if (!TryWriteAllText(path, BuildMonsterText(monster, visual, behavior, dropLines, migration, includeAllDatabaseMonsters), report, $"怪物 `{monster.MonsterName}`"))
+                    continue;
+
                 report.MonstersExported++;
                 if (visual != null)
                     report.MonsterVisualsExported++;
@@ -7028,11 +7817,14 @@ namespace Server.Envir
 
                 if (customSkills.TryGetValue(magic.Index, out CustomSkillInfo skill))
                 {
-                    File.WriteAllText(path, BuildSkillText(skill), new UTF8Encoding(false));
+                    if (!TryWriteAllText(path, BuildSkillText(skill), report, $"技能 `{magic.Name}`"))
+                        continue;
                 }
                 else
                 {
-                    File.WriteAllText(path, BuildFallbackSkillText(magic, out bool autoMigrated), new UTF8Encoding(false));
+                    if (!TryWriteAllText(path, BuildFallbackSkillText(magic, out bool autoMigrated), report, $"技能 `{magic.Name}`"))
+                        continue;
+
                     if (includeAllDatabaseSkills && !autoMigrated)
                         report.TodoDetails.Add($"技能 `{magic.Name}` -> Skills\\{fileName}.txt: 数据库没有 CustomSkillInfo，已导出 Enabled=False 的自定义技能骨架；旧 MagicObject 逻辑未迁移。原因: {GetManualSkillMigrationReason(magic.Magic)}");
                 }
@@ -7878,12 +8670,112 @@ namespace Server.Envir
             sb.AppendLine("自定义怪物与技能全量导出 TODO 报告");
             sb.AppendLine();
             sb.AppendLine($"待处理项: {report.PendingTodoCount}");
+            sb.AppendLine($"错误: {report.Failures.Count}");
             sb.AppendLine();
+
+            if (report.Failures.Count > 0)
+            {
+                sb.AppendLine("错误明细:");
+                foreach (string failure in report.Failures)
+                    sb.AppendLine("- " + failure);
+                sb.AppendLine();
+            }
 
             foreach (string todo in report.TodoDetails)
                 sb.AppendLine("- " + todo);
 
-            File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+            TryWriteAllText(path, sb.ToString(), report, "TODO 报告");
+        }
+
+        private static bool TryWriteAllLines(string path, IEnumerable<string> lines, CustomSystemTextReport report, string description)
+        {
+            string tempPath = null;
+
+            try
+            {
+                tempPath = GetTempWritePath(path);
+                File.WriteAllLines(tempPath, lines, new UTF8Encoding(false));
+                ReplaceOrMoveTempFile(tempPath, path);
+                return true;
+            }
+            catch (Exception ex) when (IsExportWriteException(ex))
+            {
+                TryDeleteTempFile(tempPath);
+                report.Failures.Add($"{description} 写入失败: {path} ({ex.Message})");
+                return false;
+            }
+        }
+
+        private static bool TryWriteAllText(string path, string text, CustomSystemTextReport report, string description)
+        {
+            string tempPath = null;
+
+            try
+            {
+                tempPath = GetTempWritePath(path);
+                File.WriteAllText(tempPath, text, new UTF8Encoding(false));
+                ReplaceOrMoveTempFile(tempPath, path);
+                return true;
+            }
+            catch (Exception ex) when (IsExportWriteException(ex))
+            {
+                TryDeleteTempFile(tempPath);
+                report.Failures.Add($"{description} 写入失败: {path} ({ex.Message})");
+                return false;
+            }
+        }
+
+        private static void ReplaceOrMoveTempFile(string tempPath, string destinationPath)
+        {
+            if (File.Exists(destinationPath))
+                File.Replace(tempPath, destinationPath, null);
+            else
+                File.Move(tempPath, destinationPath);
+        }
+
+        private static string GetTempWritePath(string path)
+        {
+            string directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            string fileName = Path.GetFileName(path);
+            return Path.Combine(string.IsNullOrEmpty(directory) ? "." : directory, $".{fileName}.{Guid.NewGuid():N}.tmp");
+        }
+
+        private static void TryDeleteTempFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex) when (IsExportWriteException(ex))
+            {
+            }
+        }
+
+        private static bool TryCreateExportDirectories(string directory, CustomSystemTextReport report)
+        {
+            try
+            {
+                Directory.CreateDirectory(directory);
+                Directory.CreateDirectory(Path.Combine(directory, "Monsters"));
+                Directory.CreateDirectory(Path.Combine(directory, "Skills"));
+                return true;
+            }
+            catch (Exception ex) when (IsExportWriteException(ex))
+            {
+                report.Failures.Add($"创建自定义系统导出目录失败: {directory} ({ex.Message})");
+                return false;
+            }
+        }
+
+        private static bool IsExportWriteException(Exception ex)
+        {
+            return ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException;
         }
 
         private static string SafeFileName(string value)
@@ -7914,7 +8806,9 @@ namespace Server.Envir
         private static string Quote(string value)
         {
             if (string.IsNullOrWhiteSpace(value)) return "\"\"";
-            return value.Any(char.IsWhiteSpace) || value.Contains('"') ? $"\"{value.Replace("\"", "\\\"")}\"" : value;
+            return value.Any(char.IsWhiteSpace) || value.Contains('"') || value.Contains(',')
+                ? $"\"{value.Replace("\"", "\\\"")}\""
+                : value;
         }
     }
 

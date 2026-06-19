@@ -31,6 +31,8 @@ Resource=EmperorSaWooLoaded
 Scale=1
 DrawShadow=True
 KeepCorpse=True
+Blend=False
+DefaultFrameDelay=100
 FrameBase=9000
 AttackSound=EmperorSaWooAttack
 RangeAttackSound=EmperorSaWooAttack
@@ -46,9 +48,33 @@ Action=Walking Resource=EmperorSaWooLoaded Start=80 End=139 FrameCount=6 Directi
 
 [Animation]
 Action=Attack Resource=EmperorSaWooLoaded Start=160 End=219 FrameCount=6 DirectionCount=8 DirectionOffset=10 FrameDelay=100
+Sound=EmperorSaWooAttack
+EffectResource=EmperorSaWooMagicEx
+EffectTarget=Self
+EffectStart=510
+EffectEnd=515
+EffectFrameCount=6
+EffectFrameDelay=100
+EffectTriggerFrame=1
+EffectBlend=True
+
+[Animation]
+Action=RangeAttack Resource=EmperorSaWooLoaded Start=480 End=539 FrameCount=6 DirectionCount=8 DirectionOffset=10 FrameDelay=100
+Sound=EmperorSaWooAttack
+EffectResource=EmperorSaWooMagicEx
+EffectTarget=AttackTargets
+EffectStart=600
+EffectEnd=609
+EffectFrameCount=10
+EffectFrameDelay=100
+EffectStartLight=60
+EffectEndLight=60
+EffectTriggerFrame=4
+EffectBlend=True
 
 [Animation]
 Action=Magic Resource=EmperorSaWooLoaded Start=480 End=539 FrameCount=6 DirectionCount=8 DirectionOffset=10 FrameDelay=100
+Sound=EmperorSaWooAttack
 
 [Animation]
 Action=Struck Resource=EmperorSaWooLoaded Start=240 End=259 FrameCount=2 DirectionCount=8 DirectionOffset=10 FrameDelay=100
@@ -62,6 +88,9 @@ Action=Dead Resource=EmperorSaWooLoaded Start=329 End=329 FrameCount=1 Direction
 [Animation]
 Action=Show Resource=EmperorSaWooLoaded Start=640 End=739 FrameCount=10 DirectionCount=8 DirectionOffset=10 FrameDelay=100
 
+[Animation]
+Action=Hide Resource=EmperorSaWooLoaded Start=640 End=739 FrameCount=10 DirectionCount=8 DirectionOffset=10 FrameDelay=100 Reversed=True
+
 [Behavior]
 Template=RuleSet
 UseBaseFallback=False
@@ -72,7 +101,7 @@ PoisonType=Paralysis
 PoisonValue=0
 PoisonRate=4
 PoisonTicks=3
-PoisonFrequency=1000
+PoisonFrequency=5
 PoisonCanKill=False
 
 [AIAction]

@@ -20,11 +20,11 @@ Envir\Custom\Skills\Templates\*.txt
 
 文本验证和导入会先预索引本批次 `Monsters\*.txt` 的 `[Monster]` 名称；验证模式还会预索引 `Monsters\Templates\*.txt`。因此 `Skills\*.txt` 可以直接用 `SummonMonster="怪物名"` 引用同批文本里的新怪物，不需要先把怪物单独导入数据库。运行时文本覆盖仍要求客户端和数据库已经知道基础 `MonsterInfo/MagicInfo` 主对象；但怪物视觉动作和自定义技能特效会由服务端随怪物对象包、技能列表、技能动作包下发轻量快照，客户端不需要先存在对应的 `CustomMonsterVisualInfo/CustomSkillInfo` 数据库记录。全新怪物或全新技能稳定后仍建议导入数据库，保证删除文本目录后完全回到数据库模式。
 
-布尔字段支持 `True/False`、`1/0` 和 `yes/no`，导出时会统一写成 `True/False`。
+布尔字段支持 `True/False`、`1/0` 和 `yes/no`，导出时会统一写成 `True/False`。文本支持单独成行的 `#INSERT [file]` 和 `#INCLUDE [file]`，路径必须位于 `Envir\Custom` 内；未写扩展名时按 `.txt` 解析，可在行尾追加 `;` 或 `//` 注释。
 
 ## 资源
 
-`Resources.txt` 每行定义一个资源。可以引用客户端已加载的 `LibraryFile`，也可以引用约定目录内的相对路径。
+`Resources.txt` 每行定义一个资源。可以引用客户端已加载的 `LibraryFile`，也可以引用客户端 `Data\Custom` 目录内的相对路径；`Path`/`RelativePath` 不能指向 `Data\Custom` 之外。
 
 ```text
 EmperorSaWooLoaded LibraryFile=Mon_14 DisplayName="原客户端 Mon-14 牛魔王图库" Scope=Monster Enabled=True
@@ -77,7 +77,7 @@ DieSound=EmperorSaWooDie
 Action=Walking Resource=EmperorSaWooLoaded Start=80 End=139 FrameCount=6 DirectionCount=8 DirectionOffset=10 FrameDelay=100
 
 [Animation]
-Action=Attack Resource=EmperorSaWooLoaded Start=140 End=199 FrameCount=6 DirectionCount=8 DirectionOffset=10 FrameDelay=100
+Action=Attack Resource=EmperorSaWooLoaded Start=160 End=219 FrameCount=6 DirectionCount=8 DirectionOffset=10 FrameDelay=100
 Sound=EmperorSaWooAttack
 EffectResource=CustomFire
 EffectTarget=Self
@@ -130,7 +130,7 @@ Amount=21000
 
 ## 怪物掉落
 
-怪物文件可以包含 `[Drops]` 段。段内复用现有 Mir2 掉落工具语法，支持普通物品、金币、`GROUP`、`GROUP*`、`GROUP^`、`Amount`、`DropSet`、`PartOnly`、`EasterEvent`、`Mir2Gold`。
+怪物文件可以包含 `[Drops]` 段。段内复用现有 Mir2 掉落工具语法，支持普通物品、金币、`GROUP`、`GROUP*`、`GROUP^`、`Amount`、`DropSet`、`PartOnly`、`EasterEvent`、`Mir2Gold`。金币行可以写 `Gold 数量`，也可以写数据库配置的金币掉落物品名加 `Amount=数量`；默认按 Mir2 金币随机范围处理，需要固定数量时显式写 `Mir2Gold=False`。
 
 ```text
 [Drops]
@@ -144,7 +144,7 @@ Amount=21000
 }
 ```
 
-文本运行时模式会把 `[Drops]` 编译成内存掉落覆盖；导入数据库时会写入 `DropInfo/DropGroupInfo/DropGroupItemInfo`。`ReplaceExisting` 会先清空匹配怪物原掉落，`Merge` 会追加掉落。导出自定义怪物时，如果数据库里已有掉落，会内联导出成 `[Drops]`。
+文本运行时模式会把 `[Drops]` 编译成内存掉落覆盖；导入数据库时会写入 `DropInfo/DropGroupInfo/DropGroupItemInfo`。数据库导入会先验证缺失物品；`ReplaceExisting` 只会在对应怪物掉落段解析通过后清空原掉落并重建，避免失败文本把旧掉落清空。`Merge` 会追加掉落。导出自定义怪物时，如果数据库里已有掉落，会内联导出成 `[Drops]`。
 
 ## RuleSet AI
 
@@ -159,7 +159,7 @@ Amount=21000
 - `AvoidFireWall=True`：沿用怪物原有避火墙标记。
 - `IgnoreShield=True`：怪物基础攻击和自定义怪物技能忽略目标护盾。
 - `IgnoreArmour=True`：怪物基础攻击和自定义怪物技能不扣除目标 AC/MR。
-- `PoisonType=Green`、`PoisonRate=10`、`PoisonTicks=5`、`PoisonFrequency=2`：基础攻击命中后按旧怪物逻辑附毒。`PoisonRate=0` 表示每次命中必定附毒，大于 0 表示 1/N 概率；`PoisonValue=0` 时使用怪物 SC，`PoisonCanKill=False` 时毒伤不会致死。
+- `PoisonType=Green`、`PoisonRate=10`、`PoisonTicks=5`、`PoisonFrequency=2`：基础攻击命中后按旧怪物逻辑附毒，`PoisonFrequency` 单位是秒。`PoisonRate=0` 表示每次命中必定附毒，大于 0 表示 1/N 概率；`PoisonValue=0` 时使用怪物 SC，`PoisonCanKill=False` 时毒伤不会致死。动作级 `AIAction.TickRate` 仍使用毫秒，不要把 `TickRate=1000` 直接搬到 `PoisonFrequency`。
 - `PoisonStackable=True`：同类型毒允许叠加，不会替换目标身上已有的同类毒，适合强绿毒、持续压血类怪物。
 - `MaxMinions=20`：限制该怪物维护的召唤物数量；配合 `SpawnMinions` 使用。
 - `DisableMovement=True`：强制 `MoveDelay=0`，用于固定炮台、树、门、柱子。
@@ -271,7 +271,7 @@ Options=MassCyclone:1,TargetAreaHit:2
 Options=TeleportNearTarget:1,MarkAmbush:1,RequireAll=True
 ```
 
-`ScheduleAction` 用 `Options` 引用同一怪物里的一个或多个 `AIAction`，并在 `Delay` 毫秒后执行。它适合迁移旧 C# 里常见的“先播隐藏动画，900ms 后才真正不可见”或“延迟触发下一段动作”。
+`ScheduleAction` 用 `Options` 引用同一怪物里的一个或多个 `AIAction`，并在 `Delay` 毫秒后执行。它适合迁移旧 C# 里常见的“先播隐藏动画，900ms 后才真正不可见”或“延迟触发下一段动作”。延迟动作会保留触发时的规则上下文目标，例如 `OnStruck` 的攻击者或 `OnHitAction` 的命中目标。
 
 `HazardRoam` 用于迁移 Tornado、移动毒云、移动火墙这类“非阻挡但会移动并造成接触伤害”的临时怪物。推荐配合 `[Behavior] DisableBlocking=True`、`UseBaseFallback=False` 使用。常用选项：
 
@@ -510,6 +510,8 @@ Condition=Always
 Action=TeleportToMysteryShip
 Cooldown=3000
 ```
+
+`Options` 中 ASCII 逗号用于分隔选项；如果单个值本身要包含 ASCII 逗号，请只给该值加引号，例如 `Options=Message="第一段, 第二段",Scope=All`。
 
 `DamageProxy` 用于迁移旧 `Doll` 子类。当前 `CursedDoll` 技能仍保留旧 `Doll` 分支；如果 `MonsterFlag=CursedDoll` 的怪物配置了 `DamageProxy=True`，技能会生成 `CustomMonsterObject` 并调用通用代理逻辑。常用字段：
 
@@ -1032,11 +1034,11 @@ SummonDuration=0
 CastDelay=500
 ```
 
-英雄 v1 会从 `HeroInfo.Magics` 中选择已学习、已启用且冷却结束的敌对自定义技能，优先于旧的职业自动法术释放。当前支持 `DirectDamage`、`ProjectileDamage`、`ChainDamage`、`AreaDamage`、`PersistentAreaDamage`、`Debuff`、`Control`、`Move`，并会广播 `MagicInfoIndex` 和服务端技能快照让客户端播放自定义特效。英雄会按所有可用自定义敌对技能的最大射程追击，实际释放时跳过当前距离不满足的技能并继续尝试其它技能。道士英雄的支援循环会自动尝试自定义 `Heal`、`Buff` 和 `Summon`；`Heal/Buff` 目标限制为 `Self`、`Ally`、`AllyOrSelf`，优先给主人和自身补血或补缺失 Buff；`Summon` 使用 `SummonMonster/MaxSummons/SummonDuration` 挂到主人宠物列表，只有缺少对应宠物时才释放。英雄自动 `Move` 是保守突进：只在存在敌对目标时选择目标周围空格，落点必须在技能 `Range` 内、可站立，并且比当前位置更接近目标。英雄路径会读取 `CastDelay/ProjectileSpeed`、`Radius/Shape/MaxTargets`、`WaveCount/WaveInterval`，因此同一个敌对或支援技能模板可以同时给玩家、英雄和怪物复用。
+英雄 v1 会从 `HeroInfo.Magics` 中选择已学习、已启用且冷却结束的敌对自定义技能，优先于旧的职业自动法术释放。当前支持 `DirectDamage`、`ProjectileDamage`、`ChainDamage`、`AreaDamage`、`PersistentAreaDamage`、`Debuff`、`Control`、`Move`，并会广播 `MagicInfoIndex` 和服务端技能快照让客户端播放自定义特效。英雄会按所有可用自定义敌对技能的有效射程追击；`TargetRule=Self` 的伤害、减益和控制技能按自身中心的 `Radius/Shape` 判断是否命中当前目标，适合近身光环、扇形斩和自身脚下范围技。道士英雄的支援循环会自动尝试自定义 `Heal`、`Buff` 和 `Summon`；`Heal/Buff` 目标限制为 `Self`、`Ally`、`AllyOrSelf`，优先给主人和自身补血或补缺失 Buff；`Summon` 使用 `SummonMonster/MaxSummons/SummonDuration` 挂到主人宠物列表，只有缺少对应宠物时才释放。英雄自动 `Move` 是保守突进：只在存在敌对目标时选择目标周围空格，落点必须在技能 `Range` 内、可站立，并且比当前位置更接近目标。英雄路径会读取 `CastDelay/ProjectileSpeed`、`Radius/Shape/MaxTargets`、`WaveCount/WaveInterval`，因此同一个敌对或支援技能模板可以同时给玩家、英雄和怪物复用。
 
 `CastDelay` 控制服务端结算基础延迟，`ProjectileSpeed` 控制带弹道技能按距离追加的延迟，默认值与旧技能常用的 `500 + 距离 * 48ms` 保持一致。怪物自定义技能如果配置了 `Template=ProjectileDamage` 或存在 `Stage=Projectile` 特效，也会按距离延后结算，避免视觉弹道未到、伤害已经生效。
 
-`Radius` 是通用范围参数：`DirectDamage/ProjectileDamage` 会在目标周围做溅射伤害，`Heal/Buff` 会在目标或自身周围选择友方目标，`Debuff/Control` 会在目标周围选择敌对目标。`Radius=0` 时保持单目标行为。`MaxTargets=0` 表示不限制目标数量，正数表示范围内最多结算多少个目标，适合做最多命中 N 个目标的 Boss 点名、溅射、群疗或群控。
+`Radius` 是圆形范围参数：`DirectDamage/ProjectileDamage` 会在目标周围做溅射伤害，`Heal/Buff` 会在目标或自身周围选择友方目标，`Debuff/Control` 会在目标周围选择敌对目标。`Shape=Circle` 且 `Radius=0` 时保持单目标行为；`Shape=Line/Cone/Rectangle` 使用 `Length/Width/Angle` 计算范围，可以保持 `Radius=0`。`MaxTargets=0` 表示不限制目标数量，正数表示范围内最多结算多少个目标，适合做最多命中 N 个目标的 Boss 点名、溅射、群疗或群控。
 
 `Shape` 控制范围模板的几何形状：
 

@@ -33,7 +33,7 @@ HiddenCanBeAttacked=False
 PoisonType=Paralysis
 PoisonRate=20
 PoisonTicks=4
-PoisonFrequency=1000
+PoisonFrequency=5
 
 [AIAction]
 Name=StartHidden

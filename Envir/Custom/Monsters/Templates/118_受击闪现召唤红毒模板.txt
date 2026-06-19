@@ -33,7 +33,7 @@ PoisonType=Red
 PoisonValue=8
 PoisonRate=4
 PoisonTicks=5
-PoisonFrequency=1000
+PoisonFrequency=25
 PoisonCanKill=False
 
 [AIAction]

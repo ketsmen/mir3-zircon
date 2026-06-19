@@ -5,6 +5,7 @@ using Server.Envir;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.Linq;
 using S = Library.Network.ServerPackets;
 
@@ -536,7 +537,10 @@ namespace Server.Models.Monsters
                 marker.Equals(ScheduledAiActionMarker, StringComparison.Ordinal) &&
                 action.Data[1] is string actionName)
             {
-                ExecuteScheduledAiAction(actionName, action.Data.Length > 2 && action.Data[2] is int depth ? depth : 0);
+                ExecuteScheduledAiAction(
+                    actionName,
+                    action.Data.Length > 2 && action.Data[2] is int depth ? depth : 0,
+                    action.Data.Length > 3 ? action.Data[3] as MapObject : null);
                 return;
             }
 
@@ -691,7 +695,7 @@ namespace Server.Models.Monsters
                 return false;
 
             int baseChance = Math.Max(0, behavior.SkillChance);
-            int hpPercent = Stats[Stat.Health] <= 0 ? 0 : CurrentHP * 100 / Stats[Stat.Health];
+            int hpPercent = GetHealthPercent(this);
 
             foreach (CustomMonsterSkillInfo entry in behavior.Skills.OrderByDescending(x => x.Chance).ThenBy(x => x.Index))
             {
@@ -709,8 +713,8 @@ namespace Server.Models.Monsters
                 MapObject target = GetSkillActionTarget(action, skill);
                 Point location = GetActionLocation(action, target) ?? CurrentLocation;
 
-                if (!SkillCastInRange(skill, target, location, range)) continue;
-                if (!CastSkill(entry, skill, target, location)) continue;
+                if (!SkillCastInRange(skill, target, location, range, GetSkillPreviewDirection(target, location))) continue;
+                if (!CastSkill(entry, skill, target, location, range)) continue;
 
                 _skillCooldowns[entry.Magic.Index] = SEnvir.Now.AddMilliseconds(Math.Max(100, entry.Cooldown));
                 return true;
@@ -729,7 +733,7 @@ namespace Server.Models.Monsters
                 .GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
 
-            int hpPercent = Stats[Stat.Health] <= 0 ? 0 : CurrentHP * 100 / Stats[Stat.Health];
+            int hpPercent = GetHealthPercent(this);
             MapObject oldContextTarget = _ruleContextTarget;
             _ruleContextTarget = contextTarget ?? oldContextTarget;
 
@@ -829,8 +833,8 @@ namespace Server.Models.Monsters
                 CustomAiConditionType.SameCellAsTarget => target != null && CurrentLocation == target.CurrentLocation,
                 CustomAiConditionType.CanAttack => CanAttack,
                 CustomAiConditionType.CanMove => CanMove,
-                CustomAiConditionType.HealthBelow => Stats[Stat.Health] > 0 && CurrentHP * 100 / Stats[Stat.Health] <= value,
-                CustomAiConditionType.HealthAbove => Stats[Stat.Health] > 0 && CurrentHP * 100 / Stats[Stat.Health] >= value,
+                CustomAiConditionType.HealthBelow => Stats[Stat.Health] > 0 && GetHealthPercent(this) <= value,
+                CustomAiConditionType.HealthAbove => Stats[Stat.Health] > 0 && GetHealthPercent(this) >= value,
                 CustomAiConditionType.TargetHealthBelow => target != null && GetHealthPercent(target) <= value,
                 CustomAiConditionType.TargetHealthAbove => target != null && GetHealthPercent(target) >= value,
                 CustomAiConditionType.TargetCountAtLeast => CurrentMap != null && GetTargets(CurrentMap, CurrentLocation, radius).Count >= Math.Max(1, value),
@@ -929,6 +933,12 @@ namespace Server.Models.Monsters
                 Invert = invert,
             };
 
+            if (RuleConditionUsesCounter(condition))
+            {
+                ApplyCounterRuleConditionArguments(ref spec, parts);
+                return spec;
+            }
+
             if (parts.Length > 1)
                 ApplyRuleConditionArgument(ref spec, parts[1], firstArgument: true);
 
@@ -939,6 +949,39 @@ namespace Server.Models.Monsters
                 spec.CounterName = parts[3];
 
             return spec;
+        }
+
+        private static void ApplyCounterRuleConditionArguments(ref RuleConditionSpec spec, string[] parts)
+        {
+            if (parts.Length <= 1) return;
+
+            if (parts.Length > 2)
+            {
+                bool firstIsValue = int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int firstValue);
+                bool secondIsValue = int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int secondValue);
+
+                if (firstIsValue)
+                {
+                    spec.Value = firstValue;
+                    spec.CounterName = parts[2];
+                }
+                else if (secondIsValue)
+                {
+                    spec.CounterName = parts[1];
+                    spec.Value = secondValue;
+                }
+                else
+                {
+                    spec.CounterName = parts[2];
+                }
+            }
+            else
+            {
+                ApplyRuleConditionArgument(ref spec, parts[1], firstArgument: true);
+            }
+
+            if (parts.Length > 3)
+                spec.CounterName = parts[3];
         }
 
         private static void ApplyRuleConditionArgument(ref RuleConditionSpec spec, string value, bool firstArgument)
@@ -953,7 +996,7 @@ namespace Server.Models.Monsters
 
             if (RuleConditionUsesCounter(spec.Condition))
             {
-                if (firstArgument && int.TryParse(value, out int counterValue))
+                if (firstArgument && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int counterValue))
                     spec.Value = counterValue;
                 else
                     spec.CounterName = value;
@@ -961,9 +1004,9 @@ namespace Server.Models.Monsters
                 return;
             }
 
-            if (firstArgument && int.TryParse(value, out int intValue))
+            if (firstArgument && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int intValue))
                 spec.Value = intValue;
-            else if (!firstArgument && int.TryParse(value, out int radius))
+            else if (!firstArgument && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int radius))
                 spec.Radius = radius;
         }
 
@@ -1965,7 +2008,7 @@ namespace Server.Models.Monsters
                 MonsterInfo info = SEnvir.MonsterInfoList.Binding.FirstOrDefault(x => x.Flag == flag);
                 if (info == null) continue;
 
-                int weight = parts.Length == 2 && int.TryParse(parts[1], out int parsed) ? parsed : 1;
+                int weight = parts.Length == 2 && int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) ? parsed : 1;
                 if (weight <= 0) continue;
 
                 pool.Add((info, weight));
@@ -2052,7 +2095,7 @@ namespace Server.Models.Monsters
                     continue;
                 }
 
-                return actions.TryGetValue(name, out CustomMonsterAiActionInfo selected) && ExecuteAiAction(selected, actions, depth);
+                return actions.TryGetValue(name, out CustomMonsterAiActionInfo selected) && ExecuteAiAction(selected, actions, depth + 1);
             }
 
             return false;
@@ -2065,7 +2108,7 @@ namespace Server.Models.Monsters
 
             foreach ((string name, _) in ParseWeightedOptions(action.Options))
             {
-                bool current = actions.TryGetValue(name, out CustomMonsterAiActionInfo selected) && ExecuteAiAction(selected, actions, depth);
+                bool current = actions.TryGetValue(name, out CustomMonsterAiActionInfo selected) && ExecuteAiAction(selected, actions, depth + 1);
 
                 if (requireAll && !current)
                     return false;
@@ -2182,6 +2225,7 @@ namespace Server.Models.Monsters
             if (options.Count == 0) return false;
 
             int delay = Math.Max(0, action.Delay);
+            MapObject contextTarget = GetExecutionTarget();
             bool scheduled = false;
 
             foreach ((string name, _) in options)
@@ -2193,7 +2237,8 @@ namespace Server.Models.Monsters
                     ActionType.Function,
                     ScheduledAiActionMarker,
                     name,
-                    depth + 1));
+                    depth + 1,
+                    contextTarget));
 
                 scheduled = true;
             }
@@ -2201,9 +2246,9 @@ namespace Server.Models.Monsters
             return scheduled;
         }
 
-        private bool ExecuteScheduledAiAction(string actionName, int depth)
+        private bool ExecuteScheduledAiAction(string actionName, int depth, MapObject contextTarget)
         {
-            return ExecuteNamedAiAction(actionName, depth, null);
+            return ExecuteNamedAiAction(actionName, depth, contextTarget);
         }
 
         private void ExecuteOnHitAction(CustomMonsterAiActionInfo sourceAction, MapObject hitTarget)
@@ -2812,7 +2857,7 @@ namespace Server.Models.Monsters
                 duration += SEnvir.Random.Next(durationRandom);
 
             TimeSpan tickFrequency = TimeSpan.FromMilliseconds(Math.Max(0, action.TickRate));
-            int tickCount = action.FixedCount > 0 ? action.FixedCount : 1;
+            int tickCount = GetSpawnSpellObjectTickCount(action, effect);
 
             foreach (Point origin in origins)
             {
@@ -2863,6 +2908,13 @@ namespace Server.Models.Monsters
 
             UpdateAttackTime();
             return true;
+        }
+
+        private static int GetSpawnSpellObjectTickCount(CustomMonsterAiActionInfo action, SpellEffect effect)
+        {
+            int tickCount = action.FixedCount > 0 ? action.FixedCount : 1;
+
+            return effect == SpellEffect.MonsterDeathCloud ? 0 : tickCount;
         }
 
         private static MonsterFlag GetActionMonsterFlag(CustomMonsterAiActionInfo action)
@@ -2973,9 +3025,12 @@ namespace Server.Models.Monsters
             Point location = GetActionLocation(action, target) ?? CurrentLocation;
             location = ApplyActionOriginOffset(action, location);
             int range = action.Distance > 0 ? action.Distance : skill.Range > 0 ? skill.Range : Globals.MagicRange;
+            MirDirection castDirection = GetSkillPreviewDirection(target, location);
 
-            if (!SkillCastInRange(skill, target, location, range))
+            if (!SkillCastInRange(skill, target, location, range, castDirection))
                 return false;
+
+            Direction = castDirection;
 
             object payload;
             List<uint> targets = new();
@@ -2993,41 +3048,48 @@ namespace Server.Models.Monsters
                     break;
                 case CustomSkillTemplate.AreaDamage:
                 case CustomSkillTemplate.PersistentAreaDamage:
-                    payload = CreateSkillAreaPayload(skill, target, location);
+                    payload = CreateSkillAreaPayload(skill, target, location, castDirection, range);
                     locations.Add(((SkillAreaPayload)payload).Location);
                     break;
                 case CustomSkillTemplate.Heal:
                 case CustomSkillTemplate.Buff:
                     if (target == null) return false;
-                    payload = target;
+                    payload = CreateSkillTargetPayload(target, range);
                     targets.Add(target.ObjectID);
                     break;
                 case CustomSkillTemplate.Summon:
-                    payload = Functions.Move(CurrentLocation, Direction, -1);
-                    locations.Add((Point)payload);
+                    Point summonLocation = Functions.Move(CurrentLocation, Direction, -1);
+                    payload = new SkillLocationPayload { Map = CurrentMap, Location = summonLocation, Origin = CurrentLocation };
+                    locations.Add(summonLocation);
                     break;
                 case CustomSkillTemplate.DamageProxy:
                     if (target == null) return false;
                     Direction = Functions.DirectionFromPoint(CurrentLocation, target.CurrentLocation);
                     Point proxyLocation = Functions.Move(CurrentLocation, Direction, 1);
-                    payload = new SkillDamageProxyPayload { Target = target, Location = proxyLocation };
+                    payload = new SkillDamageProxyPayload { Map = CurrentMap, Target = target, Location = proxyLocation, Origin = CurrentLocation };
                     targets.Add(target.ObjectID);
                     locations.Add(proxyLocation);
                     break;
                 case CustomSkillTemplate.Move:
-                    payload = location;
+                    payload = new SkillLocationPayload { Map = CurrentMap, Location = location, Origin = CurrentLocation, Range = range };
                     locations.Add(location);
                     break;
                 default:
                     if (target == null) return false;
-                    payload = target;
+                    payload = ShouldCaptureOffensiveSelfAreaPayload(skill, target)
+                        ? CreateSkillAreaPayload(skill, target, location, castDirection, range)
+                        : CreateSkillTargetPayload(target, range);
                     targets.Add(target.ObjectID);
+                    if (payload is SkillAreaPayload areaPayload)
+                        locations.Add(areaPayload.Location);
                     location = target.CurrentLocation;
                     break;
             }
 
             if (target != null && target != this)
                 Direction = Functions.DirectionFromPoint(CurrentLocation, target.CurrentLocation);
+            else if (target == this && Target?.Node != null && Target.CurrentMap == CurrentMap && Target.CurrentLocation != CurrentLocation)
+                Direction = Functions.DirectionFromPoint(CurrentLocation, Target.CurrentLocation);
 
             Broadcast(new S.ObjectMagic
             {
@@ -3065,18 +3127,19 @@ namespace Server.Models.Monsters
 
                 Point location = GetActionLocation(action, target) ?? target.CurrentLocation;
                 location = ApplyActionOriginOffset(action, location);
-                if (!SkillCastInRange(skill, target, location, range)) continue;
+                MirDirection castDirection = GetSkillPreviewDirection(target, location);
+                if (!SkillCastInRange(skill, target, location, range, castDirection)) continue;
 
                 object payload;
 
                 if (skill.Template == CustomSkillTemplate.Move)
                 {
-                    payload = location;
+                    payload = new SkillLocationPayload { Map = CurrentMap, Location = location, Origin = CurrentLocation, Range = range };
                     locations.Add(location);
                 }
                 else
                 {
-                    SkillAreaPayload areaPayload = CreateSkillAreaPayload(skill, target, location);
+                    SkillAreaPayload areaPayload = CreateSkillAreaPayload(skill, target, location, castDirection, range);
                     payload = areaPayload;
                     locations.Add(areaPayload.Location);
                     targets.Add(target.ObjectID);
@@ -3159,7 +3222,7 @@ namespace Server.Models.Monsters
             return target;
         }
 
-        private bool SkillCastInRange(CustomSkillInfo skill, MapObject target, Point location, int range)
+        private bool SkillCastInRange(CustomSkillInfo skill, MapObject target, Point location, int range, MirDirection direction)
         {
             if (skill == null) return false;
 
@@ -3169,7 +3232,11 @@ namespace Server.Models.Monsters
                 return true;
 
             if (UsesLocationPayload(skill))
-                return Functions.InRange(CurrentLocation, location, range);
+            {
+                if (!Functions.InRange(CurrentLocation, location, range)) return false;
+                return !RequiresOffensiveSelfAreaTarget(skill, target) ||
+                       HasOffensiveSkillAreaTarget(skill, location, direction);
+            }
 
             if (target == null) return false;
             if (skill.Template == CustomSkillTemplate.Heal)
@@ -3178,7 +3245,28 @@ namespace Server.Models.Monsters
                 if (maxHealth <= 0 || target.CurrentHP >= maxHealth) return false;
             }
 
+            if (RequiresOffensiveSelfAreaTarget(skill, target))
+                return HasOffensiveSkillAreaTarget(skill, target.CurrentLocation, direction);
+
             return target == this || Functions.InRange(CurrentLocation, target.CurrentLocation, range);
+        }
+
+        private bool RequiresOffensiveSelfAreaTarget(CustomSkillInfo skill, MapObject target)
+        {
+            return IsOffensiveSkill(skill) &&
+                   (skill.TargetRule == CustomSkillTargetRule.Self || ReferenceEquals(target, this));
+        }
+
+        private bool ShouldCaptureOffensiveSelfAreaPayload(CustomSkillInfo skill, MapObject target)
+        {
+            return RequiresOffensiveSelfAreaTarget(skill, target) && GetSkillSearchRadius(skill) > 0;
+        }
+
+        private bool HasOffensiveSkillAreaTarget(CustomSkillInfo skill, Point center, MirDirection direction)
+        {
+            if (CurrentMap == null || GetSkillSearchRadius(skill) <= 0) return false;
+
+            return GetSkillAreaTargets(skill, center, direction).Count > 0;
         }
 
         private static bool UsesLocationPayload(CustomSkillInfo skill)
@@ -3188,20 +3276,53 @@ namespace Server.Models.Monsters
                 or CustomSkillTemplate.Move;
         }
 
+        private MirDirection GetSkillPreviewDirection(MapObject target, Point location)
+        {
+            if (target?.Node != null && target != this && target.CurrentLocation != CurrentLocation)
+                return Functions.DirectionFromPoint(CurrentLocation, target.CurrentLocation);
+
+            MapObject executionTarget = GetExecutionTarget();
+            if ((target == this || location == CurrentLocation) &&
+                executionTarget?.Node != null &&
+                executionTarget != this &&
+                executionTarget.CurrentMap == CurrentMap &&
+                executionTarget.CurrentLocation != CurrentLocation)
+                return Functions.DirectionFromPoint(CurrentLocation, executionTarget.CurrentLocation);
+
+            return location == CurrentLocation ? Direction : Functions.DirectionFromPoint(CurrentLocation, location);
+        }
+
         private static bool IsHelpfulSkill(CustomSkillInfo skill)
         {
             return skill?.Template is CustomSkillTemplate.Heal or CustomSkillTemplate.Buff
                 || skill?.TargetRule is CustomSkillTargetRule.Ally
-                    or CustomSkillTargetRule.AllyOrSelf
-                    or CustomSkillTargetRule.Self;
+                    or CustomSkillTargetRule.AllyOrSelf;
         }
 
         private static bool RequiresAttackTarget(CustomSkillInfo skill, CustomAiTargetSelectorType selector)
         {
-            if (skill == null || IsHelpfulSkill(skill) || IsAllySelector(selector) || selector == CustomAiTargetSelectorType.Self)
+            if (skill == null || IsHelpfulSkill(skill) || IsAllySelector(selector))
+                return false;
+
+            if (IsOffensiveSkill(skill))
+                return true;
+
+            if (selector == CustomAiTargetSelectorType.Self)
                 return false;
 
             return skill.TargetRule is CustomSkillTargetRule.Enemy or CustomSkillTargetRule.EnemyOrGround;
+        }
+
+        private static bool IsOffensiveSkill(CustomSkillInfo skill)
+        {
+            return skill?.Template is CustomSkillTemplate.DirectDamage
+                or CustomSkillTemplate.ProjectileDamage
+                or CustomSkillTemplate.ChainDamage
+                or CustomSkillTemplate.AreaDamage
+                or CustomSkillTemplate.PersistentAreaDamage
+                or CustomSkillTemplate.Debuff
+                or CustomSkillTemplate.Control
+                or CustomSkillTemplate.DamageProxy;
         }
 
         private static bool IsAllySelector(CustomAiTargetSelectorType selector)
@@ -3237,6 +3358,7 @@ namespace Server.Models.Monsters
             };
 
             if (target == null) return null;
+            if (target != this && target.CurrentMap != CurrentMap) return null;
             if (requireAttackTarget && !CanAttackTarget(target)) return null;
 
             return target;
@@ -3435,13 +3557,18 @@ namespace Server.Models.Monsters
         {
             if (EXPOwner == null) yield break;
 
-            if (EXPOwner.GroupMembers == null)
+            HashSet<PlayerObject> players = new() { EXPOwner };
+
+            if (EXPOwner.GroupMembers != null)
             {
-                yield return EXPOwner;
-                yield break;
+                foreach (PlayerObject player in EXPOwner.GroupMembers)
+                {
+                    if (player != null)
+                        players.Add(player);
+                }
             }
 
-            foreach (PlayerObject player in EXPOwner.GroupMembers)
+            foreach (PlayerObject player in players)
             {
                 if (player?.Node == null || player.Dead || !player.Visible || player.CurrentMap != CurrentMap) continue;
                 if (!Functions.InRange(player.CurrentLocation, CurrentLocation, Config.MaxViewRange)) continue;
@@ -3512,7 +3639,7 @@ namespace Server.Models.Monsters
         private static int GetHealthPercent(MapObject ob)
         {
             int max = ob?.Stats[Stat.Health] ?? 0;
-            return max <= 0 ? 100 : ob.CurrentHP * 100 / max;
+            return max <= 0 ? 100 : (int)(Math.Max(0, (long)ob.CurrentHP) * 100 / max);
         }
 
         private List<MapObject> GetObjects(Point location, int radius, bool requireAttackTarget)
@@ -3619,7 +3746,7 @@ namespace Server.Models.Monsters
                 if (parts.Length != 2) continue;
                 if (!Enum.TryParse(parts[0], true, out MirClass configuredClass)) continue;
                 if (configuredClass != targetClass) continue;
-                if (!int.TryParse(parts[1], out int parsed)) continue;
+                if (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)) continue;
 
                 rate = Math.Max(0, parsed);
                 return true;
@@ -3669,14 +3796,14 @@ namespace Server.Models.Monsters
             List<(string Name, int Weight)> result = new();
             if (string.IsNullOrWhiteSpace(value)) return result;
 
-            foreach (string token in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            foreach (string token in SplitActionOptions(value, splitBareItems: true))
             {
                 if (token.Contains('=', StringComparison.Ordinal))
                     continue;
 
                 string[] parts = token.Split(':', 2, StringSplitOptions.TrimEntries);
                 string name = parts[0];
-                int weight = parts.Length == 2 && int.TryParse(parts[1], out int parsed) ? parsed : 1;
+                int weight = parts.Length == 2 && int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) ? parsed : 1;
 
                 if (!string.IsNullOrWhiteSpace(name) && weight > 0)
                     result.Add((name, weight));
@@ -3691,15 +3818,15 @@ namespace Server.Models.Monsters
             if (string.IsNullOrWhiteSpace(value)) return defaultValue;
 
             if (bool.TryParse(value, out bool result)) return result;
-            if (value == "1") return true;
-            if (value == "0") return false;
+            if (value.Equals("1", StringComparison.OrdinalIgnoreCase) || value.Equals("yes", StringComparison.OrdinalIgnoreCase)) return true;
+            if (value.Equals("0", StringComparison.OrdinalIgnoreCase) || value.Equals("no", StringComparison.OrdinalIgnoreCase)) return false;
             return defaultValue;
         }
 
         private static int GetActionOptionInt(CustomMonsterAiActionInfo action, string key, int defaultValue)
         {
             string value = GetActionOptionValue(action, key);
-            return int.TryParse(value, out int result) ? result : defaultValue;
+            return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int result) ? result : defaultValue;
         }
 
         private int GetActionPowerSource(CustomMonsterAiActionInfo action, string key, int defaultValue)
@@ -3733,7 +3860,7 @@ namespace Server.Models.Monsters
         {
             if (action == null || string.IsNullOrWhiteSpace(action.Options)) return null;
 
-            foreach (string token in SplitActionOptions(action.Options))
+            foreach (string token in SplitActionOptions(action.Options, splitBareItems: false))
             {
                 string[] parts = token.Split('=', 2, StringSplitOptions.TrimEntries);
                 if (parts.Length == 2 && parts[0].Equals(key, StringComparison.OrdinalIgnoreCase))
@@ -3743,23 +3870,36 @@ namespace Server.Models.Monsters
             return null;
         }
 
-        private static IEnumerable<string> SplitActionOptions(string options)
+        private static IEnumerable<string> SplitActionOptions(string options, bool splitBareItems = false)
         {
             if (string.IsNullOrWhiteSpace(options)) yield break;
 
             int start = 0;
             bool inQuote = false;
+            bool escaped = false;
 
             for (int i = 0; i < options.Length; i++)
             {
                 char ch = options[i];
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+
+                if (inQuote && ch == '\\')
+                {
+                    escaped = true;
+                    continue;
+                }
+
                 if (ch == '"')
                 {
                     inQuote = !inQuote;
                     continue;
                 }
 
-                if (ch != ',' || inQuote) continue;
+                if (ch != ',' || inQuote || !ShouldSplitActionOptionComma(options, i, splitBareItems)) continue;
 
                 string token = options[start..i].Trim();
                 if (token.Length > 0) yield return token;
@@ -3770,13 +3910,51 @@ namespace Server.Models.Monsters
             if (last.Length > 0) yield return last;
         }
 
+        private static bool ShouldSplitActionOptionComma(string options, int commaIndex, bool splitBareItems)
+        {
+            if (splitBareItems)
+                return true;
+
+            int index = commaIndex + 1;
+            while (index < options.Length && char.IsWhiteSpace(options[index]))
+                index++;
+
+            if (index >= options.Length || options[index] == '"')
+                return false;
+
+            bool hasName = false;
+            for (; index < options.Length; index++)
+            {
+                char ch = options[index];
+
+                if (ch == '=')
+                    return hasName;
+
+                if (ch == ',')
+                    return false;
+
+                if (char.IsWhiteSpace(ch))
+                    continue;
+
+                if (char.IsLetterOrDigit(ch) || ch == '_')
+                {
+                    hasName = true;
+                    continue;
+                }
+
+                return false;
+            }
+
+            return false;
+        }
+
         private static string TrimOptionQuotes(string value)
         {
             if (string.IsNullOrWhiteSpace(value)) return value;
 
             value = value.Trim();
             return value.Length >= 2 && value[0] == '"' && value[^1] == '"'
-                ? value[1..^1]
+                ? value[1..^1].Replace("\\\"", "\"")
                 : value;
         }
 
@@ -3845,7 +4023,7 @@ namespace Server.Models.Monsters
         private static bool TryGetRegionByIndex(string value, out MapRegion region)
         {
             region = null;
-            if (!int.TryParse(value, out int index)) return false;
+            if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index)) return false;
 
             region = SEnvir.MapRegionList.Binding.FirstOrDefault(x => x.Index == index);
             return region != null;
@@ -3888,18 +4066,16 @@ namespace Server.Models.Monsters
             }
         }
 
-        private bool CastSkill(CustomMonsterSkillInfo entry, CustomSkillInfo skill, MapObject target, Point location)
+        private bool CastSkill(CustomMonsterSkillInfo entry, CustomSkillInfo skill, MapObject target, Point location, int range)
         {
             if (entry?.Magic == null || skill == null) return false;
 
-            if (target != null && target != this)
-                Direction = Functions.DirectionFromPoint(CurrentLocation, target.CurrentLocation);
-            else if (Target?.Node != null && Target.CurrentMap == CurrentMap)
-                Direction = Functions.DirectionFromPoint(CurrentLocation, Target.CurrentLocation);
+            MirDirection castDirection = GetSkillPreviewDirection(target, location);
+            Direction = castDirection;
 
             List<uint> targets = new();
             List<Point> locations = new();
-            object payload = target;
+            object payload = target == null ? null : CreateSkillTargetPayload(target, range);
 
             switch (skill.Template)
             {
@@ -3912,33 +4088,39 @@ namespace Server.Models.Monsters
                     break;
                 case CustomSkillTemplate.AreaDamage:
                 case CustomSkillTemplate.PersistentAreaDamage:
-                    payload = CreateSkillAreaPayload(skill, target, location);
+                    payload = CreateSkillAreaPayload(skill, target, location, castDirection, range);
                     locations.Add(((SkillAreaPayload)payload).Location);
                     break;
                 case CustomSkillTemplate.Heal:
                 case CustomSkillTemplate.Buff:
                     if (target == null) return false;
-                    payload = target;
+                    payload = CreateSkillTargetPayload(target, range);
                     targets.Add(target.ObjectID);
                     break;
                 case CustomSkillTemplate.Summon:
-                    payload = Functions.Move(CurrentLocation, Direction, -1);
-                    locations.Add((Point)payload);
+                    Point summonLocation = Functions.Move(CurrentLocation, Direction, -1);
+                    payload = new SkillLocationPayload { Map = CurrentMap, Location = summonLocation, Origin = CurrentLocation };
+                    locations.Add(summonLocation);
                     break;
                 case CustomSkillTemplate.DamageProxy:
                     if (target == null) return false;
                     Point proxyLocation = Functions.Move(CurrentLocation, Direction, 1);
-                    payload = new SkillDamageProxyPayload { Target = target, Location = proxyLocation };
+                    payload = new SkillDamageProxyPayload { Map = CurrentMap, Target = target, Location = proxyLocation, Origin = CurrentLocation };
                     targets.Add(target.ObjectID);
                     locations.Add(proxyLocation);
                     break;
                 case CustomSkillTemplate.Move:
-                    payload = location;
+                    payload = new SkillLocationPayload { Map = CurrentMap, Location = location, Origin = CurrentLocation, Range = range };
                     locations.Add(location);
                     break;
                 default:
                     if (target == null) return false;
+                    payload = ShouldCaptureOffensiveSelfAreaPayload(skill, target)
+                        ? CreateSkillAreaPayload(skill, target, location, castDirection, range)
+                        : CreateSkillTargetPayload(target, range);
                     targets.Add(target.ObjectID);
+                    if (payload is SkillAreaPayload areaPayload)
+                        locations.Add(areaPayload.Location);
                     break;
             }
 
@@ -3971,22 +4153,22 @@ namespace Server.Models.Monsters
                     if (payload is SkillChainPayload chainPayload)
                         ApplyChainDamage(skill, chainPayload);
                     else
-                        ApplyDamage(skill, payload as MapObject);
+                        ApplyDamage(skill, GetSkillPayloadTarget(payload));
                     applied = true;
                     break;
                 case CustomSkillTemplate.DirectDamage:
                 case CustomSkillTemplate.ProjectileDamage:
                     if (!TryApplyTargetAreaSkill(skill, payload))
-                        ApplyDamage(skill, payload as MapObject);
+                        ApplyDamage(skill, GetSkillPayloadTarget(payload));
                     applied = true;
                     break;
                 case CustomSkillTemplate.Debuff:
                 case CustomSkillTemplate.Control:
                     if (!TryApplyTargetAreaSkill(skill, payload))
                     {
-                        ApplyDamage(skill, payload as MapObject);
-                        ApplySkillStatus(skill, payload as MapObject, helpful: false);
-                        ApplySkillMovement(skill, payload as MapObject);
+                        MapObject target = GetSkillPayloadTarget(payload, out Point? origin);
+                        ApplySkillStatus(skill, target, helpful: false);
+                        ApplySkillMovement(skill, target, origin);
                     }
                     applied = true;
                     break;
@@ -4005,26 +4187,33 @@ namespace Server.Models.Monsters
                     break;
                 case CustomSkillTemplate.Heal:
                     if (!TryApplyTargetAreaSkill(skill, payload))
-                        ApplySkillHeal(skill, payload as MapObject ?? this);
+                        ApplySkillHeal(skill, GetSingleTargetOrSelf(payload));
                     applied = true;
                     break;
                 case CustomSkillTemplate.Buff:
                     if (!TryApplyTargetAreaSkill(skill, payload))
-                        ApplySkillStatus(skill, payload as MapObject ?? this, helpful: true);
+                        ApplySkillStatus(skill, GetSingleTargetOrSelf(payload), helpful: true);
                     applied = true;
                     break;
                 case CustomSkillTemplate.Summon:
-                    if (payload is Point location)
-                        SpawnCustomMinion(skill, location);
+                    if (payload is SkillLocationPayload summonPayload)
+                        SpawnCustomMinion(skill, summonPayload);
+                    else if (payload is Point location)
+                        SpawnCustomMinion(skill, new SkillLocationPayload { Map = CurrentMap, Location = location, Origin = CurrentLocation });
                     break;
                 case CustomSkillTemplate.DamageProxy:
                     if (payload is SkillDamageProxyPayload proxyPayload)
                         SpawnDamageProxyMinion(skill, proxyPayload);
                     break;
                 case CustomSkillTemplate.Move:
-                    if (payload is Point moveLocation)
+                    if (payload is SkillLocationPayload movePayload)
                     {
-                        ApplySkillMove(skill, moveLocation);
+                        ApplySkillMove(skill, movePayload);
+                        applied = true;
+                    }
+                    else if (payload is Point moveLocation)
+                    {
+                        ApplySkillMove(skill, new SkillLocationPayload { Map = CurrentMap, Location = moveLocation, Origin = CurrentLocation });
                         applied = true;
                     }
                     break;
@@ -4038,7 +4227,7 @@ namespace Server.Models.Monsters
         {
             List<MapObject> targets = new();
             if (skill == null || primaryTarget?.Node == null || !CanAttackTarget(primaryTarget))
-                return new SkillChainPayload { Targets = targets };
+                return new SkillChainPayload { Map = CurrentMap, Origin = CurrentLocation, Targets = targets };
 
             targets.Add(primaryTarget);
 
@@ -4055,7 +4244,7 @@ namespace Server.Models.Monsters
                 previous = next;
             }
 
-            return new SkillChainPayload { Targets = targets };
+            return new SkillChainPayload { Map = CurrentMap, Origin = CurrentLocation, Targets = targets };
         }
 
         private MapObject GetNextChainTarget(MapObject previous, IReadOnlyCollection<MapObject> usedTargets, int jumpRadius)
@@ -4075,58 +4264,143 @@ namespace Server.Models.Monsters
         private void ApplyChainDamage(CustomSkillInfo skill, SkillChainPayload payload)
         {
             if (payload?.Targets == null) return;
+            Map map = payload.Map ?? CurrentMap;
+            if (map == null || CurrentMap != map) return;
 
             foreach (MapObject target in payload.Targets.ToArray())
+            {
+                if (target?.CurrentMap != map) continue;
                 ApplyDamage(skill, target);
+            }
         }
 
         private bool TryApplyTargetAreaSkill(CustomSkillInfo skill, object payload)
         {
-            if (skill == null || skill.Radius <= 0 || CurrentMap == null) return false;
+            if (skill == null || GetSkillSearchRadius(skill) <= 0 || CurrentMap == null) return false;
 
-            Point? center = payload switch
+            Point? center;
+            MirDirection direction;
+            SkillTargetPayload targetPayload = payload as SkillTargetPayload;
+            MapObject payloadTarget = null;
+            Point? payloadOrigin = null;
+
+            if (targetPayload != null)
             {
-                MapObject target when target?.Node != null => target.CurrentLocation,
-                Point point => point,
-                _ when IsHelpfulSkill(skill) => CurrentLocation,
-                _ => null,
-            };
+                payloadTarget = GetSkillPayloadTarget(targetPayload, out payloadOrigin);
+                if (payloadTarget == null) return false;
+            }
 
-            if (center == null) return false;
+            if (payload is SkillAreaPayload areaPayload)
+            {
+                center = areaPayload.Location;
+                direction = areaPayload.Direction;
+            }
+            else
+            {
+                center = payload switch
+                {
+                    _ when payloadTarget?.Node != null => payloadTarget.CurrentLocation,
+                    MapObject target when target?.Node != null => target.CurrentLocation,
+                    Point point => point,
+                    _ when IsHelpfulSkill(skill) => CurrentLocation,
+                    _ => null,
+                };
 
-            MirDirection direction = GetSkillDirection(center.Value);
-            List<MapObject> targets = GetSkillAreaTargets(skill, center.Value, direction);
+                if (center == null) return false;
+
+                direction = payloadTarget?.Node != null && !ReferenceEquals(payloadTarget, this)
+                    ? Functions.DirectionFromPoint(payloadOrigin ?? CurrentLocation, payloadTarget.CurrentLocation)
+                    : GetSkillDirection(center.Value);
+            }
+
+            SkillAreaPayload payloadArea = payload as SkillAreaPayload;
+            Map map = payloadArea?.Map ?? targetPayload?.Map ?? CurrentMap;
+            Point origin = payloadArea?.Origin ?? payloadOrigin ?? CurrentLocation;
+            if (map == null || CurrentMap != map) return false;
+            int payloadRange = payloadArea?.Range > 0 ? payloadArea.Range : targetPayload?.Range > 0 ? targetPayload.Range : GetSkillRange(skill);
+            if (!Functions.InRange(origin, center.Value, payloadRange)) return false;
+
+            List<MapObject> targets = GetSkillAreaTargets(skill, center.Value, direction, origin, map);
             if (targets.Count == 0) return false;
 
             foreach (MapObject target in targets)
-                ApplySkillTemplateToTarget(skill, target);
+                ApplySkillTemplateToTarget(skill, target, origin);
 
             return true;
         }
 
-        private SkillAreaPayload CreateSkillAreaPayload(CustomSkillInfo skill, MapObject target, Point location)
+        private SkillAreaPayload CreateSkillAreaPayload(CustomSkillInfo skill, MapObject target, Point location, MirDirection? direction = null, int? range = null)
         {
             return new SkillAreaPayload
             {
+                Map = CurrentMap,
                 Location = location,
-                Direction = target?.Node != null ? Functions.DirectionFromPoint(CurrentLocation, target.CurrentLocation) : GetSkillDirection(location),
+                Origin = CurrentLocation,
+                Range = Math.Max(1, range ?? GetSkillRange(skill)),
+                Direction = direction ??
+                            (target?.Node != null && !ReferenceEquals(target, this)
+                                ? Functions.DirectionFromPoint(CurrentLocation, target.CurrentLocation)
+                                : GetSkillDirection(location)),
             };
         }
 
-        private List<MapObject> GetSkillAreaTargets(CustomSkillInfo skill, Point center, MirDirection direction)
+        private SkillTargetPayload CreateSkillTargetPayload(MapObject target, int range = 0)
+        {
+            return new SkillTargetPayload
+            {
+                Map = CurrentMap,
+                Target = target,
+                Origin = CurrentLocation,
+                Range = range,
+            };
+        }
+
+        private MapObject GetSkillPayloadTarget(object payload)
+        {
+            return GetSkillPayloadTarget(payload, out _);
+        }
+
+        private MapObject GetSkillPayloadTarget(object payload, out Point? origin)
+        {
+            origin = null;
+
+            if (payload is SkillTargetPayload targetPayload)
+            {
+                origin = targetPayload.Origin;
+                Map map = targetPayload.Map ?? CurrentMap;
+                if (map == null || CurrentMap != map || targetPayload.Target?.CurrentMap != map)
+                    return null;
+
+                return targetPayload.Target;
+            }
+
+            return payload as MapObject;
+        }
+
+        private MapObject GetSingleTargetOrSelf(object payload)
+        {
+            if (payload is SkillTargetPayload)
+                return GetSkillPayloadTarget(payload);
+
+            return GetSkillPayloadTarget(payload) ?? this;
+        }
+
+        private List<MapObject> GetSkillAreaTargets(CustomSkillInfo skill, Point center, MirDirection direction, Point? origin = null, Map map = null)
         {
             List<MapObject> targets = new();
             int radius = GetSkillSearchRadius(skill);
             bool helpful = IsHelpfulSkill(skill);
+            map ??= CurrentMap;
+            if (map == null) return targets;
 
-            foreach (Cell cell in CurrentMap.GetCells(center, 0, radius))
+            foreach (Cell cell in map.GetCells(center, 0, radius))
             {
                 if (cell?.Objects == null) continue;
 
                 foreach (MapObject ob in cell.Objects.ToArray())
                 {
-                    if (ob?.Node == null || ob.Dead || ob.CurrentMap != CurrentMap) continue;
-                    if (!IsLocationInSkillShape(skill, center, ob.CurrentLocation, direction)) continue;
+                    if (ob?.Node == null || ob.Dead || ob.CurrentMap != map) continue;
+                    if (!IsLocationInSkillShape(skill, center, ob.CurrentLocation, direction, origin ?? CurrentLocation)) continue;
 
                     if (helpful)
                     {
@@ -4143,7 +4417,7 @@ namespace Server.Models.Monsters
                 .ToList();
         }
 
-        private void ApplySkillTemplateToTarget(CustomSkillInfo skill, MapObject target)
+        private void ApplySkillTemplateToTarget(CustomSkillInfo skill, MapObject target, Point? origin = null)
         {
             switch (skill.Template)
             {
@@ -4153,9 +4427,8 @@ namespace Server.Models.Monsters
                     break;
                 case CustomSkillTemplate.Debuff:
                 case CustomSkillTemplate.Control:
-                    ApplyDamage(skill, target);
                     ApplySkillStatus(skill, target, helpful: false);
-                    ApplySkillMovement(skill, target);
+                    ApplySkillMovement(skill, target, origin);
                     break;
                 case CustomSkillTemplate.Heal:
                     ApplySkillHeal(skill, target);
@@ -4169,10 +4442,13 @@ namespace Server.Models.Monsters
         private void ApplyAreaDamage(CustomSkillInfo skill, SkillAreaPayload payload)
         {
             if (payload == null) return;
+            Map map = payload.Map ?? CurrentMap;
+            if (map == null || CurrentMap != map) return;
+            if (!Functions.InRange(payload.Origin, payload.Location, GetSkillPayloadRange(skill, payload))) return;
 
             int remainingTargets = GetMaxSkillTargetsOrAll(skill);
 
-            foreach (Cell cell in CurrentMap.GetCells(payload.Location, 0, GetSkillSearchRadius(skill)))
+            foreach (Cell cell in map.GetCells(payload.Location, 0, GetSkillSearchRadius(skill)))
             {
                 if (cell?.Objects == null) continue;
 
@@ -4180,7 +4456,8 @@ namespace Server.Models.Monsters
                 {
                     if (i >= cell.Objects.Count) continue;
                     MapObject target = cell.Objects[i];
-                    if (!IsLocationInSkillShape(skill, payload.Location, target.CurrentLocation, payload.Direction)) continue;
+                    if (target?.Node == null || target.Dead || target.CurrentMap != map) continue;
+                    if (!IsLocationInSkillShape(skill, payload.Location, target.CurrentLocation, payload.Direction, payload.Origin)) continue;
                     if (!CanAttackTarget(target)) continue;
 
                     ApplyDamage(skill, target);
@@ -4210,7 +4487,7 @@ namespace Server.Models.Monsters
 
         private void ApplyDamage(CustomSkillInfo skill, MapObject target)
         {
-            if (target?.Node == null || target.Dead || !CanAttackTarget(target)) return;
+            if (target?.Node == null || target.Dead || target.CurrentMap != CurrentMap || !CanAttackTarget(target)) return;
 
             int power = GetSkillPower(skill);
             Element element = skill.Element;
@@ -4235,7 +4512,7 @@ namespace Server.Models.Monsters
 
         private void ApplySkillHeal(CustomSkillInfo skill, MapObject target)
         {
-            if (target?.Node == null || target.Dead || !CanHelpTarget(target)) return;
+            if (target?.Node == null || target.Dead || target.CurrentMap != CurrentMap || !CanHelpTarget(target)) return;
 
             int maxHealth = target.Stats[Stat.Health];
             if (maxHealth <= 0 || target.CurrentHP >= maxHealth) return;
@@ -4246,6 +4523,7 @@ namespace Server.Models.Monsters
         private void ApplySkillStatus(CustomSkillInfo skill, MapObject target, bool helpful)
         {
             if (target?.Node == null || target.Dead) return;
+            if (target.CurrentMap != CurrentMap) return;
             if (helpful && target != this && !CanHelpTarget(target)) return;
             if (!helpful && !CanAttackTarget(target)) return;
 
@@ -4273,32 +4551,36 @@ namespace Server.Models.Monsters
             }
         }
 
-        private void ApplySkillMovement(CustomSkillInfo skill, MapObject target)
+        private void ApplySkillMovement(CustomSkillInfo skill, MapObject target, Point? origin = null)
         {
-            if (skill == null || target?.Node == null || target == this || !CanAttackTarget(target)) return;
+            if (skill == null || target?.Node == null || target == this || target.CurrentMap != CurrentMap || !CanAttackTarget(target)) return;
+
+            Point source = origin ?? CurrentLocation;
 
             if (skill.KnockbackDistance > 0)
             {
-                MirDirection direction = Functions.DirectionFromPoint(CurrentLocation, target.CurrentLocation);
+                MirDirection direction = Functions.DirectionFromPoint(source, target.CurrentLocation);
                 target.Pushed(direction, skill.KnockbackDistance);
             }
 
             if (skill.PullDistance > 0)
             {
-                MirDirection direction = Functions.DirectionFromPoint(target.CurrentLocation, CurrentLocation);
+                MirDirection direction = Functions.DirectionFromPoint(target.CurrentLocation, source);
                 target.Pushed(direction, skill.PullDistance);
             }
         }
 
-        private void ApplySkillMove(CustomSkillInfo skill, Point location)
+        private void ApplySkillMove(CustomSkillInfo skill, SkillLocationPayload payload)
         {
-            if (skill == null || CurrentMap == null || !CanMove) return;
-            if (!Functions.InRange(CurrentLocation, location, skill.Range > 0 ? skill.Range : Globals.MagicRange)) return;
+            if (skill == null || payload == null || !CanMove) return;
+            Map map = payload.Map ?? CurrentMap;
+            if (map == null || CurrentMap != map) return;
+            if (!Functions.InRange(payload.Origin, payload.Location, payload.Range > 0 ? payload.Range : GetSkillRange(skill))) return;
 
-            Cell cell = CurrentMap.GetCell(location);
+            Cell cell = map.GetCell(payload.Location);
             if (cell == null || cell.Movements != null || cell.IsBlocking(this, false)) return;
 
-            Teleport(CurrentMap, location, true);
+            Teleport(map, payload.Location, true);
         }
 
         private int GetSkillPower(CustomSkillInfo skill)
@@ -4335,6 +4617,16 @@ namespace Server.Models.Monsters
             return skill?.MaxTargets > 0 ? skill.MaxTargets : int.MaxValue;
         }
 
+        private static int GetSkillRange(CustomSkillInfo skill)
+        {
+            return Math.Max(1, skill?.Range > 0 ? skill.Range : Globals.MagicRange);
+        }
+
+        private static int GetSkillPayloadRange(CustomSkillInfo skill, SkillAreaPayload payload)
+        {
+            return payload?.Range > 0 ? payload.Range : GetSkillRange(skill);
+        }
+
         private int GetSkillSearchRadius(CustomSkillInfo skill)
         {
             if (skill == null) return 0;
@@ -4346,15 +4638,15 @@ namespace Server.Models.Monsters
             };
         }
 
-        private bool IsLocationInSkillShape(CustomSkillInfo skill, Point center, Point location, MirDirection direction)
+        private bool IsLocationInSkillShape(CustomSkillInfo skill, Point center, Point location, MirDirection direction, Point origin)
         {
             if (skill == null) return false;
             if (skill.Shape == CustomSkillShape.Circle)
                 return Functions.Distance(center, location) <= Math.Max(0, skill.Radius);
 
             (double fx, double fy) = GetDirectionVector(direction);
-            double vx = location.X - CurrentLocation.X;
-            double vy = location.Y - CurrentLocation.Y;
+            double vx = location.X - origin.X;
+            double vy = location.Y - origin.Y;
             double forward = vx * fx + vy * fy;
             double side = Math.Abs(vx * -fy + vy * fx);
             double length = Math.Max(1, skill.Length > 0 ? skill.Length : Math.Max(skill.Range, skill.Radius));
@@ -4452,6 +4744,9 @@ namespace Server.Models.Monsters
             {
                 Point? targetLocation = payload switch
                 {
+                    SkillAreaPayload area => area.Location,
+                    SkillTargetPayload targetPayload when targetPayload.Target?.Node != null => targetPayload.Target.CurrentLocation,
+                    SkillLocationPayload locationPayload => locationPayload.Location,
                     MapObject target when target?.Node != null => target.CurrentLocation,
                     Point point => point,
                     _ => null,
@@ -4526,7 +4821,7 @@ namespace Server.Models.Monsters
                    Enum.TryParse(destinationName, true, out destination) &&
                    source != Stat.None &&
                    destination != Stat.None &&
-                   int.TryParse(rateParts[^1], out rate) &&
+                   int.TryParse(rateParts[^1], NumberStyles.Integer, CultureInfo.InvariantCulture, out rate) &&
                    rate >= 0;
         }
 
@@ -4547,14 +4842,18 @@ namespace Server.Models.Monsters
             return Math.Max(1, (int)Math.Ceiling(duration / (double)tickRate));
         }
 
-        private void SpawnCustomMinion(CustomSkillInfo skill, Point location)
+        private void SpawnCustomMinion(CustomSkillInfo skill, SkillLocationPayload payload)
         {
-            if (skill.SummonMonster == null || MinionList.Count >= Math.Max(1, skill.MaxSummons)) return;
+            if (payload == null || skill.SummonMonster == null || MinionList.Count >= Math.Max(1, skill.MaxSummons)) return;
+            Map map = payload.Map ?? CurrentMap;
+            if (map == null || CurrentMap != map) return;
 
             MonsterObject mob = GetMonster(skill.SummonMonster);
             if (mob == null) return;
 
-            if (!SpawnMinionNear(mob, location, 0, 3)) return;
+            if (!SpawnMonsterNear(mob, map, payload.Location, 0, 3) &&
+                !SpawnMonsterNear(mob, map, payload.Origin, 0, 3))
+                return;
 
             mob.Target = Target;
             mob.Master = this;
@@ -4562,9 +4861,26 @@ namespace Server.Models.Monsters
             RegisterCustomMinionLifetime(mob, skill.SummonDuration);
         }
 
+        private static bool SpawnMonsterNear(MonsterObject mob, Map map, Point origin, int minRange, int maxRange)
+        {
+            if (mob == null || map == null) return false;
+
+            foreach (Cell cell in map.GetCells(origin, minRange, maxRange, true))
+            {
+                if (cell == null || cell.Movements != null || cell.IsBlocking(mob, false)) continue;
+
+                if (mob.Spawn(map, cell.Location))
+                    return true;
+            }
+
+            return false;
+        }
+
         private void SpawnDamageProxyMinion(CustomSkillInfo skill, SkillDamageProxyPayload payload)
         {
             if (skill.SummonMonster == null || payload?.Target?.Node == null || !CanAttackTarget(payload.Target)) return;
+            Map map = payload.Map ?? CurrentMap;
+            if (map == null || CurrentMap != map || payload.Target.CurrentMap != map) return;
             if (Doll.CursedList.Contains(payload.Target)) return;
 
             MonsterObject mob = GetMonster(skill.SummonMonster);
@@ -4573,10 +4889,8 @@ namespace Server.Models.Monsters
             int duration = skill.SummonDuration > 0 ? skill.SummonDuration : skill.Duration > 0 ? skill.Duration : 10000;
             if (!customProxy.ConfigureDamageProxy(this, payload.Target, TimeSpan.FromMilliseconds(Math.Max(1, duration)))) return;
 
-            Cell cell = CurrentMap.GetCell(payload.Location);
-            bool spawned = cell != null && cell.Movements == null && customProxy.Spawn(CurrentMap, payload.Location);
-            if (!spawned)
-                spawned = customProxy.Spawn(CurrentMap, CurrentLocation);
+            bool spawned = SpawnMonsterNear(customProxy, map, payload.Location, 0, 0) ||
+                           SpawnMonsterNear(customProxy, map, payload.Origin, 0, 3);
             if (!spawned) return;
 
             customProxy.Target = payload.Target;
@@ -4625,19 +4939,42 @@ namespace Server.Models.Monsters
 
         private sealed class SkillChainPayload
         {
+            public Map Map { get; init; }
+            public Point Origin { get; init; }
             public List<MapObject> Targets { get; init; }
         }
 
         private sealed class SkillAreaPayload
         {
+            public Map Map { get; init; }
             public Point Location { get; init; }
+            public Point Origin { get; init; }
+            public int Range { get; init; }
             public MirDirection Direction { get; init; }
         }
 
         private sealed class SkillDamageProxyPayload
         {
+            public Map Map { get; init; }
             public MapObject Target { get; init; }
             public Point Location { get; init; }
+            public Point Origin { get; init; }
+        }
+
+        private sealed class SkillTargetPayload
+        {
+            public Map Map { get; init; }
+            public MapObject Target { get; init; }
+            public Point Origin { get; init; }
+            public int Range { get; init; }
+        }
+
+        private sealed class SkillLocationPayload
+        {
+            public Map Map { get; init; }
+            public Point Location { get; init; }
+            public Point Origin { get; init; }
+            public int Range { get; init; }
         }
     }
 }

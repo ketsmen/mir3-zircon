@@ -634,10 +634,9 @@ namespace Server.Models
             if (!TryGetCustomAutoSkill(out UserMagic magic, out CustomSkillInfo skill, requireTargetInRange: true)) return false;
             if (Target?.Node == null || !CanAttackTarget(Target)) return false;
 
-            int range = GetCustomSkillRange(skill);
-            if (!Functions.InRange(CurrentLocation, Target.CurrentLocation, range)) return false;
-
             Direction = Functions.DirectionFromPoint(CurrentLocation, Target.CurrentLocation);
+            MirDirection castDirection = Direction;
+            bool selfTarget = skill.TargetRule == CustomSkillTargetRule.Self;
 
             List<uint> targets = new();
             List<Point> locations = new();
@@ -647,25 +646,34 @@ namespace Server.Models
             {
                 case CustomSkillTemplate.AreaDamage:
                 case CustomSkillTemplate.PersistentAreaDamage:
-                    payload = Target.CurrentLocation;
-                    locations.Add(Target.CurrentLocation);
+                    Point areaLocation = selfTarget ? CurrentLocation : Target.CurrentLocation;
+                    payload = CreateCustomHeroAreaPayload(areaLocation, castDirection);
+                    locations.Add(areaLocation);
                     break;
                 case CustomSkillTemplate.DirectDamage:
                 case CustomSkillTemplate.ProjectileDamage:
                 case CustomSkillTemplate.Debuff:
                 case CustomSkillTemplate.Control:
-                    payload = Target;
-                    targets.Add(Target.ObjectID);
+                    if (selfTarget)
+                    {
+                        payload = CreateCustomHeroAreaPayload(CurrentLocation, castDirection);
+                        locations.Add(CurrentLocation);
+                    }
+                    else
+                    {
+                        payload = CreateCustomHeroTargetPayload(Target);
+                        targets.Add(Target.ObjectID);
+                    }
                     break;
                 case CustomSkillTemplate.ChainDamage:
                     List<MapObject> chainTargets = BuildCustomHeroChainTargets(skill, Target);
                     if (chainTargets.Count == 0) return false;
-                    payload = chainTargets;
+                    payload = new SkillChainPayload { Map = CurrentMap, Origin = CurrentLocation, Targets = chainTargets };
                     targets.AddRange(chainTargets.Select(x => x.ObjectID));
                     break;
                 case CustomSkillTemplate.Move:
                     if (!TryGetCustomHeroMoveLocation(skill, Target, out Point moveLocation)) return false;
-                    payload = moveLocation;
+                    payload = new SkillLocationPayload { Map = CurrentMap, Location = moveLocation, Origin = CurrentLocation };
                     locations.Add(moveLocation);
                     break;
                 default:
@@ -717,9 +725,13 @@ namespace Server.Models
                 return true;
             }
 
-            Direction = supportTarget.CurrentLocation == CurrentLocation
+            MirDirection castDirection = supportTarget.CurrentLocation == CurrentLocation
                 ? Direction
                 : Functions.DirectionFromPoint(CurrentLocation, supportTarget.CurrentLocation);
+            Direction = castDirection;
+            object payload = CreateCustomHeroTargetPayload(supportTarget);
+            if (skill.TargetRule == CustomSkillTargetRule.Self && GetCustomSkillSearchRadius(skill) > 0)
+                payload = CreateCustomHeroAreaPayload(supportTarget.CurrentLocation, castDirection);
 
             Broadcast(new S.ObjectMagic
             {
@@ -739,12 +751,12 @@ namespace Server.Models
             UpdateMagicAttackTime();
 
             ActionList.Add(new DelayedAction(
-                SEnvir.Now.AddMilliseconds(GetCustomSkillDelay(skill, supportTarget)),
+                SEnvir.Now.AddMilliseconds(GetCustomSkillDelay(skill, payload)),
                 ActionType.DelayMagic,
                 magic.Info.Magic,
                 magic.Info.Index,
                 skill,
-                supportTarget,
+                payload,
                 magic,
                 0));
 
@@ -760,6 +772,7 @@ namespace Server.Models
                 Direction = Owner.Direction;
 
             Point summonLocation = Functions.Move(CurrentLocation, Direction, -1);
+            SkillLocationPayload payload = new() { Map = CurrentMap, Location = summonLocation, Origin = CurrentLocation };
 
             Broadcast(new S.ObjectMagic
             {
@@ -778,12 +791,12 @@ namespace Server.Models
             UpdateMagicAttackTime();
 
             ActionList.Add(new DelayedAction(
-                SEnvir.Now.AddMilliseconds(GetCustomSkillDelay(skill, summonLocation)),
+                SEnvir.Now.AddMilliseconds(GetCustomSkillDelay(skill, payload)),
                 ActionType.DelayMagic,
                 magic.Info.Magic,
                 magic.Info.Index,
                 skill,
-                summonLocation,
+                payload,
                 magic,
                 0));
 
@@ -805,7 +818,7 @@ namespace Server.Models
             {
                 if (!SEnvir.CustomSystem.TryGetSkill(candidate.Info, out CustomSkillInfo candidateSkill)) continue;
                 if (!CanHeroAutoCastCustomSkill(candidateSkill)) continue;
-                if (requireTargetInRange && (Target?.Node == null || !CanAttackTarget(Target) || !Functions.InRange(CurrentLocation, Target.CurrentLocation, GetCustomSkillRange(candidateSkill)))) continue;
+                if (requireTargetInRange && !CanUseCustomAutoSkillOnCurrentTarget(candidateSkill)) continue;
 
                 magic = candidate;
                 skill = candidateSkill;
@@ -813,6 +826,25 @@ namespace Server.Models
             }
 
             return false;
+        }
+
+        private bool CanUseCustomAutoSkillOnCurrentTarget(CustomSkillInfo skill)
+        {
+            if (skill == null || Target?.Node == null || !CanAttackTarget(Target)) return false;
+
+            if (skill.TargetRule == CustomSkillTargetRule.Self)
+            {
+                int searchRadius = GetCustomSkillSearchRadius(skill);
+                if (searchRadius <= 0 || !Functions.InRange(CurrentLocation, Target.CurrentLocation, searchRadius)) return false;
+
+                MirDirection direction = CurrentLocation == Target.CurrentLocation
+                    ? Direction
+                    : Functions.DirectionFromPoint(CurrentLocation, Target.CurrentLocation);
+
+                return IsCustomSkillLocationInShape(skill, CurrentLocation, Target.CurrentLocation, direction, CurrentLocation);
+            }
+
+            return Functions.InRange(CurrentLocation, Target.CurrentLocation, GetCustomSkillRange(skill));
         }
 
         private bool TryGetCustomSupportSkill(out UserMagic magic, out CustomSkillInfo skill, out MapObject supportTarget)
@@ -878,9 +910,16 @@ namespace Server.Models
                 .Where(x => CurrentMP >= x.Cost && SEnvir.Now >= x.Cooldown)
                 .Select(x => SEnvir.CustomSystem.TryGetSkill(x.Info, out CustomSkillInfo skill) ? skill : null)
                 .Where(CanHeroAutoCastCustomSkill)
-                .Select(GetCustomSkillRange)
+                .Select(GetCustomAutoSkillDesiredRange)
                 .DefaultIfEmpty(0)
                 .Max();
+        }
+
+        private static int GetCustomAutoSkillDesiredRange(CustomSkillInfo skill)
+        {
+            return skill?.TargetRule == CustomSkillTargetRule.Self
+                ? GetCustomSkillSearchRadius(skill)
+                : GetCustomSkillRange(skill);
         }
 
         private static bool CanHeroAutoCastCustomSkill(CustomSkillInfo skill)
@@ -889,7 +928,17 @@ namespace Server.Models
             if (skill.Template == CustomSkillTemplate.Move)
                 return skill.TargetRule is CustomSkillTargetRule.Ground or CustomSkillTargetRule.Enemy or CustomSkillTargetRule.EnemyOrGround;
 
-            if (skill.TargetRule is not (CustomSkillTargetRule.Enemy or CustomSkillTargetRule.EnemyOrGround)) return false;
+            if (skill.TargetRule is not (CustomSkillTargetRule.Self or CustomSkillTargetRule.Enemy or CustomSkillTargetRule.EnemyOrGround)) return false;
+
+            if (skill.TargetRule == CustomSkillTargetRule.Self)
+            {
+                return skill.Template is CustomSkillTemplate.DirectDamage
+                    or CustomSkillTemplate.ProjectileDamage
+                    or CustomSkillTemplate.AreaDamage
+                    or CustomSkillTemplate.PersistentAreaDamage
+                    or CustomSkillTemplate.Debuff
+                    or CustomSkillTemplate.Control;
+            }
 
             return skill.Template is CustomSkillTemplate.DirectDamage
                 or CustomSkillTemplate.ProjectileDamage
@@ -956,7 +1005,7 @@ namespace Server.Models
                     if (target.Stats[Stat.Health] <= 0 || target.CurrentHP <= 0 || target.CurrentHP >= target.Stats[Stat.Health]) return false;
 
                     int threshold = ReferenceEquals(target, Owner) ? 60 : 50;
-                    return target.CurrentHP * 100 <= target.Stats[Stat.Health] * threshold;
+                    return (long)target.CurrentHP * 100 <= (long)target.Stats[Stat.Health] * threshold;
                 case CustomSkillTemplate.Buff:
                     return skill.BuffType != BuffType.None && !target.Buffs.Any(x => x.Type == skill.BuffType);
                 default:
@@ -977,6 +1026,10 @@ namespace Server.Models
             {
                 Point? targetLocation = payload switch
                 {
+                    SkillAreaPayload area => area.Location,
+                    SkillTargetPayload targetPayload when targetPayload.Target?.Node != null => targetPayload.Target.CurrentLocation,
+                    SkillChainPayload chainPayload when chainPayload.Targets?.Count > 0 && chainPayload.Targets[0]?.Node != null => chainPayload.Targets[0].CurrentLocation,
+                    SkillLocationPayload locationPayload => locationPayload.Location,
                     MapObject target when target?.Node != null => target.CurrentLocation,
                     List<MapObject> targets when targets.Count > 0 && targets[0]?.Node != null => targets[0].CurrentLocation,
                     Point point => point,
@@ -1001,11 +1054,16 @@ namespace Server.Models
                 case CustomSkillTemplate.DirectDamage:
                 case CustomSkillTemplate.ProjectileDamage:
                     if (!TryApplyCustomHeroTargetAreaSkill(magic, skill, payload))
-                        ApplyCustomHeroDamage(magic, skill, payload as MapObject);
+                        ApplyCustomHeroDamage(magic, skill, GetCustomHeroPayloadTarget(payload));
                     applied = true;
                     break;
                 case CustomSkillTemplate.ChainDamage:
-                    if (payload is List<MapObject> chainTargets)
+                    if (payload is SkillChainPayload chainPayload)
+                    {
+                        ApplyCustomHeroChainDamage(magic, skill, chainPayload);
+                        applied = true;
+                    }
+                    else if (payload is List<MapObject> chainTargets)
                     {
                         foreach (MapObject target in chainTargets)
                             ApplyCustomHeroDamage(magic, skill, target);
@@ -1014,16 +1072,16 @@ namespace Server.Models
                     }
                     break;
                 case CustomSkillTemplate.AreaDamage:
-                    if (payload is Point areaPoint)
+                    if (TryGetCustomHeroAreaPayload(payload, out SkillAreaPayload areaPayload))
                     {
-                        ApplyCustomHeroAreaDamage(magic, skill, areaPoint);
+                        ApplyCustomHeroAreaDamage(magic, skill, areaPayload);
                         applied = true;
                     }
                     break;
                 case CustomSkillTemplate.PersistentAreaDamage:
-                    if (payload is Point persistentPoint)
+                    if (TryGetCustomHeroAreaPayload(payload, out SkillAreaPayload persistentAreaPayload))
                     {
-                        ApplyCustomHeroAreaDamage(magic, skill, persistentPoint);
+                        ApplyCustomHeroAreaDamage(magic, skill, persistentAreaPayload);
 
                         if (remainingTicks > 1)
                         {
@@ -1033,7 +1091,7 @@ namespace Server.Models
                                 magic.Info.Magic,
                                 magic.Info.Index,
                                 skill,
-                                persistentPoint,
+                                persistentAreaPayload,
                                 magic,
                                 remainingTicks - 1));
                         }
@@ -1041,29 +1099,33 @@ namespace Server.Models
                     break;
                 case CustomSkillTemplate.Debuff:
                     if (!TryApplyCustomHeroTargetAreaSkill(magic, skill, payload))
-                        ApplyCustomHeroStatus(magic, skill, payload as MapObject, applyMovement: false);
+                        ApplyCustomHeroStatus(magic, skill, GetCustomHeroPayloadTarget(payload), applyMovement: false);
                     applied = true;
                     break;
                 case CustomSkillTemplate.Control:
                     if (!TryApplyCustomHeroTargetAreaSkill(magic, skill, payload))
-                        ApplyCustomHeroStatus(magic, skill, payload as MapObject, applyMovement: true);
+                        ApplyCustomHeroStatus(magic, skill, GetCustomHeroPayloadTarget(payload, out Point? origin), applyMovement: true, origin);
                     applied = true;
                     break;
                 case CustomSkillTemplate.Heal:
                     applied = TryApplyCustomHeroHelpfulAreaSkill(magic, skill, payload) ||
-                              ApplyCustomHeroHeal(magic, skill, payload as MapObject);
+                              ApplyCustomHeroHeal(magic, skill, GetCustomHeroPayloadTarget(payload));
                     break;
                 case CustomSkillTemplate.Buff:
                     applied = TryApplyCustomHeroHelpfulAreaSkill(magic, skill, payload) ||
-                              ApplyCustomHeroHelpfulBuff(magic, skill, payload as MapObject);
+                              ApplyCustomHeroHelpfulBuff(magic, skill, GetCustomHeroPayloadTarget(payload));
                     break;
                 case CustomSkillTemplate.Summon:
-                    if (payload is Point summonPoint)
-                        applied = ApplyCustomHeroSummon(magic, skill, summonPoint);
+                    if (payload is SkillLocationPayload summonPayload)
+                        applied = ApplyCustomHeroSummon(magic, skill, summonPayload);
+                    else if (payload is Point summonPoint)
+                        applied = ApplyCustomHeroSummon(magic, skill, new SkillLocationPayload { Map = CurrentMap, Location = summonPoint, Origin = CurrentLocation });
                     break;
                 case CustomSkillTemplate.Move:
-                    if (payload is Point movePoint)
-                        applied = ApplyCustomHeroMove(magic, skill, movePoint);
+                    if (payload is SkillLocationPayload movePayload)
+                        applied = ApplyCustomHeroMove(magic, skill, movePayload);
+                    else if (payload is Point movePoint)
+                        applied = ApplyCustomHeroMove(magic, skill, new SkillLocationPayload { Map = CurrentMap, Location = movePoint, Origin = CurrentLocation });
                     break;
             }
 
@@ -1103,26 +1165,99 @@ namespace Server.Models
             return Math.Max(1, skill?.WaveCount > 0 ? skill.WaveCount : 1);
         }
 
+        private bool TryGetCustomHeroAreaPayload(object payload, out SkillAreaPayload areaPayload)
+        {
+            areaPayload = payload switch
+            {
+                SkillAreaPayload area => area,
+                Point point => CreateCustomHeroAreaPayload(point),
+                _ => null,
+            };
+
+            return areaPayload != null;
+        }
+
+        private SkillAreaPayload CreateCustomHeroAreaPayload(Point location, MirDirection? direction = null)
+        {
+            return new SkillAreaPayload
+            {
+                Map = CurrentMap,
+                Location = location,
+                Origin = CurrentLocation,
+                Direction = direction ?? (location == CurrentLocation ? Direction : Functions.DirectionFromPoint(CurrentLocation, location)),
+            };
+        }
+
+        private SkillTargetPayload CreateCustomHeroTargetPayload(MapObject target)
+        {
+            return new SkillTargetPayload
+            {
+                Map = CurrentMap,
+                Target = target,
+                Origin = CurrentLocation,
+            };
+        }
+
+        private MapObject GetCustomHeroPayloadTarget(object payload)
+        {
+            return GetCustomHeroPayloadTarget(payload, out _);
+        }
+
+        private MapObject GetCustomHeroPayloadTarget(object payload, out Point? origin)
+        {
+            origin = null;
+
+            if (payload is SkillTargetPayload targetPayload)
+            {
+                origin = targetPayload.Origin;
+                Map map = targetPayload.Map ?? CurrentMap;
+                if (map == null || CurrentMap != map || targetPayload.Target?.CurrentMap != map)
+                    return null;
+
+                return targetPayload.Target;
+            }
+
+            return payload as MapObject;
+        }
+
+        private void ApplyCustomHeroChainDamage(UserMagic magic, CustomSkillInfo skill, SkillChainPayload payload)
+        {
+            if (payload?.Targets == null) return;
+            Map map = payload.Map ?? CurrentMap;
+            if (map == null || CurrentMap != map) return;
+
+            foreach (MapObject target in payload.Targets.ToArray())
+            {
+                if (target?.CurrentMap != map) continue;
+                ApplyCustomHeroDamage(magic, skill, target);
+            }
+        }
+
         private static bool SkillUsesProjectileTravel(CustomSkillInfo skill)
         {
             return skill?.Template == CustomSkillTemplate.ProjectileDamage
                 || skill?.Effects?.Any(x => x?.Stage == CustomSkillEffectStage.Projectile) == true;
         }
 
-        private void ApplyCustomHeroAreaDamage(UserMagic magic, CustomSkillInfo skill, Point point)
+        private void ApplyCustomHeroAreaDamage(UserMagic magic, CustomSkillInfo skill, SkillAreaPayload payload)
         {
-            if (CurrentMap == null || !Functions.InRange(CurrentLocation, point, GetCustomSkillRange(skill))) return;
+            if (payload == null) return;
+            Map map = payload.Map ?? CurrentMap;
+            if (map == null || CurrentMap != map) return;
+
+            Point point = payload.Location;
+            if (!Functions.InRange(payload.Origin, point, GetCustomSkillRange(skill))) return;
 
             int remainingTargets = skill.MaxTargets > 0 ? skill.MaxTargets : int.MaxValue;
 
-            foreach (Cell cell in CurrentMap.GetCells(point, 0, GetCustomSkillSearchRadius(skill)))
+            foreach (Cell cell in map.GetCells(point, 0, GetCustomSkillSearchRadius(skill)))
             {
                 if (cell?.Objects == null) continue;
 
                 foreach (MapObject target in cell.Objects.ToArray())
                 {
-                    if (target?.Node == null || target.Dead || !CanAttackTarget(target)) continue;
-                    if (!IsCustomSkillLocationInShape(skill, point, target.CurrentLocation, Direction)) continue;
+                    if (target?.Node == null || target.Dead || target.CurrentMap != map || !CanAttackTarget(target)) continue;
+                    if (!IsCustomSkillLocationInShape(skill, point, target.CurrentLocation, payload.Direction, payload.Origin)) continue;
 
                     ApplyCustomHeroDamage(magic, skill, target);
                     if (remainingTargets != int.MaxValue && --remainingTargets <= 0)
@@ -1133,31 +1268,62 @@ namespace Server.Models
 
         private bool TryApplyCustomHeroTargetAreaSkill(UserMagic magic, CustomSkillInfo skill, object payload)
         {
-            if (skill == null || skill.Radius <= 0 || CurrentMap == null) return false;
+            if (skill == null || GetCustomSkillSearchRadius(skill) <= 0 || CurrentMap == null) return false;
 
-            Point? center = payload switch
+            Point? center;
+            MirDirection direction;
+            SkillTargetPayload targetPayload = payload as SkillTargetPayload;
+            MapObject payloadTarget = null;
+            Point? payloadOrigin = null;
+
+            if (targetPayload != null)
             {
-                MapObject target when target?.Node != null => target.CurrentLocation,
-                Point point => point,
-                _ => null,
-            };
+                payloadTarget = GetCustomHeroPayloadTarget(targetPayload, out payloadOrigin);
+                if (payloadTarget == null) return false;
+            }
 
-            if (center == null || !Functions.InRange(CurrentLocation, center.Value, GetCustomSkillRange(skill))) return false;
+            if (payload is SkillAreaPayload areaPayload)
+            {
+                center = areaPayload.Location;
+                direction = areaPayload.Direction;
+            }
+            else
+            {
+                center = payload switch
+                {
+                    _ when payloadTarget?.Node != null => payloadTarget.CurrentLocation,
+                    MapObject target when target?.Node != null => target.CurrentLocation,
+                    Point point => point,
+                    _ => null,
+                };
+
+                if (center == null) return false;
+                direction = payloadTarget?.Node != null && !ReferenceEquals(payloadTarget, this)
+                    ? Functions.DirectionFromPoint(payloadOrigin ?? CurrentLocation, payloadTarget.CurrentLocation)
+                    : center.Value == CurrentLocation
+                    ? Direction
+                    : Functions.DirectionFromPoint(CurrentLocation, center.Value);
+            }
+
+            SkillAreaPayload payloadArea = payload as SkillAreaPayload;
+            Map map = payloadArea?.Map ?? targetPayload?.Map ?? CurrentMap;
+            Point origin = payloadArea?.Origin ?? payloadOrigin ?? CurrentLocation;
+            if (map == null || CurrentMap != map) return false;
+            if (!Functions.InRange(origin, center.Value, GetCustomSkillRange(skill))) return false;
 
             int remainingTargets = skill.MaxTargets > 0 ? skill.MaxTargets : int.MaxValue;
             bool applied = false;
-            MirDirection direction = Functions.DirectionFromPoint(CurrentLocation, center.Value);
 
-            foreach (Cell cell in CurrentMap.GetCells(center.Value, 0, GetCustomSkillSearchRadius(skill)))
+            foreach (Cell cell in map.GetCells(center.Value, 0, GetCustomSkillSearchRadius(skill)))
             {
                 if (cell?.Objects == null) continue;
 
                 foreach (MapObject target in cell.Objects.ToArray())
                 {
-                    if (target?.Node == null || target.Dead || !CanAttackTarget(target)) continue;
-                    if (!IsCustomSkillLocationInShape(skill, center.Value, target.CurrentLocation, direction)) continue;
+                    if (target?.Node == null || target.Dead || target.CurrentMap != map || !CanAttackTarget(target)) continue;
+                    if (!IsCustomSkillLocationInShape(skill, center.Value, target.CurrentLocation, direction, origin)) continue;
 
-                    ApplyCustomHeroSkillTemplateToTarget(magic, skill, target);
+                    ApplyCustomHeroSkillTemplateToTarget(magic, skill, target, origin);
                     applied = true;
 
                     if (remainingTargets != int.MaxValue && --remainingTargets <= 0)
@@ -1170,30 +1336,59 @@ namespace Server.Models
 
         private bool TryApplyCustomHeroHelpfulAreaSkill(UserMagic magic, CustomSkillInfo skill, object payload)
         {
-            if (skill == null || skill.Radius <= 0 || CurrentMap == null) return false;
+            if (skill == null || GetCustomSkillSearchRadius(skill) <= 0 || CurrentMap == null) return false;
 
-            Point? center = payload switch
+            Point? center;
+            MirDirection direction;
+            SkillTargetPayload targetPayload = payload as SkillTargetPayload;
+            MapObject payloadTarget = null;
+            Point? payloadOrigin = null;
+
+            if (targetPayload != null)
             {
-                MapObject target when target?.Node != null => target.CurrentLocation,
-                Point point => point,
-                _ => null,
-            };
+                payloadTarget = GetCustomHeroPayloadTarget(targetPayload, out payloadOrigin);
+                if (payloadTarget == null) return false;
+            }
 
-            if (center == null || !Functions.InRange(CurrentLocation, center.Value, GetCustomSkillRange(skill))) return false;
+            if (payload is SkillAreaPayload areaPayload)
+            {
+                center = areaPayload.Location;
+                direction = areaPayload.Direction;
+            }
+            else
+            {
+                center = payload switch
+                {
+                    _ when payloadTarget?.Node != null => payloadTarget.CurrentLocation,
+                    MapObject target when target?.Node != null => target.CurrentLocation,
+                    Point point => point,
+                    _ => null,
+                };
+
+                if (center == null) return false;
+                direction = payloadTarget?.Node != null && !ReferenceEquals(payloadTarget, this)
+                    ? Functions.DirectionFromPoint(payloadOrigin ?? CurrentLocation, payloadTarget.CurrentLocation)
+                    : center.Value == CurrentLocation ? Direction : Functions.DirectionFromPoint(CurrentLocation, center.Value);
+            }
+
+            SkillAreaPayload payloadArea = payload as SkillAreaPayload;
+            Map map = payloadArea?.Map ?? targetPayload?.Map ?? CurrentMap;
+            Point origin = payloadArea?.Origin ?? payloadOrigin ?? CurrentLocation;
+            if (map == null || CurrentMap != map) return false;
+            if (!Functions.InRange(origin, center.Value, GetCustomSkillRange(skill))) return false;
 
             int remainingTargets = skill.MaxTargets > 0 ? skill.MaxTargets : int.MaxValue;
             bool applied = false;
-            MirDirection direction = center.Value == CurrentLocation ? Direction : Functions.DirectionFromPoint(CurrentLocation, center.Value);
 
-            foreach (Cell cell in CurrentMap.GetCells(center.Value, 0, GetCustomSkillSearchRadius(skill)))
+            foreach (Cell cell in map.GetCells(center.Value, 0, GetCustomSkillSearchRadius(skill)))
             {
                 if (cell?.Objects == null) continue;
 
                 foreach (MapObject target in cell.Objects.ToArray())
                 {
-                    if (target?.Node == null || target.Dead || !CanHelpTarget(target)) continue;
+                    if (target?.Node == null || target.Dead || target.CurrentMap != map || !CanHelpTarget(target)) continue;
                     if (!CustomSupportTargetNeedsSkill(skill, target)) continue;
-                    if (!IsCustomSkillLocationInShape(skill, center.Value, target.CurrentLocation, direction)) continue;
+                    if (!IsCustomSkillLocationInShape(skill, center.Value, target.CurrentLocation, direction, origin)) continue;
 
                     applied = skill.Template switch
                     {
@@ -1210,7 +1405,7 @@ namespace Server.Models
             return applied;
         }
 
-        private void ApplyCustomHeroSkillTemplateToTarget(UserMagic magic, CustomSkillInfo skill, MapObject target)
+        private void ApplyCustomHeroSkillTemplateToTarget(UserMagic magic, CustomSkillInfo skill, MapObject target, Point? origin = null)
         {
             switch (skill.Template)
             {
@@ -1218,7 +1413,7 @@ namespace Server.Models
                     ApplyCustomHeroStatus(magic, skill, target, applyMovement: false);
                     break;
                 case CustomSkillTemplate.Control:
-                    ApplyCustomHeroStatus(magic, skill, target, applyMovement: true);
+                    ApplyCustomHeroStatus(magic, skill, target, applyMovement: true, origin);
                     break;
                 default:
                     ApplyCustomHeroDamage(magic, skill, target);
@@ -1228,7 +1423,7 @@ namespace Server.Models
 
         private bool ApplyCustomHeroHeal(UserMagic magic, CustomSkillInfo skill, MapObject target)
         {
-            if (target?.Node == null || !CanHelpTarget(target) || target.CurrentHP >= target.Stats[Stat.Health]) return false;
+            if (target?.Node == null || target.CurrentMap != CurrentMap || !CanHelpTarget(target) || target.CurrentHP >= target.Stats[Stat.Health]) return false;
 
             int missing = target.Stats[Stat.Health] - target.CurrentHP;
             if (missing <= 0) return false;
@@ -1240,7 +1435,7 @@ namespace Server.Models
 
         private bool ApplyCustomHeroHelpfulBuff(UserMagic magic, CustomSkillInfo skill, MapObject target)
         {
-            if (target?.Node == null || !CanHelpTarget(target) || skill.BuffType == BuffType.None) return false;
+            if (target?.Node == null || target.CurrentMap != CurrentMap || !CanHelpTarget(target) || skill.BuffType == BuffType.None) return false;
             if (target.Buffs.Any(x => x.Type == skill.BuffType)) return false;
 
             TimeSpan duration = GetCustomHeroSkillDuration(magic, skill);
@@ -1251,9 +1446,11 @@ namespace Server.Models
             return true;
         }
 
-        private bool ApplyCustomHeroSummon(UserMagic magic, CustomSkillInfo skill, Point location)
+        private bool ApplyCustomHeroSummon(UserMagic magic, CustomSkillInfo skill, SkillLocationPayload payload)
         {
-            if (magic == null || skill?.SummonMonster == null || Owner?.Node == null || CurrentMap == null) return false;
+            if (magic == null || skill?.SummonMonster == null || Owner?.Node == null || payload == null) return false;
+            Map map = payload.Map ?? CurrentMap;
+            if (map == null || CurrentMap != map) return false;
             if (!CustomSummonNeedsSkill(skill)) return false;
 
             MonsterObject monster = MonsterObject.GetMonster(skill.SummonMonster);
@@ -1267,14 +1464,12 @@ namespace Server.Models
             monster.TameTime = skill.SummonDuration > 0 ? SEnvir.Now.AddMilliseconds(skill.SummonDuration) : SEnvir.Now.AddDays(365);
             Owner.Pets.Add(monster);
 
-            Cell cell = CurrentMap.GetCell(location);
-            if (cell == null || cell.Movements != null || !monster.Spawn(CurrentMap, location))
-                monster.Spawn(CurrentMap, CurrentLocation);
-
-            if (monster.Node == null)
+            if (!TrySpawnCustomHeroSummon(monster, map, payload.Location) &&
+                !TrySpawnCustomHeroSummon(monster, map, payload.Origin))
             {
                 Owner.Pets.Remove(monster);
                 monster.PetOwner = null;
+                monster.Magics.Remove(magic);
                 return false;
             }
 
@@ -1285,15 +1480,32 @@ namespace Server.Models
             return true;
         }
 
-        private bool ApplyCustomHeroMove(UserMagic magic, CustomSkillInfo skill, Point location)
+        private static bool TrySpawnCustomHeroSummon(MonsterObject monster, Map map, Point origin)
         {
-            if (magic == null || skill == null || CurrentMap == null || !CanMove) return false;
-            if (!Functions.InRange(CurrentLocation, location, GetCustomSkillRange(skill))) return false;
+            if (monster == null || map == null) return false;
 
-            Cell cell = CurrentMap.GetCell(location);
+            foreach (Cell cell in map.GetCells(origin, 0, 3, true))
+            {
+                if (cell == null || cell.Movements != null || cell.IsBlocking(monster, false)) continue;
+
+                if (monster.Spawn(map, cell.Location))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool ApplyCustomHeroMove(UserMagic magic, CustomSkillInfo skill, SkillLocationPayload payload)
+        {
+            if (magic == null || skill == null || payload == null || !CanMove) return false;
+            Map map = payload.Map ?? CurrentMap;
+            if (map == null || CurrentMap != map) return false;
+            if (!Functions.InRange(payload.Origin, payload.Location, GetCustomSkillRange(skill))) return false;
+
+            Cell cell = map.GetCell(payload.Location);
             if (cell == null || cell.Movements != null || cell.IsBlocking(this, false)) return false;
 
-            if (!Teleport(CurrentMap, location, true)) return false;
+            if (!Teleport(map, payload.Location, true)) return false;
 
             LevelMagic(magic);
             return true;
@@ -1332,7 +1544,7 @@ namespace Server.Models
 
         private void ApplyCustomHeroDamage(UserMagic magic, CustomSkillInfo skill, MapObject target)
         {
-            if (target?.Node == null || target.Dead || !CanAttackTarget(target)) return;
+            if (target?.Node == null || target.Dead || target.CurrentMap != CurrentMap || !CanAttackTarget(target)) return;
 
             int power = GetCustomHeroSkillPower(magic, skill);
             Element element = skill.Element;
@@ -1390,9 +1602,9 @@ namespace Server.Models
                 .FirstOrDefault();
         }
 
-        private void ApplyCustomHeroStatus(UserMagic magic, CustomSkillInfo skill, MapObject target, bool applyMovement)
+        private void ApplyCustomHeroStatus(UserMagic magic, CustomSkillInfo skill, MapObject target, bool applyMovement, Point? origin = null)
         {
-            if (target?.Node == null || target.Dead || !CanAttackTarget(target)) return;
+            if (target?.Node == null || target.Dead || target.CurrentMap != CurrentMap || !CanAttackTarget(target)) return;
 
             TimeSpan duration = GetCustomHeroSkillDuration(magic, skill);
             TimeSpan tickRate = TimeSpan.FromMilliseconds(Math.Max(0, skill.TickRate));
@@ -1419,11 +1631,13 @@ namespace Server.Models
 
             if (!applyMovement) return;
 
+            Point source = origin ?? CurrentLocation;
+
             if (skill.KnockbackDistance > 0)
-                target.Pushed(Functions.DirectionFromPoint(CurrentLocation, target.CurrentLocation), skill.KnockbackDistance);
+                target.Pushed(Functions.DirectionFromPoint(source, target.CurrentLocation), skill.KnockbackDistance);
 
             if (skill.PullDistance > 0)
-                target.Pushed(Functions.DirectionFromPoint(target.CurrentLocation, CurrentLocation), skill.PullDistance);
+                target.Pushed(Functions.DirectionFromPoint(target.CurrentLocation, source), skill.PullDistance);
         }
 
         private int GetCustomHeroSkillPower(UserMagic magic, CustomSkillInfo skill)
@@ -1483,14 +1697,14 @@ namespace Server.Models
             };
         }
 
-        private bool IsCustomSkillLocationInShape(CustomSkillInfo skill, Point center, Point location, MirDirection direction)
+        private bool IsCustomSkillLocationInShape(CustomSkillInfo skill, Point center, Point location, MirDirection direction, Point origin)
         {
             if (skill.Shape == CustomSkillShape.Circle)
                 return Functions.Distance(center, location) <= Math.Max(0, skill.Radius);
 
             (double fx, double fy) = GetCustomSkillDirectionVector(direction);
-            double vx = location.X - CurrentLocation.X;
-            double vy = location.Y - CurrentLocation.Y;
+            double vx = location.X - origin.X;
+            double vy = location.Y - origin.Y;
             double forward = vx * fx + vy * fy;
             double side = Math.Abs(vx * -fy + vy * fx);
             double length = Math.Max(1, skill.Length > 0 ? skill.Length : Math.Max(skill.Range, skill.Radius));
@@ -2883,7 +3097,9 @@ namespace Server.Models
 
             bool usedHealthPotion = false;
 
-            if (Info.HPItemIndex > 0 && Stats[Stat.Health] > 0 && CurrentHP * 100 <= Stats[Stat.Health] * Math.Max(1, (int)Info.AutoHPPercent))
+            if (Info.HPItemIndex > 0 &&
+                Stats[Stat.Health] > 0 &&
+                (long)CurrentHP * 100 <= (long)Stats[Stat.Health] * Math.Max(1, (int)Info.AutoHPPercent))
             {
                 usedHealthPotion = UseAutoPotion(Info.HPItemIndex, true, out bool missing);
 
@@ -2891,7 +3107,10 @@ namespace Server.Models
                     ClearAutoPotion(true, "英雄HP自动喝药的药品不可用或已不存在，设置已清空。");
             }
 
-            if (Info.MPItemIndex > 0 && (!usedHealthPotion || Info.MPItemIndex != Info.HPItemIndex) && Stats[Stat.Mana] > 0 && CurrentMP * 100 <= Stats[Stat.Mana] * Math.Max(1, (int)Info.AutoMPPercent))
+            if (Info.MPItemIndex > 0 &&
+                (!usedHealthPotion || Info.MPItemIndex != Info.HPItemIndex) &&
+                Stats[Stat.Mana] > 0 &&
+                (long)CurrentMP * 100 <= (long)Stats[Stat.Mana] * Math.Max(1, (int)Info.AutoMPPercent))
             {
                 if (!UseAutoPotion(Info.MPItemIndex, false, out bool missing))
                 {
@@ -3208,6 +3427,35 @@ namespace Server.Models
             item.Hero = null;
             item.Flags &= ~UserItemFlags.Locked;
         }
+
+        private sealed class SkillAreaPayload
+        {
+            public Map Map { get; init; }
+            public Point Location { get; init; }
+            public Point Origin { get; init; }
+            public MirDirection Direction { get; init; }
+        }
+
+        private sealed class SkillChainPayload
+        {
+            public Map Map { get; init; }
+            public Point Origin { get; init; }
+            public List<MapObject> Targets { get; init; }
+        }
+
+        private sealed class SkillTargetPayload
+        {
+            public Map Map { get; init; }
+            public MapObject Target { get; init; }
+            public Point Origin { get; init; }
+        }
+
+        private sealed class SkillLocationPayload
+        {
+            public Map Map { get; init; }
+            public Point Location { get; init; }
+            public Point Origin { get; init; }
+        }
     }
 
     public sealed class WarriorHero : HeroObject
@@ -3355,12 +3603,12 @@ namespace Server.Models
         private MapObject GetHealTarget()
         {
             bool selfNeedsHeal = CurrentHP > 0 &&
-                                 CurrentHP * 100 <= Stats[Stat.Health] * 50 &&
+                                 (long)CurrentHP * 100 <= (long)Stats[Stat.Health] * 50 &&
                                  !Buffs.Any(x => x.Type == BuffType.Heal);
 
             bool ownerNeedsHeal = Owner.CurrentMap == CurrentMap &&
                 Owner.CurrentHP > 0 &&
-                Owner.CurrentHP * 100 <= Owner.Stats[Stat.Health] * 60 &&
+                (long)Owner.CurrentHP * 100 <= (long)Owner.Stats[Stat.Health] * 60 &&
                 !Owner.Buffs.Any(x => x.Type == BuffType.Heal) &&
                 CanHelpTarget(Owner);
 

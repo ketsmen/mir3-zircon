@@ -31,7 +31,7 @@ PoisonType=Green
 PoisonValue=8
 PoisonRate=1
 PoisonTicks=5
-PoisonFrequency=1000
+PoisonFrequency=2
 PoisonCanKill=False
 
 [AIAction]

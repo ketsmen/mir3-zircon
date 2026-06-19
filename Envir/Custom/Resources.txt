@@ -1,1 +1,2 @@
 EmperorSaWooLoaded LibraryFile=Mon_14 DisplayName="原客户端 Mon-14 牛魔王图库" Scope=Monster Enabled=True
+EmperorSaWooMagicEx LibraryFile=MonMagicEx DisplayName="原客户端牛魔王动作特效图库" Scope=Monster Enabled=True

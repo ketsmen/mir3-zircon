@@ -31,7 +31,7 @@ PoisonType=Silenced
 PoisonValue=0
 PoisonRate=4
 PoisonTicks=3
-PoisonFrequency=1000
+PoisonFrequency=5
 PoisonCanKill=False
 
 [AIAction]
