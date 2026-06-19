@@ -57,63 +57,86 @@ namespace Launcher
             TotalDownload = 0;
             TotalProgress = 0;
             CurrentProgress = 0;
+            LastDownloadProcess = 0;
             TotalProgressBar.Value = 0;
             LastSpeedCheck = Time.Now;
             NeedUpdate = false;
 
             Progress<string> progress = new Progress<string>(s => StatusLabel.Text = s);
 
-            List<PatchInformation> liveVersion = await GetPatchInformation(progress);
-
-            if (liveVersion == null)
-            {
-                DownloadSizeLabel.Text = "Downloading failed.";
-                RepairButton.Enabled = true;
-                StartGameButton.Enabled = true;
-                return;
-            }
-
-            List<PatchInformation> currentVersion = repair ? null : await LoadVersion(progress);
-            List<PatchInformation> patch = await CalculatePatch(liveVersion, currentVersion, progress);
-
-            StatusLabel.Text = "Downloading";
-            CreateSizeLabel();
-
-            Task task = DownloadPatch(patch, progress, new Progress<int>(percent =>
-            {
-                // Update progress bar or label with the percentage downloaded
-                CreateSizeLabel();
-            }));
-
-            await task;
-
-            CreateSizeLabel();
-
-            SaveVersion(liveVersion);
-
-            StatusLabel.Text = "Complete";
-            DownloadSizeLabel.Text = "Complete.";
-            DownloadSpeedLabel.Text = "Complete.";
-
-            if (Directory.Exists(ClientPath + "Patch\\"))
-                Directory.Delete(ClientPath + "Patch\\", true);
-
-            if (NeedUpdate)
-            {
-                File.WriteAllBytes(Program.PatcherFileName, Properties.Resources.Patcher);
-                Process.Start(Program.PatcherFileName, $"\"{Application.ExecutablePath}.tmp\" \"{Application.ExecutablePath}\"");
-                Environment.Exit(0);
-            }
-
             try
             {
-                if (File.Exists(Program.PatcherFileName))
-                    File.Delete(Program.PatcherFileName);
-            }
-            catch (Exception) { }
+                List<PatchInformation> liveVersion = await GetPatchInformation(progress);
 
-            RepairButton.Enabled = true;
-            StartGameButton.Enabled = true;
+                if (liveVersion == null)
+                {
+                    DownloadSizeLabel.Text = "Downloading failed.";
+                    return;
+                }
+
+                ValidatePatchArchiveNames(liveVersion);
+
+                List<PatchInformation> currentVersion = repair ? null : await LoadVersion(progress);
+                List<PatchInformation> patch = await CalculatePatch(liveVersion, currentVersion, progress);
+
+                StatusLabel.Text = "Downloading";
+                CreateSizeLabel();
+
+                Task task = DownloadPatch(patch, progress, new Progress<int>(percent =>
+                {
+                    // Update progress bar or label with the percentage downloaded
+                    CreateSizeLabel();
+                }));
+
+                await task;
+
+                CreateSizeLabel();
+
+                if (!HasError)
+                    SaveVersion(liveVersion);
+
+                if (HasError)
+                {
+                    StatusLabel.Text = "Completed with errors";
+                    DownloadSizeLabel.Text = "Retry required.";
+                    DownloadSpeedLabel.Text = "Complete.";
+                }
+                else
+                {
+                    StatusLabel.Text = "Complete";
+                    DownloadSizeLabel.Text = "Complete.";
+                    DownloadSpeedLabel.Text = "Complete.";
+                }
+
+                TryDeleteDirectory(ClientPath + "Patch\\");
+
+                if (!HasError && NeedUpdate)
+                {
+                    WriteAllBytesAtomically(Program.PatcherFileName, Properties.Resources.Patcher);
+                    Process.Start(Program.PatcherFileName, $"\"{Application.ExecutablePath}.tmp\" \"{Application.ExecutablePath}\"");
+                    Environment.Exit(0);
+                }
+
+                try
+                {
+                    if (File.Exists(Program.PatcherFileName))
+                        File.Delete(Program.PatcherFileName);
+                }
+                catch (Exception) { }
+            }
+            catch (Exception ex)
+            {
+                HasError = true;
+                StatusLabel.Text = ex.Message;
+                DownloadSizeLabel.Text = "Failed.";
+                DownloadSpeedLabel.Text = "Failed.";
+                MessageBox.Show(this, ex.ToString(), "Patch Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                RepairButton.Enabled = true;
+                StartGameButton.Enabled = true;
+            }
         }
         private void CreateSizeLabel()
         {
@@ -148,8 +171,15 @@ namespace Launcher
             if (TotalDownload > 0)
                 TotalProgressBar.Value = Math.Max(0, Math.Min(100, (int)(progress * 100 / TotalDownload)));
 
-            long speed = (progress - LastDownloadProcess) * TimeSpan.TicksPerSecond / (Time.Now.Ticks - LastSpeedCheck.Ticks); //May cause errors?
-            LastDownloadProcess = progress;
+            long speed = 0;
+            DateTime now = Time.Now;
+            long elapsedTicks = now.Ticks - LastSpeedCheck.Ticks;
+            if (elapsedTicks > 0)
+            {
+                speed = Math.Max(0, progress - LastDownloadProcess) * TimeSpan.TicksPerSecond / elapsedTicks;
+                LastDownloadProcess = progress;
+                LastSpeedCheck = now;
+            }
 
             if (speed > GB)
                 DownloadSpeedLabel.Text = $"{speed / GB:#,##0.0}GBps";
@@ -159,8 +189,6 @@ namespace Launcher
                 DownloadSpeedLabel.Text = $"{speed / KB:#,##0}KBps";
             else
                 DownloadSpeedLabel.Text = $"{speed:#,##0}Bps";
-
-            LastSpeedCheck = Time.Now;
         }
 
         private async Task<List<PatchInformation>> LoadVersion(IProgress<string> progress)
@@ -214,8 +242,9 @@ namespace Launcher
                     {
                         response.EnsureSuccessStatusCode();
 
-                        using (Stream contentStream = await response.Content.ReadAsStreamAsync())
-                        using (BinaryReader reader = new BinaryReader(contentStream))
+                        byte[] data = await response.Content.ReadAsByteArrayAsync();
+                        using (MemoryStream mStream = new MemoryStream(data))
+                        using (BinaryReader reader = new BinaryReader(mStream))
                         {
                             List<PatchInformation> list = new List<PatchInformation>();
 
@@ -248,12 +277,13 @@ namespace Launcher
                 PatchInformation file = list[i];
                 if (current != null && current.Any(x => x.FileName == file.FileName && IsMatch(x.CheckSum, file.CheckSum))) continue;
 
-                if (File.Exists(ClientPath + file.FileName))
+                string clientFilePath = GetClientFilePath(file.FileName);
+                if (File.Exists(clientFilePath))
                 {
                     byte[] CheckSum;
                     using (MD5 md5 = MD5.Create())
                     {
-                        using (FileStream stream = File.OpenRead(ClientPath + file.FileName))
+                        using (FileStream stream = File.OpenRead(clientFilePath))
                             CheckSum = await md5.ComputeHashAsync(stream);
                     }
 
@@ -281,13 +311,15 @@ namespace Launcher
 
         private void SaveVersion(List<PatchInformation> version)
         {
-            using (FileStream fStream = File.Create(ClientPath + "Version.bin"))
-            using (BinaryWriter writer = new BinaryWriter(fStream))
+            WriteFileAtomically(ClientPath + "Version.bin", tempPath =>
             {
-                foreach (PatchInformation info in version)
-                    info.Save(writer);
-            }
-
+                using (FileStream fStream = File.Create(tempPath))
+                using (BinaryWriter writer = new BinaryWriter(fStream))
+                {
+                    foreach (PatchInformation info in version)
+                        info.Save(writer);
+                }
+            });
         }
 
         private async Task DownloadPatch(List<PatchInformation> patch, IProgress<string> progress, IProgress<int> downloadProgress)
@@ -324,7 +356,7 @@ namespace Launcher
 
         private async Task<bool> Download(PatchInformation file, IProgress<int> progress)
         {
-            string webFileName = file.FileName.Replace("\\", "-") + ".gz";
+            string webFileName = GetPatchArchiveName(file.FileName);
 
             try
             {
@@ -344,7 +376,7 @@ namespace Launcher
                     }
 
                     client.DefaultRequestHeaders.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
-                    HttpResponseMessage response = await client.GetAsync(Config.Host + webFileName, HttpCompletionOption.ResponseHeadersRead);
+                    using HttpResponseMessage response = await client.GetAsync(Config.Host + Uri.EscapeDataString(webFileName), HttpCompletionOption.ResponseHeadersRead);
 
                     using (Stream contentStream = await response.Content.ReadAsStreamAsync())
                     {
@@ -353,20 +385,24 @@ namespace Launcher
                         if (!Directory.Exists(ClientPath + "Patch\\"))
                             Directory.CreateDirectory(ClientPath + "Patch\\");
 
-                        using (FileStream fileStream = new FileStream($"{ClientPath}Patch\\{webFileName}", FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
+                        await WriteFileAtomicallyAsync(GetPatchFilePath(webFileName), async tempPath =>
                         {
-                            long totalBytes = response.Content.Headers.ContentLength ?? -1;
-                            long totalDownloadedBytes = 0;
-                            byte[] buffer = new byte[8192];
-                            int bytesRead;
-                            while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                            using (FileStream fileStream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 8192, true))
                             {
-                                await fileStream.WriteAsync(buffer, 0, bytesRead);
-                                totalDownloadedBytes += bytesRead;
-                                if (totalBytes > 0)
-                                    progress.Report((int)(totalDownloadedBytes * 100 / totalBytes));
+                                long totalBytes = response.Content.Headers.ContentLength ?? -1;
+                                long totalDownloadedBytes = 0;
+                                byte[] buffer = new byte[8192];
+                                int bytesRead;
+                                while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                                {
+                                    await fileStream.WriteAsync(buffer, 0, bytesRead);
+                                    totalDownloadedBytes += bytesRead;
+                                    CurrentProgress = file.CompressedLength > 0 ? Math.Min(file.CompressedLength, totalDownloadedBytes) : totalDownloadedBytes;
+                                    if (totalBytes > 0)
+                                        progress.Report((int)(totalDownloadedBytes * 100 / totalBytes));
+                                }
                             }
-                        }
+                        });
                     }
 
                     CurrentProgress = 0;
@@ -377,6 +413,8 @@ namespace Launcher
             }
             catch (Exception)
             {
+                HasError = true;
+                CurrentProgress = 0;
                 file.CheckSum = new byte[8];
             }
 
@@ -385,22 +423,19 @@ namespace Launcher
 
         private async Task Extract(PatchInformation file)
         {
-            string webFileName = file.FileName.Replace("\\", "-") + ".gz";
+            string webFileName = GetPatchArchiveName(file.FileName);
 
             try
             {
-                string toPath = ClientPath + file.FileName;
+                string toPath = GetClientFilePath(file.FileName);
 
-                if (Application.ExecutablePath.EndsWith(file.FileName, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(Path.GetFullPath(Application.ExecutablePath), toPath, StringComparison.OrdinalIgnoreCase))
                 {
                     toPath += ".tmp";
                     NeedUpdate = true;
                 }
 
-
-                if (File.Exists(toPath)) File.Delete(toPath);
-
-                await Decompress($"{ClientPath}Patch\\{webFileName}", toPath);
+                await Decompress(GetPatchFilePath(webFileName), toPath);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -412,19 +447,170 @@ namespace Launcher
             }
             catch (Exception)
             {
+                HasError = true;
                 file.CheckSum = new byte[8];
             }
         }
         private static async Task Decompress(string sourceFile, string destFile)
         {
-            if (!Directory.Exists(Path.GetDirectoryName(destFile)))
-                Directory.CreateDirectory(Path.GetDirectoryName(destFile));
-
-            using (FileStream tofile = File.Create(destFile))
-            using (FileStream fromfile = File.OpenRead(sourceFile))
-            using (GZipStream gStream = new GZipStream(fromfile, CompressionMode.Decompress))
+            await WriteFileAtomicallyAsync(destFile, async tempPath =>
             {
-                await gStream.CopyToAsync(tofile);
+                using (FileStream tofile = File.Create(tempPath))
+                using (FileStream fromfile = File.OpenRead(sourceFile))
+                using (GZipStream gStream = new GZipStream(fromfile, CompressionMode.Decompress))
+                {
+                    await gStream.CopyToAsync(tofile);
+                }
+            });
+        }
+
+        private static void WriteAllBytesAtomically(string path, byte[] data)
+        {
+            WriteFileAtomically(path, tempPath => File.WriteAllBytes(tempPath, data));
+        }
+
+        private static void WriteFileAtomically(string path, Action<string> writeTempFile)
+        {
+            string fullPath = Path.GetFullPath(path);
+            string tempPath = GetTempWritePath(fullPath);
+
+            try
+            {
+                writeTempFile(tempPath);
+                ReplaceOrMoveTempFile(tempPath, fullPath);
+            }
+            catch
+            {
+                TryDeleteTempFile(tempPath);
+                throw;
+            }
+        }
+
+        private static async Task WriteFileAtomicallyAsync(string path, Func<string, Task> writeTempFile)
+        {
+            string fullPath = Path.GetFullPath(path);
+            string tempPath = GetTempWritePath(fullPath);
+
+            try
+            {
+                await writeTempFile(tempPath);
+                ReplaceOrMoveTempFile(tempPath, fullPath);
+            }
+            catch
+            {
+                TryDeleteTempFile(tempPath);
+                throw;
+            }
+        }
+
+        private static void ReplaceOrMoveTempFile(string tempPath, string destinationPath)
+        {
+            if (File.Exists(destinationPath))
+                File.Replace(tempPath, destinationPath, null);
+            else
+                File.Move(tempPath, destinationPath);
+        }
+
+        private static string GetTempWritePath(string fullPath)
+        {
+            string directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            string tempDirectory = string.IsNullOrEmpty(directory) ? "." : directory;
+            return Path.Combine(tempDirectory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+        }
+
+        private static string GetClientFilePath(string relativePath)
+        {
+            return GetPathInsideRoot(ClientPath, relativePath, "补丁目标文件");
+        }
+
+        private static string GetPatchFilePath(string archiveName)
+        {
+            return GetPathInsideRoot(Path.Combine(ClientPath, "Patch"), archiveName, "补丁压缩包");
+        }
+
+        private static string GetPatchArchiveName(string relativePath)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath))
+                throw new InvalidDataException("补丁文件名不能为空。");
+
+            string archiveName = relativePath.Replace('\\', '-').Replace('/', '-') + ".gz";
+            if (archiveName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                throw new InvalidDataException($"补丁文件名包含非法字符: {relativePath}");
+
+            return archiveName;
+        }
+
+        private static void ValidatePatchArchiveNames(IEnumerable<PatchInformation> version)
+        {
+            Dictionary<string, string> archives = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (PatchInformation file in version ?? Enumerable.Empty<PatchInformation>())
+            {
+                string archiveName = GetPatchArchiveName(file.FileName);
+                if (!archives.TryGetValue(archiveName, out string existing))
+                {
+                    archives[archiveName] = file.FileName;
+                    continue;
+                }
+
+                if (!string.Equals(existing, file.FileName, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException($"补丁压缩包名称冲突: `{existing}` 和 `{file.FileName}` 都会生成 `{archiveName}`。");
+            }
+        }
+
+        private static string GetPathInsideRoot(string root, string relativePath, string description)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath))
+                throw new InvalidDataException($"{description}路径不能为空。");
+            if (Path.IsPathRooted(relativePath))
+                throw new InvalidDataException($"{description}必须是相对路径: {relativePath}");
+
+            string rootPath = EnsureTrailingDirectorySeparator(Path.GetFullPath(root));
+            string fullPath = Path.GetFullPath(Path.Combine(rootPath, relativePath));
+
+            if (!fullPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"{description}超出客户端目录: {relativePath}");
+
+            return fullPath;
+        }
+
+        private static string EnsureTrailingDirectorySeparator(string path)
+        {
+            if (path.EndsWith(Path.DirectorySeparatorChar.ToString()) ||
+                path.EndsWith(Path.AltDirectorySeparatorChar.ToString()))
+                return path;
+
+            return path + Path.DirectorySeparatorChar;
+        }
+
+        private static void TryDeleteTempFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+            }
+        }
+
+        private static void TryDeleteDirectory(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                if (Directory.Exists(path))
+                    Directory.Delete(path, true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
             }
         }
     }

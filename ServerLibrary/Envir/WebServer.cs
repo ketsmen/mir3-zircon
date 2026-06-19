@@ -8,6 +8,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -17,6 +18,9 @@ namespace Server.Envir
     {
         public static ConcurrentQueue<WebCommand> WebCommandQueue;
         public static bool WebServerStarted { get; set; }
+        private const int MaxSystemDatabaseSyncBytes = 10 * 1024 * 1024;
+        private const int MaxIPNBytes = 256 * 1024;
+        private static readonly TimeSpan IPNVerificationTimeout = TimeSpan.FromSeconds(15);
 
         private static HttpListener WebListener;
         public const string ActivationCommand = "Activation", ResetCommand = "Reset", DeleteCommand = "Delete",
@@ -44,35 +48,61 @@ namespace Server.Envir
         private static HttpListener BuyListener, IPNListener;
         public static ConcurrentQueue<IPNMessage> Messages = new ConcurrentQueue<IPNMessage>();
         public static List<IPNMessage> PaymentList = new List<IPNMessage>(), HandledPayments = new List<IPNMessage>();
+        private static readonly object PaymentLock = new object();
 
         static WebServer()
         {
-            Messages = new ConcurrentQueue<IPNMessage>();
+            ReloadVerifiedMessages();
+        }
 
-            PaymentList.Clear();
-
-            if (Directory.Exists(VerifiedPath))
+        private static void ReloadVerifiedMessages()
+        {
+            ClearPaymentLists();
+            while (Messages.TryDequeue(out _))
             {
+            }
+
+            try
+            {
+                if (!Directory.Exists(VerifiedPath))
+                    return;
+
                 string[] files = Directory.GetFiles(VerifiedPath);
 
                 foreach (string file in files)
-                    Messages.Enqueue(new IPNMessage { FileName = file, Message = File.ReadAllText(file), Verified = true });
+                {
+                    try
+                    {
+                        Messages.Enqueue(new IPNMessage { FileName = file, Message = File.ReadAllText(file), Verified = true });
+                    }
+                    catch (Exception ex)
+                    {
+                        SEnvir.Log($"Failed to load verified IPN file '{file}': {ex}");
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+                SEnvir.Log($"Failed to enumerate verified IPN directory '{VerifiedPath}': {ex}");
             }
         }
 
         public static void StartWebServer(bool log = true)
         {
+            StopWebServer(log: false);
+
             if (!Config.EnableWebServer) return;
 
             try
             {
+                ReloadVerifiedMessages();
                 WebCommandQueue = new ConcurrentQueue<WebCommand>();
 
                 WebListener = new HttpListener();
                 WebListener.Prefixes.Add(Config.WebPrefix);
 
                 WebListener.Start();
-                WebListener.BeginGetContext(WebConnection, null);
+                WebListener.BeginGetContext(WebConnection, WebListener);
 
                 BuyListener = new HttpListener();
                 BuyListener.Prefixes.Add(Config.BuyPrefix);
@@ -81,10 +111,10 @@ namespace Server.Envir
                 IPNListener.Prefixes.Add(Config.IPNPrefix);
 
                 BuyListener.Start();
-                BuyListener.BeginGetContext(BuyConnection, null);
+                BuyListener.BeginGetContext(BuyConnection, BuyListener);
 
                 IPNListener.Start();
-                IPNListener.BeginGetContext(IPNConnection, null);
+                IPNListener.BeginGetContext(IPNConnection, IPNListener);
 
 
 
@@ -95,24 +125,27 @@ namespace Server.Envir
             catch (Exception ex)
             {
                 WebServerStarted = false;
+                WebCommandQueue = null;
                 SEnvir.Log(ex.ToString());
 
-                if (WebListener != null && WebListener.IsListening)
-                    WebListener?.Stop();
+                CloseListener(WebListener);
                 WebListener = null;
 
-                if (BuyListener != null && BuyListener.IsListening)
-                    BuyListener?.Stop();
+                CloseListener(BuyListener);
                 BuyListener = null;
 
-                if (IPNListener != null && IPNListener.IsListening)
-                    IPNListener?.Stop();
+                CloseListener(IPNListener);
                 IPNListener = null;
             }
         }
         public static void StopWebServer(bool log = true)
         {
-            if (!Config.EnableWebServer) return;
+            bool wasStarted = WebServerStarted ||
+                              WebListener != null ||
+                              BuyListener != null ||
+                              IPNListener != null ||
+                              WebCommandQueue != null;
+            if (!wasStarted) return;
 
             HttpListener expiredWebListener = WebListener;
             WebListener = null;
@@ -124,13 +157,12 @@ namespace Server.Envir
 
 
             WebServerStarted = false;
-            expiredWebListener?.Stop();
-            expiredBuyListener?.Stop();
-            expiredIPNListener?.Stop();
+            CloseListener(expiredWebListener);
+            CloseListener(expiredBuyListener);
+            CloseListener(expiredIPNListener);
 
             WebCommandQueue = null;
-            PaymentList.Clear();
-            HandledPayments.Clear();
+            ClearPaymentLists();
             while (Messages.TryDequeue(out _))
             {
             }
@@ -140,9 +172,14 @@ namespace Server.Envir
 
         private static void WebConnection(IAsyncResult result)
         {
+            HttpListenerContext context = null;
+            HttpListener listener = result.AsyncState as HttpListener;
+
             try
             {
-                HttpListenerContext context = WebListener.EndGetContext(result);
+                if (!IsCurrentListener(listener, WebListener)) return;
+
+                context = listener.EndGetContext(result);
 
                 string command = context.Request.QueryString["Type"];
 
@@ -160,13 +197,33 @@ namespace Server.Envir
                     case SystemDBSyncCommand:
                         SystemDBSync(context);
                         break;
+                    default:
+                        context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+                        context.Response.Close();
+                        break;
                 }
             }
-            catch { }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (HttpListenerException ex)
+            {
+                if (IsCurrentListener(listener, WebListener))
+                    SEnvir.Log("Web command listener exception: " + ex);
+
+                TryCloseResponse(context);
+            }
+            catch (Exception ex)
+            {
+                SEnvir.Log("Web command exception: " + ex);
+                TryCloseResponse(context, HttpStatusCode.InternalServerError);
+            }
             finally
             {
-                if (WebListener != null && WebListener.IsListening)
-                    WebListener.BeginGetContext(WebConnection, null);
+                TryCloseResponse(context);
+
+                if (IsCurrentListener(listener, WebListener))
+                    listener.BeginGetContext(WebConnection, listener);
             }
         }
 
@@ -188,7 +245,7 @@ namespace Server.Envir
                     return;
                 }
 
-                if (context.Request.ContentLength64 > 1024 * 1024 * 10)
+                if (context.Request.ContentLength64 > MaxSystemDatabaseSyncBytes)
                 {
                     SEnvir.Log($"Trying sync but exceeded SystemDB size");
                     context.Response.StatusCode = 400;
@@ -196,44 +253,46 @@ namespace Server.Envir
                 }
 
                 var masterPassword = context.Request.QueryString["Key"];
-                if (string.IsNullOrEmpty(masterPassword) || !masterPassword.Equals(Config.SyncKey))
+                if (string.IsNullOrEmpty(masterPassword) || !string.Equals(masterPassword, Config.SyncKey, StringComparison.Ordinal))
                 {
                     SEnvir.Log($"Trying sync but key received is not valid");
                     context.Response.StatusCode = 400;
                     return;
                 }
 
-                SEnvir.Log($"Starting remote syncronization...");
-
-                var buffer = new byte[context.Request.ContentLength64];
-                var offset = 0;
-                var length = 0;
-                var bufferSize = 1024 * 16;
-
-                while ((length = context.Request.InputStream.Read(buffer, offset, offset + bufferSize > buffer.Length ? buffer.Length - offset : bufferSize)) > 0)
-                    offset += length;
-
-                if (SEnvir.Session.BackUp && !Directory.Exists(SEnvir.Session.SystemBackupPath))
-                    Directory.CreateDirectory(SEnvir.Session.SystemBackupPath);
-
-                if (File.Exists(SEnvir.Session.SystemPath))
+                Session session = SEnvir.Session;
+                if (session == null)
                 {
-                    if (SEnvir.Session.BackUp)
-                    {
-                        using (FileStream sourceStream = File.OpenRead(SEnvir.Session.SystemPath))
-                        using (FileStream destStream = File.Create(SEnvir.Session.SystemBackupPath + "System " + SEnvir.Session.ToBackUpFileName(DateTime.UtcNow) + Session.Extension + Session.CompressExtension))
-                        using (GZipStream compress = new GZipStream(destStream, CompressionMode.Compress))
-                            sourceStream.CopyTo(compress);
-                    }
-
-                    File.Delete(SEnvir.Session.SystemPath);
+                    SEnvir.Log("Trying sync but database session is not ready");
+                    context.Response.StatusCode = (int)HttpStatusCode.ServiceUnavailable;
+                    return;
                 }
 
-                File.WriteAllBytes(SEnvir.Session.SystemPath, buffer);
+                SEnvir.Log($"Starting remote syncronization...");
+
+                byte[] buffer = ReadRequestBody(context.Request.InputStream, context.Request.ContentLength64, MaxSystemDatabaseSyncBytes);
+                if (buffer.Length == 0)
+                {
+                    SEnvir.Log($"Trying sync but body is empty");
+                    context.Response.StatusCode = 400;
+                    return;
+                }
+
+                ValidateSystemDatabasePayload(session, buffer);
+
+                if (session.BackUp && !Directory.Exists(session.SystemBackupPath))
+                    Directory.CreateDirectory(session.SystemBackupPath);
+
+                ReplaceSystemDatabase(session, buffer);
 
                 context.Response.StatusCode = 200;
 
                 SEnvir.Log($"Syncronization completed...");
+            }
+            catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException)
+            {
+                context.Response.StatusCode = 400;
+                SEnvir.Log("Syncronization request rejected: " + ex.Message);
             }
             catch (Exception ex)
             {
@@ -246,6 +305,162 @@ namespace Server.Envir
             finally
             {
                 context.Response.Close();
+            }
+        }
+
+        private static byte[] ReadRequestBody(Stream input, long contentLength, int maxBytes)
+        {
+            if (contentLength > maxBytes)
+                throw new InvalidDataException($"Request body exceeds {maxBytes} bytes.");
+
+            using MemoryStream memory = contentLength > 0 && contentLength <= maxBytes
+                ? new MemoryStream((int)contentLength)
+                : new MemoryStream();
+
+            byte[] chunk = new byte[16 * 1024];
+            int length;
+            while ((length = input.Read(chunk, 0, chunk.Length)) > 0)
+            {
+                if (memory.Length + length > maxBytes)
+                    throw new InvalidDataException($"Request body exceeds {maxBytes} bytes.");
+
+                memory.Write(chunk, 0, length);
+            }
+
+            if (contentLength >= 0 && memory.Length != contentLength)
+                throw new EndOfStreamException($"Expected {contentLength} bytes but received {memory.Length} bytes.");
+
+            return memory.ToArray();
+        }
+
+        private static void ValidateSystemDatabasePayload(Session session, byte[] buffer)
+        {
+            if (session?.SystemHeader == null || session.SystemHeader.Length < sizeof(int))
+                throw new InvalidDataException("Current System.db header is not available for synchronization validation.");
+
+            int expectedSections = BitConverter.ToInt32(session.SystemHeader, 0);
+            if (expectedSections <= 0)
+                throw new InvalidDataException("Current System.db header does not contain any system collections.");
+
+            try
+            {
+                using MemoryStream stream = new MemoryStream(buffer, false);
+                using BinaryReader reader = Library.Encryption.GetReader(stream);
+
+                byte[] header = reader.ReadBytes(session.SystemHeader.Length);
+                if (!BytesEqual(header, session.SystemHeader))
+                    throw new InvalidDataException("System.db header does not match the current server schema or encryption key.");
+
+                for (int i = 0; i < expectedSections; i++)
+                {
+                    int length = reader.ReadInt32();
+                    if (length < 0 || length > MaxSystemDatabaseSyncBytes)
+                        throw new InvalidDataException($"System.db section {i + 1} has invalid length {length}.");
+
+                    byte[] section = reader.ReadBytes(length);
+                    if (section.Length != length)
+                        throw new EndOfStreamException($"System.db section {i + 1} ended early.");
+                }
+
+                if (reader.BaseStream.ReadByte() != -1)
+                    throw new InvalidDataException("System.db payload contains trailing data.");
+            }
+            catch (InvalidDataException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is IOException or EndOfStreamException or CryptographicException or ArgumentException or NotSupportedException)
+            {
+                throw new InvalidDataException("System.db payload could not be read; it may be corrupt or encrypted with a different key.", ex);
+            }
+        }
+
+        private static bool BytesEqual(byte[] left, byte[] right)
+        {
+            if (left == null || right == null || left.Length != right.Length) return false;
+
+            for (int i = 0; i < left.Length; i++)
+                if (left[i] != right[i])
+                    return false;
+
+            return true;
+        }
+
+        private static void ReplaceSystemDatabase(Session session, byte[] buffer)
+        {
+            string systemPath = session.SystemPath;
+            string directory = Path.GetDirectoryName(systemPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            string tempPath = systemPath + "." + Guid.NewGuid().ToString("N") + ".sync.tmp";
+
+            try
+            {
+                File.WriteAllBytes(tempPath, buffer);
+
+                if (File.Exists(systemPath))
+                {
+                    if (session.BackUp)
+                    {
+                        string backupPath = GetUniqueBackupPath(
+                            session.SystemBackupPath,
+                            "System " + session.ToBackUpFileName(DateTime.UtcNow));
+
+                        WriteCompressedBackupAtomically(systemPath, backupPath);
+                    }
+
+                    File.Replace(tempPath, systemPath, null);
+                }
+                else
+                {
+                    File.Move(tempPath, systemPath);
+                }
+            }
+            catch
+            {
+                TryDeleteTempFile(tempPath);
+                throw;
+            }
+        }
+
+        private static string GetUniqueBackupPath(string directory, string baseName)
+        {
+            Directory.CreateDirectory(directory);
+
+            string extension = Session.Extension + Session.CompressExtension;
+            string target = Path.Combine(directory, baseName + extension);
+            if (!File.Exists(target)) return target;
+
+            for (int i = 2; ; i++)
+            {
+                target = Path.Combine(directory, $"{baseName} ({i}){extension}");
+                if (!File.Exists(target)) return target;
+            }
+        }
+
+        private static void WriteCompressedBackupAtomically(string sourcePath, string backupPath)
+        {
+            string directory = Path.GetDirectoryName(backupPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            string tempDirectory = string.IsNullOrEmpty(directory) ? "." : directory;
+            string tempPath = Path.Combine(tempDirectory, $".{Path.GetFileName(backupPath)}.{Guid.NewGuid():N}.tmp");
+
+            try
+            {
+                using (FileStream sourceStream = File.OpenRead(sourcePath))
+                using (FileStream destStream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                using (GZipStream compress = new GZipStream(destStream, CompressionMode.Compress))
+                    sourceStream.CopyTo(compress);
+
+                File.Move(tempPath, backupPath);
+            }
+            catch
+            {
+                TryDeleteTempFile(tempPath);
+                throw;
             }
         }
 
@@ -270,9 +485,8 @@ namespace Server.Envir
                 break;
             }
 
-            if (Config.AllowWebActivation && account != null)
+            if (Config.AllowWebActivation && account != null && TryEnqueueWebCommand(new WebCommand(CommandType.Activation, account)))
             {
-                WebCommandQueue.Enqueue(new WebCommand(CommandType.Activation, account));
                 context.Response.Redirect(Config.ActivationSuccessLink);
             }
             else
@@ -301,9 +515,9 @@ namespace Server.Envir
                 break;
             }
 
-            if (Config.AllowWebResetPassword && account != null && account.ResetTime.AddMinutes(25) > SEnvir.Now)
+            if (Config.AllowWebResetPassword && account != null && account.ResetTime.AddMinutes(25) > SEnvir.Now &&
+                TryEnqueueWebCommand(new WebCommand(CommandType.PasswordReset, account)))
             {
-                WebCommandQueue.Enqueue(new WebCommand(CommandType.PasswordReset, account));
                 context.Response.Redirect(Config.ResetSuccessLink);
             }
             else
@@ -332,9 +546,8 @@ namespace Server.Envir
                 break;
             }
 
-            if (Config.AllowDeleteAccount && account != null)
+            if (Config.AllowDeleteAccount && account != null && TryEnqueueWebCommand(new WebCommand(CommandType.AccountDelete, account)))
             {
-                WebCommandQueue.Enqueue(new WebCommand(CommandType.AccountDelete, account));
                 context.Response.Redirect(Config.DeleteSuccessLink);
             }
             else
@@ -345,9 +558,14 @@ namespace Server.Envir
 
         private static void BuyConnection(IAsyncResult result)
         {
+            HttpListenerContext context = null;
+            HttpListener listener = result.AsyncState as HttpListener;
+
             try
             {
-                HttpListenerContext context = BuyListener.EndGetContext(result);
+                if (!IsCurrentListener(listener, BuyListener)) return;
+
+                context = listener.EndGetContext(result);
 
                 string characterName = context.Request.QueryString["Character"];
 
@@ -365,14 +583,28 @@ namespace Server.Envir
 
                 string response = character == null ? Properties.Resources.CharacterNotFound : Properties.Resources.BuyGameGold.Replace("$CHARACTERNAME$", character.CharacterName);
 
-                using (StreamWriter writer = new StreamWriter(context.Response.OutputStream, context.Request.ContentEncoding))
+                using (StreamWriter writer = new StreamWriter(context.Response.OutputStream, context.Request.ContentEncoding, 1024, true))
                     writer.Write(response);
             }
-            catch { }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (HttpListenerException ex)
+            {
+                if (IsCurrentListener(listener, BuyListener))
+                    SEnvir.Log("Buy listener exception: " + ex);
+            }
+            catch (Exception ex)
+            {
+                SEnvir.Log("Buy request exception: " + ex);
+                TryCloseResponse(context, HttpStatusCode.InternalServerError);
+            }
             finally
             {
-                if (BuyListener != null && BuyListener.IsListening) //IsBound ?
-                    BuyListener.BeginGetContext(BuyConnection, null);
+                TryCloseResponse(context);
+
+                if (IsCurrentListener(listener, BuyListener)) //IsBound ?
+                    listener.BeginGetContext(BuyConnection, listener);
             }
 
         }
@@ -381,72 +613,185 @@ namespace Server.Envir
             const string LiveURL = @"https://ipnpb.paypal.com/cgi-bin/webscr";
 
             const string verified = "VERIFIED";
+            HttpListenerContext context = null;
+            HttpListener listener = result.AsyncState as HttpListener;
 
             try
             {
-                if (IPNListener == null || !IPNListener.IsListening) return;
+                if (!IsCurrentListener(listener, IPNListener)) return;
 
-                HttpListenerContext context = IPNListener.EndGetContext(result);
+                context = listener.EndGetContext(result);
 
-                string rawMessage;
-                using (StreamReader readStream = new StreamReader(context.Request.InputStream, Encoding.UTF8))
-                    rawMessage = readStream.ReadToEnd();
-
-
-                Task.Run(async () =>
+                if (context.Request.HttpMethod != "POST" || !context.Request.HasEntityBody)
                 {
-                    string data = "cmd=_notify-validate&" + rawMessage;
+                    context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+                    return;
+                }
 
-                    // Create a handler with explicit TLS settings
-                    var handler = new HttpClientHandler
-                    {
-                        SslProtocols = System.Security.Authentication.SslProtocols.Tls12
-                                     | System.Security.Authentication.SslProtocols.Tls13
-                    };
+                if (context.Request.ContentLength64 > MaxIPNBytes)
+                {
+                    context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+                    return;
+                }
 
-                    using (HttpClient httpClient = new HttpClient(handler))
-                    {
-                        var content = new StringContent(data, Encoding.ASCII, "application/x-www-form-urlencoded");
-                        var response = await httpClient.PostAsync(LiveURL, content);
+                byte[] rawBytes = ReadRequestBody(context.Request.InputStream, context.Request.ContentLength64, MaxIPNBytes);
+                if (rawBytes.Length == 0)
+                {
+                    context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+                    return;
+                }
 
-                        IPNMessage message = new IPNMessage { Message = rawMessage, Verified = await response.Content.ReadAsStringAsync() == verified };
+                Encoding encoding = context.Request.ContentEncoding ?? Encoding.UTF8;
+                string rawMessage = encoding.GetString(rawBytes);
 
-                        if (!Directory.Exists(VerifiedPath))
-                            Directory.CreateDirectory(VerifiedPath);
-
-                        if (!Directory.Exists(InvalidPath))
-                            Directory.CreateDirectory(InvalidPath);
-
-                        string path = (message.Verified ? VerifiedPath : InvalidPath) + Path.GetRandomFileName();
-
-                        File.WriteAllText(path, message.Message);
-
-                        message.FileName = path;
-
-                        Messages.Enqueue(message);
-                    }
-                });
+                _ = Task.Run(() => VerifyIPNAsync(rawMessage, LiveURL, verified));
 
                 context.Response.StatusCode = (int)HttpStatusCode.OK;
-                context.Response.Close();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (HttpListenerException ex)
+            {
+                if (IsCurrentListener(listener, IPNListener))
+                    SEnvir.Log("IPN listener exception: " + ex);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException)
+            {
+                context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+                SEnvir.Log("IPN request rejected: " + ex.Message);
             }
             catch (Exception ex)
             {
                 SEnvir.Log(ex.ToString());
+                TryCloseResponse(context, HttpStatusCode.InternalServerError);
             }
             finally
             {
-                if (IPNListener != null && IPNListener.IsListening) //IsBound ?
-                    IPNListener.BeginGetContext(IPNConnection, null);
+                TryCloseResponse(context);
+
+                if (IsCurrentListener(listener, IPNListener)) //IsBound ?
+                    listener.BeginGetContext(IPNConnection, listener);
+            }
+        }
+
+        private static async Task VerifyIPNAsync(string rawMessage, string liveUrl, string verifiedResponse)
+        {
+            try
+            {
+                string data = "cmd=_notify-validate&" + rawMessage;
+
+                using HttpClientHandler handler = new HttpClientHandler
+                {
+                    SslProtocols = System.Security.Authentication.SslProtocols.Tls12
+                                 | System.Security.Authentication.SslProtocols.Tls13
+                };
+
+                using HttpClient httpClient = new HttpClient(handler)
+                {
+                    Timeout = IPNVerificationTimeout
+                };
+                using StringContent content = new StringContent(data, Encoding.ASCII, "application/x-www-form-urlencoded");
+                using HttpResponseMessage response = await httpClient.PostAsync(liveUrl, content);
+
+                string verificationResult = (await response.Content.ReadAsStringAsync()).Trim();
+
+                IPNMessage message = new IPNMessage
+                {
+                    Message = rawMessage,
+                    Verified = string.Equals(verificationResult, verifiedResponse, StringComparison.Ordinal)
+                };
+
+                PersistIPNMessage(message);
+            }
+            catch (Exception ex)
+            {
+                SEnvir.Log("IPN verification exception: " + ex);
+                TryPersistFailedIPN(rawMessage);
+            }
+        }
+
+        private static void PersistIPNMessage(IPNMessage message)
+        {
+            Directory.CreateDirectory(VerifiedPath);
+            Directory.CreateDirectory(InvalidPath);
+
+            string path = Path.Combine(message.Verified ? VerifiedPath : InvalidPath, Path.GetRandomFileName());
+
+            WriteAllTextAtomically(path, message.Message);
+
+            message.FileName = path;
+
+            Messages.Enqueue(message);
+        }
+
+        private static void WriteAllTextAtomically(string path, string text)
+        {
+            string fullPath = Path.GetFullPath(path);
+            string directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            string tempDirectory = string.IsNullOrEmpty(directory) ? "." : directory;
+            string tempPath = Path.Combine(tempDirectory, Path.GetFileName(fullPath) + "." + Guid.NewGuid().ToString("N") + ".tmp");
+
+            try
+            {
+                File.WriteAllText(tempPath, text, new UTF8Encoding(false));
+                ReplaceOrMoveTempFile(tempPath, fullPath);
+            }
+            catch
+            {
+                TryDeleteTempFile(tempPath);
+                throw;
+            }
+        }
+
+        private static void ReplaceOrMoveTempFile(string tempPath, string destinationPath)
+        {
+            if (File.Exists(destinationPath))
+                File.Replace(tempPath, destinationPath, null);
+            else
+                File.Move(tempPath, destinationPath);
+        }
+
+        private static void TryDeleteTempFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+            }
+        }
+
+        private static void TryPersistFailedIPN(string rawMessage)
+        {
+            try
+            {
+                PersistIPNMessage(new IPNMessage
+                {
+                    Message = rawMessage,
+                    Verified = false
+                });
+            }
+            catch (Exception ex)
+            {
+                SEnvir.Log("IPN failure persistence exception: " + ex);
             }
         }
 
         public static void Process()
         {
-            while (!WebCommandQueue.IsEmpty)
-            {
-                if (!WebCommandQueue.TryDequeue(out WebCommand webCommand)) continue;
+            ConcurrentQueue<WebCommand> queue = WebCommandQueue;
+            if (queue == null) return;
 
+            while (queue.TryDequeue(out WebCommand webCommand))
+            {
                 switch (webCommand.Command)
                 {
                     case CommandType.None:
@@ -474,26 +819,127 @@ namespace Server.Envir
 
         public static void Save()
         {
-            HandledPayments.AddRange(PaymentList);
+            lock (PaymentLock)
+            {
+                foreach (IPNMessage message in PaymentList)
+                {
+                    if (!HandledPayments.Contains(message))
+                        HandledPayments.Add(message);
+                }
+            }
         }
 
         public static void CommitChanges(object data)
         {
-            foreach (IPNMessage message in HandledPayments)
+            lock (PaymentLock)
             {
-                if (message.Duplicate)
+                foreach (IPNMessage message in HandledPayments.ToArray())
                 {
-                    File.Delete(message.FileName);
-                    continue;
+                    try
+                    {
+                        if (message.Duplicate)
+                        {
+                            if (!string.IsNullOrWhiteSpace(message.FileName) && File.Exists(message.FileName))
+                                File.Delete(message.FileName);
+
+                            PaymentList.Remove(message);
+                            continue;
+                        }
+
+                        Directory.CreateDirectory(CompletePath);
+
+                        if (string.IsNullOrWhiteSpace(message.FileName) || !File.Exists(message.FileName))
+                        {
+                            SEnvir.Log("IPN file commit skipped because source file is missing: " + (message.FileName ?? "<empty>"));
+                            PaymentList.Remove(message);
+                            continue;
+                        }
+
+                        string fileName = Path.GetFileName(message.FileName);
+                        string targetPath = Path.Combine(CompletePath, fileName + ".txt");
+                        if (File.Exists(targetPath))
+                            targetPath = Path.Combine(CompletePath, fileName + "." + Guid.NewGuid().ToString("N") + ".txt");
+
+                        File.Move(message.FileName, targetPath);
+                        PaymentList.Remove(message);
+                    }
+                    catch (Exception ex)
+                    {
+                        SEnvir.Log("IPN file commit exception: " + ex);
+                    }
                 }
 
-                if (!Directory.Exists(CompletePath))
-                    Directory.CreateDirectory(CompletePath);
-
-                File.Move(message.FileName, CompletePath + Path.GetFileName(message.FileName) + ".txt");
-                PaymentList.Remove(message);
+                HandledPayments.Clear();
             }
-            HandledPayments.Clear();
+        }
+
+        public static void AddPaymentMessage(IPNMessage message)
+        {
+            if (message == null) return;
+
+            lock (PaymentLock)
+                PaymentList.Add(message);
+        }
+
+        private static void ClearPaymentLists()
+        {
+            lock (PaymentLock)
+            {
+                PaymentList.Clear();
+                HandledPayments.Clear();
+            }
+        }
+
+        private static void TryCloseResponse(HttpListenerContext context, HttpStatusCode? statusCode = null)
+        {
+            if (context == null) return;
+
+            try
+            {
+                if (statusCode.HasValue)
+                    context.Response.StatusCode = (int)statusCode.Value;
+
+                context.Response.Close();
+            }
+            catch
+            {
+            }
+        }
+
+        private static bool IsCurrentListener(HttpListener listener, HttpListener current)
+        {
+            if (listener == null || !ReferenceEquals(listener, current)) return false;
+
+            try
+            {
+                return listener.IsListening;
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
+        }
+
+        private static bool TryEnqueueWebCommand(WebCommand command)
+        {
+            ConcurrentQueue<WebCommand> queue = WebCommandQueue;
+            if (queue == null) return false;
+
+            queue.Enqueue(command);
+            return true;
+        }
+
+        private static void CloseListener(HttpListener listener)
+        {
+            if (listener == null) return;
+
+            try
+            {
+                listener.Close();
+            }
+            catch
+            {
+            }
         }
     }
 }

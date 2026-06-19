@@ -91,36 +91,80 @@ namespace PatchManager
         private async void CreatePatch()
         {
             InterfaceLock(false);
+            Error = false;
+            TotalUpload = 0;
+            TotalProgress = 0;
+            TotalProgressPercent = 0;
+            Speed = 0;
+            bool completed = false;
 
-            Progress<string> progress = new Progress<string>(s => StatusLabel.Text = s);
+            IProgress<string> progress = new Progress<string>(s => StatusLabel.Text = s);
 
-            List<PatchInformation> currentVersion = await Task.Run(() => CreateVersion(progress));
-            List<PatchInformation> liveVersion = await Task.Run(() => GetPatchInformation(progress));
-
-            List<PatchInformation> patch = await Task.Run(() => CalculatePatch(currentVersion, liveVersion, progress));
-
-            Task task = Task.Run(() => UploadFiles(patch, progress));
-
-            while (!task.IsCompleted)
+            try
             {
-                await Task.Delay(TimeSpan.FromSeconds(1));
-                CreateSizeLabel();
+                List<PatchInformation> currentVersion = await Task.Run(() => CreateVersion(progress));
+                if (currentVersion == null)
+                {
+                    Error = true;
+                    return;
+                }
+
+                ValidatePatchArchiveNames(currentVersion);
+
+                List<PatchInformation> liveVersion = await Task.Run(() => GetPatchInformation(progress));
+
+                List<PatchInformation> patch = await Task.Run(() => CalculatePatch(currentVersion, liveVersion, progress));
+
+                bool uploaded = true;
+
+                if (patch.Count > 0)
+                {
+                    Task<bool> task = Task.Run(() => UploadFiles(patch, progress));
+
+                    while (!task.IsCompleted)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(1));
+                        CreateSizeLabel();
+                    }
+
+                    uploaded = await task;
+                }
+
+                if (!uploaded)
+                    Error = true;
+
+                if (!Error)
+                {
+                    await Task.Run(() => SaveVersion(currentVersion));
+                    completed = true;
+                }
             }
+            catch (Exception ex)
+            {
+                Error = true;
+                progress.Report(ex.Message);
+                MessageBox.Show(this, ex.ToString(), "创建补丁失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                InterfaceLock(true);
 
-            InterfaceLock(true);
+                TryDeleteDirectory(".\\Patch\\");
+                TryDeleteDirectory(TempDownloadDirectory);
 
-            if (!Error)
-                SaveVersion(currentVersion);
-
-            if (Directory.Exists(".\\Patch\\"))
-                Directory.Delete(".\\Patch\\", true);
-
-            if (Directory.Exists(TempDownloadDirectory))
-                Directory.Delete(TempDownloadDirectory, true);
-
-            StatusLabel.Text = "Complete.";
-            UploadSizeLabel.Text = "Complete.";
-            UploadSpeedLabel.Text = "Complete.";
+                if (completed && !Error)
+                {
+                    StatusLabel.Text = "Complete.";
+                    UploadSizeLabel.Text = "Complete.";
+                    UploadSpeedLabel.Text = "Complete.";
+                }
+                else
+                {
+                    StatusLabel.Text = "Failed.";
+                    UploadSizeLabel.Text = "Failed.";
+                    UploadSpeedLabel.Text = "Failed.";
+                }
+            }
         }
 
         private void CreateSizeLabel()
@@ -248,14 +292,15 @@ namespace PatchManager
                     OverwriteMode = OverwriteMode.Overwrite
                 };
 
-                if (!session.FileExists(Path.Combine(rootPath, PListFileName)))
+                string remotePatchListPath = CombineRemotePath(rootPath, PListFileName);
+                if (!session.FileExists(remotePatchListPath))
                 {
                     progress.Report("Patch Information Not Found");
 
                     return null;
                 }
 
-                var result = session.GetFiles(Path.Combine(rootPath, PListFileName), Path.Combine(TempDownloadDirectory, PListFileName), options: transferOptions);
+                var result = session.GetFiles(remotePatchListPath, Path.Combine(TempDownloadDirectory, PListFileName), options: transferOptions);
                 result.Check();
 
                 using BinaryReader reader = new BinaryReader(File.Open(Path.Combine(TempDownloadDirectory, PListFileName), FileMode.Open, FileAccess.Read));
@@ -296,12 +341,12 @@ namespace PatchManager
                 if (!Directory.Exists(".\\Patch\\"))
                     Directory.CreateDirectory(".\\Patch\\");
 
-                string webFileName = file.FileName.Replace("\\", "-") + ".gz";
+                string webFileName = GetPatchArchiveName(file.FileName);
 
                 file.UploadFileName = ".\\Patch\\" + webFileName;
                 file.PatchFileName = Path.Combine(Directory.GetCurrentDirectory(), $"Patch\\{webFileName}");
 
-                file.CompressedLength = Compress(Config.CleanClient + file.FileName, file.PatchFileName);
+                file.CompressedLength = Compress(GetCleanClientFilePath(file.FileName), file.PatchFileName);
                 Interlocked.Add(ref TotalUpload, file.CompressedLength);
 
                 lock (patch)
@@ -367,7 +412,7 @@ namespace PatchManager
 
                 var tempFilePath = Path.Combine(".\\Patch\\", PListFileName).Replace(@"\", "/");
 
-                File.WriteAllBytes(tempFilePath, mStream.ToArray());
+                WriteAllBytesAtomically(tempFilePath, mStream.ToArray());
 
                 var rootPath = (new Uri(Config.Host)).AbsolutePath;
 
@@ -389,7 +434,9 @@ namespace PatchManager
                     OverwriteMode = OverwriteMode.Overwrite
                 };
 
-                var result = session.PutFileToDirectory(tempFilePath, rootPath, options: transferOptions);
+                TransferEventArgs result = session.PutFileToDirectory(tempFilePath, rootPath, options: transferOptions);
+                if (result.Error != null)
+                    throw result.Error;
             }
         }
 
@@ -407,18 +454,155 @@ namespace PatchManager
         }
         private static long Compress(string sourceFile, string destFile)
         {
-            var dir = Path.GetDirectoryName(destFile);
+            string fullPath = Path.GetFullPath(destFile);
+            string tempPath = GetTempWritePath(fullPath);
 
-            if (!Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
-
-            using (FileStream tofile = File.Create(destFile))
-            using (FileStream fromfile = File.OpenRead(sourceFile))
+            try
             {
-                using (GZipStream gStream = new GZipStream(tofile, CompressionMode.Compress, true))
-                    fromfile.CopyTo(gStream);
+                using (FileStream tofile = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                using (FileStream fromfile = File.OpenRead(sourceFile))
+                {
+                    using (GZipStream gStream = new GZipStream(tofile, CompressionMode.Compress, true))
+                        fromfile.CopyTo(gStream);
+                }
 
-                return tofile.Length;
+                long length = new FileInfo(tempPath).Length;
+                ReplaceOrMoveTempFile(tempPath, fullPath);
+                return length;
+            }
+            catch
+            {
+                TryDeleteTempFile(tempPath);
+                throw;
+            }
+        }
+
+        private static void WriteAllBytesAtomically(string path, byte[] data)
+        {
+            string fullPath = Path.GetFullPath(path);
+            string tempPath = GetTempWritePath(fullPath);
+
+            try
+            {
+                File.WriteAllBytes(tempPath, data);
+                ReplaceOrMoveTempFile(tempPath, fullPath);
+            }
+            catch
+            {
+                TryDeleteTempFile(tempPath);
+                throw;
+            }
+        }
+
+        private static void ReplaceOrMoveTempFile(string tempPath, string destinationPath)
+        {
+            if (File.Exists(destinationPath))
+                File.Replace(tempPath, destinationPath, null);
+            else
+                File.Move(tempPath, destinationPath);
+        }
+
+        private static string GetTempWritePath(string fullPath)
+        {
+            string directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            string tempDirectory = string.IsNullOrEmpty(directory) ? "." : directory;
+            return Path.Combine(tempDirectory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+        }
+
+        private static string GetPatchArchiveName(string relativePath)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath))
+                throw new InvalidDataException("Patch file name cannot be empty.");
+
+            string archiveName = relativePath.Replace('\\', '-').Replace('/', '-') + ".gz";
+            if (archiveName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                throw new InvalidDataException($"Patch file name contains invalid characters: {relativePath}");
+
+            return archiveName;
+        }
+
+        private static void ValidatePatchArchiveNames(IEnumerable<PatchInformation> version)
+        {
+            Dictionary<string, string> archives = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (PatchInformation file in version ?? Enumerable.Empty<PatchInformation>())
+            {
+                string archiveName = GetPatchArchiveName(file.FileName);
+                if (!archives.TryGetValue(archiveName, out string existing))
+                {
+                    archives[archiveName] = file.FileName;
+                    continue;
+                }
+
+                if (!string.Equals(existing, file.FileName, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException($"Patch archive name conflict: `{existing}` and `{file.FileName}` both map to `{archiveName}`.");
+            }
+        }
+
+        private static string GetCleanClientFilePath(string relativePath)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath))
+                throw new InvalidDataException("Patch file path cannot be empty.");
+            if (Path.IsPathRooted(relativePath))
+                throw new InvalidDataException($"Patch file path must be relative: {relativePath}");
+
+            string rootPath = EnsureTrailingDirectorySeparator(Path.GetFullPath(Config.CleanClient));
+            string fullPath = Path.GetFullPath(Path.Combine(rootPath, relativePath));
+
+            if (!fullPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"Patch file path is outside clean client root: {relativePath}");
+
+            return fullPath;
+        }
+
+        private static string EnsureTrailingDirectorySeparator(string path)
+        {
+            if (path.EndsWith(Path.DirectorySeparatorChar.ToString()) ||
+                path.EndsWith(Path.AltDirectorySeparatorChar.ToString()))
+                return path;
+
+            return path + Path.DirectorySeparatorChar;
+        }
+
+        private static string CombineRemotePath(string directory, string fileName)
+        {
+            string remoteDirectory = string.IsNullOrWhiteSpace(directory) ? "/" : directory.Replace('\\', '/');
+            string remoteFileName = (fileName ?? string.Empty).Replace('\\', '/').TrimStart('/');
+
+            if (remoteDirectory == "/")
+                return "/" + remoteFileName;
+
+            return remoteDirectory.TrimEnd('/') + "/" + remoteFileName;
+        }
+
+        private static void TryDeleteTempFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+            }
+        }
+
+        private static void TryDeleteDirectory(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                if (Directory.Exists(path))
+                    Directory.Delete(path, true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
             }
         }
         #endregion

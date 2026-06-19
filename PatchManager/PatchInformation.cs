@@ -18,7 +18,13 @@ namespace PatchManager
 
         public PatchInformation(string fileName)
         {
-            FileName = fileName.Remove(0, Config.CleanClient.Length);
+            string cleanClientRoot = EnsureTrailingDirectorySeparator(Path.GetFullPath(Config.CleanClient));
+            string fullPath = Path.GetFullPath(fileName);
+
+            if (!fullPath.StartsWith(cleanClientRoot, System.StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"Patch file is outside clean client root: {fileName}");
+
+            FileName = fullPath.Substring(cleanClientRoot.Length);
 
             using (MD5 md5 = MD5.Create())
             {
@@ -39,6 +45,15 @@ namespace PatchManager
             writer.Write(CompressedLength);
             writer.Write(CheckSum.Length);
             writer.Write(CheckSum);
+        }
+
+        private static string EnsureTrailingDirectorySeparator(string path)
+        {
+            if (path.EndsWith(Path.DirectorySeparatorChar.ToString()) ||
+                path.EndsWith(Path.AltDirectorySeparatorChar.ToString()))
+                return path;
+
+            return path + Path.DirectorySeparatorChar;
         }
     }
 }

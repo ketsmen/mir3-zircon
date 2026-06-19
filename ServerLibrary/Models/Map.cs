@@ -15,6 +15,8 @@ namespace Server.Models
 {
     public sealed class Map
     {
+        private const int MaxMapCells = 4 * 1024 * 1024;
+
         public MapInfo Info { get; }
         public InstanceInfo Instance { get; }
         public byte InstanceSequence { get; }
@@ -55,38 +57,82 @@ namespace Server.Models
             }
         }
 
-        public void Load()
+        public bool Load()
         {
             var path = Path.Combine(Config.MapPath, Info.FileName + ".map");
 
             if (!File.Exists(path))
             {
                 SEnvir.Log($"Map: {path} not found.");
-                return;
+                return false;
             }
 
-            byte[] fileBytes = File.ReadAllBytes(path);
+            try
+            {
+                using FileStream stream = File.OpenRead(path);
+                using BinaryReader reader = new BinaryReader(stream);
 
-            Width = fileBytes[23] << 8 | fileBytes[22];
-            Height = fileBytes[25] << 8 | fileBytes[24];
-
-            Cells = new Cell[Width, Height];
-
-            int offSet = 28 + Width * Height / 4 * 3;
-
-            for (int x = 0; x < Width; x++)
-                for (int y = 0; y < Height; y++)
+                if (stream.Length < 28)
                 {
-                    byte flag = fileBytes[offSet + (x * Height + y) * 14];
-
-                    if ((flag & 0x02) != 2 || (flag & 0x01) != 1) continue;
-
-                    ValidCells.Add(Cells[x, y] = new Cell(new Point(x, y)) { Map = this });
+                    SEnvir.Log($"Map: {path} is too small to contain a valid header.");
+                    return false;
                 }
+
+                stream.Seek(22, SeekOrigin.Begin);
+                int width = reader.ReadInt16();
+                int height = reader.ReadInt16();
+
+                if (width <= 0 || height <= 0)
+                {
+                    SEnvir.Log($"Map: {path} has invalid size {width}x{height}.");
+                    return false;
+                }
+
+                long cellCount = (long)width * height;
+                if (cellCount > MaxMapCells)
+                {
+                    SEnvir.Log($"Map: {path} exceeds cell limit {width}x{height} ({cellCount:#,##0}).");
+                    return false;
+                }
+
+                long backgroundCells = (long)(width / 2) * (height / 2);
+                long offSet = 28L + backgroundCells * 3L;
+                long requiredLength = offSet + cellCount * 14L;
+                if (stream.Length < requiredLength)
+                {
+                    SEnvir.Log($"Map: {path} is truncated. Expected at least {requiredLength:#,##0} bytes, got {stream.Length:#,##0}.");
+                    return false;
+                }
+
+                Width = width;
+                Height = height;
+                Cells = new Cell[Width, Height];
+                ValidCells.Clear();
+
+                stream.Seek(offSet, SeekOrigin.Begin);
+
+                for (int x = 0; x < Width; x++)
+                    for (int y = 0; y < Height; y++)
+                    {
+                        byte flag = reader.ReadByte();
+                        stream.Seek(13, SeekOrigin.Current);
+
+                        if ((flag & 0x02) != 2 || (flag & 0x01) != 1) continue;
+
+                        ValidCells.Add(Cells[x, y] = new Cell(new Point(x, y)) { Map = this });
+                    }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+                SEnvir.Log($"Map: {path} failed to load. {ex}");
+                return false;
+            }
 
             OrderedObjects = new HashSet<MapObject>[Width];
             for (int i = 0; i < OrderedObjects.Length; i++)
                 OrderedObjects[i] = new HashSet<MapObject>();
+
+            return true;
         }
         public void Setup()
         {
@@ -327,14 +373,18 @@ namespace Server.Models
 
         public Point GetRandomLocation(Point location, int range, int attempts = 25)
         {
+            if (Width <= 0 || Height <= 0 || attempts <= 0) return Point.Empty;
+
             int minX = Math.Max(0, location.X - range);
-            int maxX = Math.Min(Width, location.X + range);
+            int maxX = Math.Min(Width - 1, location.X + range);
             int minY = Math.Max(0, location.Y - range);
-            int maxY = Math.Min(Height, location.Y + range);
+            int maxY = Math.Min(Height - 1, location.Y + range);
+
+            if (minX > maxX || minY > maxY) return Point.Empty;
 
             for (int i = 0; i < attempts; i++)
             {
-                Point test = new Point(SEnvir.Random.Next(minX, maxX), SEnvir.Random.Next(minY, maxY));
+                Point test = new Point(SEnvir.Random.Next(minX, maxX + 1), SEnvir.Random.Next(minY, maxY + 1));
 
                 if (GetCell(test) != null)
                     return test;
@@ -345,9 +395,18 @@ namespace Server.Models
 
         public Point GetRandomLocation(int minX, int maxX, int minY, int maxY, int attempts = 25)
         {
+            if (Width <= 0 || Height <= 0 || attempts <= 0) return Point.Empty;
+
+            minX = Math.Max(0, minX);
+            maxX = Math.Min(Width - 1, maxX);
+            minY = Math.Max(0, minY);
+            maxY = Math.Min(Height - 1, maxY);
+
+            if (minX > maxX || minY > maxY) return Point.Empty;
+
             for (int i = 0; i < attempts; i++)
             {
-                Point test = new Point(SEnvir.Random.Next(minX, maxX), SEnvir.Random.Next(minY, maxY));
+                Point test = new Point(SEnvir.Random.Next(minX, maxX + 1), SEnvir.Random.Next(minY, maxY + 1));
 
                 if (GetCell(test) != null)
                     return test;

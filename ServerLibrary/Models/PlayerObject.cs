@@ -2727,7 +2727,8 @@ namespace Server.Models
 
             if (destMap == null) return;
 
-            if (location.X < 0 || location.Y < 0 || location.X > destMap.Width || location.Y > destMap.Height) return;
+            if (destMap.Width <= 0 || destMap.Height <= 0) return;
+            if (location.X < 0 || location.Y < 0 || location.X >= destMap.Width || location.Y >= destMap.Height) return;
 
             if (!Teleport(destMap, destMap.GetRandomLocation(location, 10, 25))) return;
 

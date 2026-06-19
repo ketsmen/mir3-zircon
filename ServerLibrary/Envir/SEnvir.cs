@@ -457,13 +457,16 @@ namespace Server.Envir
             if (!File.Exists(path))
             {
                 if (!Directory.Exists(@".\Config")) Directory.CreateDirectory(@".\Config");
-                using (StreamWriter file = new StreamWriter(path))
+
+                List<string> lines = new List<string>();
+                for (int i = 0; i < Globals.ExperienceList.Count; i++)
                 {
-                    for (int i = 0; i < Globals.ExperienceList.Count; i++)
-                    {
-                        file.WriteLine(i == 0 ? "//needed for lvl0" : (Globals.ExperienceList[i].ToString(CultureInfo.InvariantCulture) + " // level " + i));
-                    }
+                    lines.Add(i == 0
+                        ? "//needed for lvl0"
+                        : Globals.ExperienceList[i].ToString(CultureInfo.InvariantCulture) + " // level " + i);
                 }
+
+                WriteAllLinesAtomically(path, lines);
             }
             else
             {
@@ -474,11 +477,11 @@ namespace Server.Envir
                     if (lines[i].TrimStart().StartsWith("//")) continue; //ignore comment
                     try
                     {
-                        decimal exp = decimal.Parse(lines[i].Split('/')[0].Trim()); //remove comment
+                        decimal exp = decimal.Parse(lines[i].Split('/')[0].Trim(), CultureInfo.InvariantCulture); //remove comment
                         if (Globals.ExperienceList.Count > i)
-                            Globals.ExperienceList.Add(exp);
-                        else
                             Globals.ExperienceList[i] = exp;
+                        else
+                            Globals.ExperienceList.Add(exp);
                     }
                     catch (Exception)
                     {
@@ -487,6 +490,42 @@ namespace Server.Envir
                 }
             }
             Log("Experience List Loaded.");
+        }
+
+        private static void WriteAllLinesAtomically(string path, IEnumerable<string> lines)
+        {
+            string fullPath = Path.GetFullPath(path);
+            string directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            string tempDirectory = string.IsNullOrEmpty(directory) ? "." : directory;
+            string tempPath = Path.Combine(tempDirectory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+
+            try
+            {
+                File.WriteAllLines(tempPath, lines, new UTF8Encoding(false));
+                File.Move(tempPath, fullPath);
+            }
+            catch
+            {
+                TryDeleteTempFile(tempPath);
+                throw;
+            }
+        }
+
+        private static void TryDeleteTempFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+            }
         }
 
         private static void LoadDatabase()
@@ -646,7 +685,9 @@ namespace Server.Envir
         {
             if (!Config.DropTextOverrideEnabled) return null;
 
-            string path = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Config.DropTextOverridePath));
+            if (!TryResolveRuntimePath("DropTextOverride", Config.DropTextOverridePath, out string path))
+                return null;
+
             if (!Directory.Exists(path))
             {
                 Log($"[DropTextOverride] 跳过，目录不存在: {path}");
@@ -689,7 +730,9 @@ namespace Server.Envir
 
             if (!Config.NpcTextOverrideEnabled) return;
 
-            string path = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Config.NpcTextPath));
+            if (!TryResolveRuntimePath("NpcText", Config.NpcTextPath, out string path))
+                return;
+
             if (!Directory.Exists(path))
             {
                 Log($"[NpcText] 跳过，目录不存在: {path}");
@@ -746,43 +789,45 @@ namespace Server.Envir
 
             if (Config.CustomTextOverrideEnabled)
             {
-                string path = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Config.CustomTextPath));
-                if (!Directory.Exists(path))
+                if (TryResolveRuntimePath("CustomSystem", Config.CustomTextPath, out string path, report))
                 {
-                    Log($"[CustomSystem] 文本覆盖跳过，目录不存在: {path}");
-                }
-                else
-                {
-                    try
+                    if (!Directory.Exists(path))
                     {
-                        CustomSystemTextLoader loader = new(Session);
-                        textResult = loader.BuildRuntimeOverrides(path, Config.CustomTextStrictMode);
-                        report = textResult.Report;
-
-                        Log($"[CustomSystem] 已从 {Config.CustomTextPath} 加载文本覆盖，覆盖只在本次运行内存中生效。");
-                        Log(textResult.Report.ToDisplayText());
-
-                        foreach (string failure in textResult.Report.Failures.Take(200))
-                            Log($"[CustomSystem][Failure] {failure}");
-
-                        foreach (string resource in textResult.Report.MissingResources.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
-                            Log($"[CustomSystem][MissingResource] {resource}");
-
-                        foreach (string monster in textResult.Report.MissingMonsters.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
-                            Log($"[CustomSystem][MissingMonster] {monster}");
-
-                        foreach (string magic in textResult.Report.MissingMagics.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
-                            Log($"[CustomSystem][MissingMagic] {magic}");
-
-                        foreach (string item in textResult.Report.MissingItems.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
-                            Log($"[CustomSystem][MissingItem] {item}");
+                        Log($"[CustomSystem] 文本覆盖跳过，目录不存在: {path}");
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        Log("[CustomSystem] 文本覆盖加载失败，继续使用数据库自定义系统。");
-                        Log(ex.ToString());
-                        report.Failures.Add(ex.Message);
-                        textResult = null;
+                        try
+                        {
+                            CustomSystemTextLoader loader = new(Session);
+                            textResult = loader.BuildRuntimeOverrides(path, Config.CustomTextStrictMode);
+                            report = textResult.Report;
+
+                            Log($"[CustomSystem] 已从 {Config.CustomTextPath} 加载文本覆盖，覆盖只在本次运行内存中生效。");
+                            Log(textResult.Report.ToDisplayText());
+
+                            foreach (string failure in textResult.Report.Failures.Take(200))
+                                Log($"[CustomSystem][Failure] {failure}");
+
+                            foreach (string resource in textResult.Report.MissingResources.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
+                                Log($"[CustomSystem][MissingResource] {resource}");
+
+                            foreach (string monster in textResult.Report.MissingMonsters.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
+                                Log($"[CustomSystem][MissingMonster] {monster}");
+
+                            foreach (string magic in textResult.Report.MissingMagics.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
+                                Log($"[CustomSystem][MissingMagic] {magic}");
+
+                            foreach (string item in textResult.Report.MissingItems.Distinct(StringComparer.OrdinalIgnoreCase).Take(100))
+                                Log($"[CustomSystem][MissingItem] {item}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log("[CustomSystem] 文本覆盖加载失败，继续使用数据库自定义系统。");
+                            Log(ex.ToString());
+                            report.Failures.Add(ex.Message);
+                            textResult = null;
+                        }
                     }
                 }
             }
@@ -796,6 +841,24 @@ namespace Server.Envir
 
             Log($"[CustomSystem] 注册完成。资源 {CustomSystem.ResourcesByKey.Count}, 怪物视觉 {CustomSystem.MonsterVisualsByMonsterIndex.Count}, 怪物行为 {CustomSystem.MonsterBehaviorsByMonsterIndex.Count}, 技能 {CustomSystem.SkillsByMagicIndex.Count}。");
             return report;
+        }
+
+        private static bool TryResolveRuntimePath(string logScope, string configuredPath, out string path, CustomSystemTextReport report = null)
+        {
+            path = null;
+
+            try
+            {
+                path = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, configuredPath ?? string.Empty));
+                return true;
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
+            {
+                string message = $"[{logScope}] 路径无效 `{configuredPath}`: {ex.Message}";
+                Log(message);
+                report?.Failures.Add(message);
+                return false;
+            }
         }
 
         private static IReadOnlyDictionary<MonsterInfo, CompiledMonsterDrop> MergeDropOverrides(
@@ -998,6 +1061,9 @@ namespace Server.Envir
                 }
 
                 Parallel.ForEach(Maps, x => x.Value.Load());
+
+                foreach (MapInfo failedMap in Maps.Where(x => x.Value.Cells == null).Select(x => x.Key).ToList())
+                    Maps.Remove(failedMap);
 
                 Parallel.ForEach(MapRegionList.Binding, x =>
                 {
@@ -1935,25 +2001,24 @@ namespace Server.Envir
 
                 if (!WebServer.Messages.TryDequeue(out message) || message == null) return;
 
-                WebServer.PaymentList.Add(message);
-
                 if (!message.Verified)
                 {
                     SEnvir.Log("INVALID PAYPAL TRANSACTION " + message.Message);
+                    WebServer.AddPaymentMessage(message);
                     continue;
                 }
 
                 //Add message to another list for file moving
 
-                string[] data = message.Message.Split('&');
-
                 Dictionary<string, string> values = new Dictionary<string, string>();
+                var parsedValues = HttpUtility.ParseQueryString(message.Message, Encoding.UTF8);
 
-                for (int i = 0; i < data.Length; i++)
+                for (int i = 0; i < parsedValues.Count; i++)
                 {
-                    string[] keypair = data[i].Split('=');
+                    string key = parsedValues.GetKey(i);
+                    if (key == null) continue;
 
-                    values[keypair[0]] = keypair.Length > 1 ? keypair[1] : null;
+                    values[key] = parsedValues.Get(i);
                 }
 
                 bool error = false;
@@ -1969,6 +2034,7 @@ namespace Server.Envir
 
 
                 //Check that Txn_id has not been used
+                bool duplicate = false;
                 for (int i = 0; i < SEnvir.GameGoldPaymentList.Count; i++)
                 {
                     if (SEnvir.GameGoldPaymentList[i].TransactionID != transactionID) continue;
@@ -1977,7 +2043,13 @@ namespace Server.Envir
 
                     SEnvir.Log(string.Format("[Duplicated Transaction] ID:{0} Status:{1}.", transactionID, paymentStatus));
                     message.Duplicate = true;
-                    return;
+                    duplicate = true;
+                    break;
+                }
+                if (duplicate)
+                {
+                    WebServer.AddPaymentMessage(message);
+                    continue;
                 }
 
                 GameGoldPayment payment = SEnvir.GameGoldPaymentList.CreateNewObject();
@@ -1985,19 +2057,19 @@ namespace Server.Envir
                 payment.Error = error;
 
                 if (values.TryGetValue("payment_date", out tempString))
-                    payment.PaymentDate = HttpUtility.UrlDecode(tempString);
+                    payment.PaymentDate = tempString;
 
                 if (values.TryGetValue("receiver_email", out tempString))
-                    payment.Receiver_EMail = HttpUtility.UrlDecode(tempString);
+                    payment.Receiver_EMail = tempString;
                 else
                     payment.Error = true;
 
-                if (values.TryGetValue("mc_fee", out tempString) && decimal.TryParse(tempString, out tempDecimal))
+                if (values.TryGetValue("mc_fee", out tempString) && decimal.TryParse(tempString, NumberStyles.Number, CultureInfo.InvariantCulture, out tempDecimal))
                     payment.Fee = tempDecimal;
                 else
                     payment.Error = true;
 
-                if (values.TryGetValue("mc_gross", out tempString) && decimal.TryParse(tempString, out tempDecimal))
+                if (values.TryGetValue("mc_gross", out tempString) && decimal.TryParse(tempString, NumberStyles.Number, CultureInfo.InvariantCulture, out tempDecimal))
                     payment.Price = tempDecimal;
                 else
                     payment.Error = true;
@@ -2018,7 +2090,7 @@ namespace Server.Envir
                     payment.Error = true;
 
                 if (values.TryGetValue("payer_email", out tempString))
-                    payment.Payer_EMail = HttpUtility.UrlDecode(tempString);
+                    payment.Payer_EMail = tempString;
 
                 if (values.TryGetValue("payer_id", out tempString))
                     payment.Payer_ID = tempString;
@@ -2031,7 +2103,11 @@ namespace Server.Envir
                     case "Completed":
                         break;
                 }
-                if (payment.Status != WebServer.Completed) continue;
+                if (payment.Status != WebServer.Completed)
+                {
+                    WebServer.AddPaymentMessage(message);
+                    continue;
+                }
 
                 //check that receiver_email is my primary paypal email
                 if (string.Compare(payment.Receiver_EMail, Config.ReceiverEMail, StringComparison.OrdinalIgnoreCase) != 0)
@@ -2051,6 +2127,7 @@ namespace Server.Envir
                 if (character == null || payment.Error)
                 {
                     SEnvir.Log($"[Transaction Error] ID:{transactionID} Status:{paymentStatus}, Amount{payment.Price}.");
+                    WebServer.AddPaymentMessage(message);
                     continue;
                 }
 
@@ -2073,6 +2150,7 @@ namespace Server.Envir
                 }
 
                 SEnvir.Log($"[Game Gold Purchase] Character: {character.CharacterName}, Amount: {payment.GameGoldAmount}.");
+                WebServer.AddPaymentMessage(message);
             }
         }
 
@@ -2131,26 +2209,30 @@ namespace Server.Envir
             var logPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".\\Logs.txt"));
             var chatLogPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".\\Chat Logs.txt"));
 
+            FlushLogQueue(Logs, logPath);
+            FlushLogQueue(ChatLogs, chatLogPath);
+        }
+
+        private static void FlushLogQueue(ConcurrentQueue<string> queue, string path)
+        {
             List<string> lines = new List<string>();
-            while (!Logs.IsEmpty)
+            while (!queue.IsEmpty)
             {
-                if (!Logs.TryDequeue(out string line)) continue;
+                if (!queue.TryDequeue(out string line)) continue;
                 lines.Add(line);
             }
 
-            File.AppendAllLines(logPath, lines);
+            if (lines.Count == 0) return;
 
-            lines.Clear();
-
-            while (!ChatLogs.IsEmpty)
+            try
             {
-                if (!ChatLogs.TryDequeue(out string line)) continue;
-                lines.Add(line);
+                File.AppendAllLines(path, lines);
             }
-
-            File.AppendAllLines(chatLogPath, lines);
-
-            lines.Clear();
+            catch
+            {
+                foreach (string line in lines)
+                    queue.Enqueue(line);
+            }
         }
 
         public static void CheckGuildWars()
@@ -4459,11 +4541,12 @@ namespace Server.Envir
             return result;
         }
 
-        private static void FinaliseMapLoad(Map map)
+        private static bool FinaliseMapLoad(Map map)
         {
-            if (map == null) return;
+            if (map == null) return false;
 
-            map.Load();
+            if (!map.Load())
+                return false;
 
             foreach (MapRegion region in map.Info.Regions)
                 region.CreatePoints(map.Width);
@@ -4481,6 +4564,7 @@ namespace Server.Envir
                 : $"{map.Info.Description} [{map.Instance.Name}:{map.InstanceSequence}:{map.Info.FileName}]";
 
             Log($"Map loaded: {scope}");
+            return true;
         }
 
         public static Map GetMap(MapInfo info, InstanceInfo instance = null, byte instanceSequence = 0)
@@ -4499,7 +4583,11 @@ namespace Server.Envir
 
                     loadedMap = new Map(info);
                     Maps[info] = loadedMap;
-                    FinaliseMapLoad(loadedMap);
+                    if (!FinaliseMapLoad(loadedMap))
+                    {
+                        Maps.Remove(info);
+                        return null;
+                    }
 
                     return loadedMap;
                 }
@@ -4525,7 +4613,11 @@ namespace Server.Envir
 
                 instanceMap = new Map(info, instance, instanceSequence, instanceMapInfo.RespawnIndex);
                 instanceMaps[instanceSequence][info] = instanceMap;
-                FinaliseMapLoad(instanceMap);
+                if (!FinaliseMapLoad(instanceMap))
+                {
+                    instanceMaps[instanceSequence].Remove(info);
+                    return null;
+                }
             }
 
             return instanceMap;
@@ -4551,7 +4643,8 @@ namespace Server.Envir
 
                 Map map = new Map(mapInfo.Map, instance, instanceSequence, mapInfo.RespawnIndex);
                 mapInstance[instanceSequence][mapInfo.Map] = map;
-                FinaliseMapLoad(map);
+                if (!FinaliseMapLoad(map))
+                    mapInstance[instanceSequence].Remove(mapInfo.Map);
             }
 
             Log($"Loaded Instance {instance.Name} at index {instanceSequence}");

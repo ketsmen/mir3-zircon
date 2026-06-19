@@ -224,38 +224,36 @@ namespace MirDB
             if (!Directory.Exists(Root))
                 Directory.CreateDirectory(Root);
 
-            using (BinaryWriter writer = Library.Encryption.GetWriter(File.Create(SystemPath + TempExtension)))
+            string tempPath = GetTempDatabasePath(SystemPath);
+
+            try
             {
-                writer.Write(SystemHeader);
-
-                foreach (KeyValuePair<Type, ADBCollection> pair in Collections)
+                using (BinaryWriter writer = Library.Encryption.GetWriter(File.Create(tempPath)))
                 {
-                    if (!pair.Value.IsSystemData) continue;
-                    byte[] data = pair.Value.GetSaveData();
+                    writer.Write(SystemHeader);
 
-                    writer.Write(data.Length);
-                    writer.Write(data);
-                }
-            }
+                    foreach (KeyValuePair<Type, ADBCollection> pair in Collections)
+                    {
+                        if (!pair.Value.IsSystemData) continue;
+                        byte[] data = pair.Value.GetSaveData();
 
-            if (BackUp && !Directory.Exists(SystemBackupPath))
-                Directory.CreateDirectory(SystemBackupPath);
-
-            if (File.Exists(SystemPath))
-            {
-                if (BackUp)
-                {
-                    using (FileStream sourceStream = File.OpenRead(SystemPath))
-                    using (FileStream destStream = File.Create(SystemBackupPath + "System " + ToBackUpFileName(DateTime.UtcNow) + Extension + CompressExtension))
-                    using (GZipStream compress = new GZipStream(destStream, CompressionMode.Compress))
-                        sourceStream.CopyTo(compress);
+                        writer.Write(data.Length);
+                        writer.Write(data);
+                    }
                 }
 
-                File.Delete(SystemPath);
-            }
+                if (File.Exists(SystemPath) && BackUp)
+                    BackUpDatabase(SystemPath, SystemBackupPath, "System " + ToBackUpFileName(DateTime.UtcNow));
 
-            File.Move(SystemPath + TempExtension, SystemPath);
+                ReplaceDatabaseFile(tempPath, SystemPath);
+            }
+            catch
+            {
+                TryDeleteTempFile(tempPath);
+                throw;
+            }
         }
+
         private void SaveUsers()
         {
             if ((Mode & SessionMode.Users) != SessionMode.Users) return;
@@ -263,37 +261,97 @@ namespace MirDB
             if (!Directory.Exists(Root))
                 Directory.CreateDirectory(Root);
 
-            using (BinaryWriter writer = Library.Encryption.GetWriter(File.Create(UsersPath + TempExtension)))
+            string tempPath = GetTempDatabasePath(UsersPath);
+
+            try
             {
-                writer.Write(UsersHeader);
-
-                foreach (KeyValuePair<Type, ADBCollection> pair in Collections)
+                using (BinaryWriter writer = Library.Encryption.GetWriter(File.Create(tempPath)))
                 {
-                    if (pair.Value.IsSystemData) continue;
+                    writer.Write(UsersHeader);
 
-                    byte[] data = pair.Value.GetSaveData();
+                    foreach (KeyValuePair<Type, ADBCollection> pair in Collections)
+                    {
+                        if (pair.Value.IsSystemData) continue;
 
-                    writer.Write(data.Length);
-                    writer.Write(data);
-                }
-            }
-            if (BackUp && !Directory.Exists(UsersBackupPath))
-                Directory.CreateDirectory(UsersBackupPath);
+                        byte[] data = pair.Value.GetSaveData();
 
-            if (File.Exists(UsersPath))
-            {
-                if (BackUp)
-                {
-                    using (FileStream sourceStream = File.OpenRead(UsersPath))
-                    using (FileStream destStream = File.Create(UsersBackupPath + "Users " + ToBackUpFileName(DateTime.UtcNow) + Extension + CompressExtension))
-                    using (GZipStream compress = new GZipStream(destStream, CompressionMode.Compress))
-                        sourceStream.CopyTo(compress);
+                        writer.Write(data.Length);
+                        writer.Write(data);
+                    }
                 }
 
-                File.Delete(UsersPath);
-            }
+                if (File.Exists(UsersPath) && BackUp)
+                    BackUpDatabase(UsersPath, UsersBackupPath, "Users " + ToBackUpFileName(DateTime.UtcNow));
 
-            File.Move(UsersPath + TempExtension, UsersPath);
+                ReplaceDatabaseFile(tempPath, UsersPath);
+            }
+            catch
+            {
+                TryDeleteTempFile(tempPath);
+                throw;
+            }
+        }
+
+        private static void ReplaceDatabaseFile(string tempPath, string targetPath)
+        {
+            if (File.Exists(targetPath))
+                File.Replace(tempPath, targetPath, null);
+            else
+                File.Move(tempPath, targetPath);
+        }
+
+        private static string GetTempDatabasePath(string targetPath)
+        {
+            return targetPath + "." + Guid.NewGuid().ToString("N") + TempExtension;
+        }
+
+        private static void BackUpDatabase(string sourcePath, string backupDirectory, string baseName)
+        {
+            Directory.CreateDirectory(backupDirectory);
+
+            string backupPath = GetUniqueBackupPath(backupDirectory, baseName);
+            string tempPath = backupPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+
+            try
+            {
+                using (FileStream sourceStream = File.OpenRead(sourcePath))
+                using (FileStream destStream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                using (GZipStream compress = new GZipStream(destStream, CompressionMode.Compress))
+                    sourceStream.CopyTo(compress);
+
+                File.Move(tempPath, backupPath);
+            }
+            catch
+            {
+                TryDeleteTempFile(tempPath);
+                throw;
+            }
+        }
+
+        private static string GetUniqueBackupPath(string backupDirectory, string baseName)
+        {
+            string path = Path.Combine(backupDirectory, baseName + Extension + CompressExtension);
+            if (!File.Exists(path)) return path;
+
+            for (int i = 2; ; i++)
+            {
+                path = Path.Combine(backupDirectory, $"{baseName} ({i}){Extension}{CompressExtension}");
+                if (!File.Exists(path)) return path;
+            }
+        }
+
+        private static void TryDeleteTempFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+            }
         }
 
         public DBCollection<T> GetCollection<T>() where T : DBObject, new()

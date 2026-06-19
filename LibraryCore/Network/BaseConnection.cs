@@ -9,7 +9,7 @@ namespace Library.Network
 {
     public abstract class BaseConnection
     {
-        public static Dictionary<string, DiagnosticValue> Diagnostics = new Dictionary<string, DiagnosticValue>();
+        public static readonly ConcurrentDictionary<string, DiagnosticValue> Diagnostics = new ConcurrentDictionary<string, DiagnosticValue>();
         public static Dictionary<(Type ConnectionType, Type PacketType), MethodInfo> PacketMethods = new Dictionary<(Type ConnectionType, Type PacketType), MethodInfo>();
         private static readonly object PacketMethodsLock = new object();
         public static bool Monitor;
@@ -64,16 +64,17 @@ namespace Library.Network
         {
             try
             {
-                if (Client == null || !Client.Connected) return;
+                TcpClient client = Client;
+                if (client == null || !client.Connected) return;
 
                 byte[] rawBytes = new byte[8 * 1024];
 
-                Client.Client.BeginReceive(rawBytes, 0, rawBytes.Length, SocketFlags.None, ReceiveData, rawBytes);
+                client.Client.BeginReceive(rawBytes, 0, rawBytes.Length, SocketFlags.None, ReceiveData, rawBytes);
             }
             catch (Exception ex)
             {
                 if (AdditionalLogging)
-                    OnException(this, ex);
+                    OnException?.Invoke(this, ex);
                 Disconnecting = true;
             }
         }
@@ -83,7 +84,10 @@ namespace Library.Network
             {
                 if (!Connected) return;
 
-                int dataRead = Client.Client.EndReceive(result);
+                TcpClient client = Client;
+                if (client == null) return;
+
+                int dataRead = client.Client.EndReceive(result);
 
                 if (dataRead == 0)
                 {
@@ -102,11 +106,14 @@ namespace Library.Network
                 Buffer.BlockCopy(temp, 0, _rawData, 0, temp.Length);
                 Buffer.BlockCopy(rawBytes, 0, _rawData, temp.Length, dataRead);
 
+                ConcurrentQueue<Packet> receiveList = ReceiveList;
+                if (receiveList == null) return;
+
                 Packet p;
 
                 while ((p = Packet.ReceivePacket(_rawData, out _rawData)) != null)
                 {
-                    ReceiveList.Enqueue(p);
+                    receiveList.Enqueue(p);
                     TotalPacketsProcessed++;
                 }
 
@@ -115,7 +122,7 @@ namespace Library.Network
             catch (Exception ex)
             {
                 if (AdditionalLogging)
-                    OnException(this, ex);
+                    OnException?.Invoke(this, ex);
                 Disconnecting = true;
             }
         }
@@ -125,15 +132,18 @@ namespace Library.Network
 
             try
             {
+                TcpClient client = Client;
+                if (client == null) return;
+
                 Sending = true;
                 TotalBytesSent += data.Count;
-                Client.Client.BeginSend(data.ToArray(), 0, data.Count, SocketFlags.None, SendData, null);
+                client.Client.BeginSend(data.ToArray(), 0, data.Count, SocketFlags.None, SendData, null);
                 UpdateTimeOut();
             }
             catch (Exception ex)
             {
                 if (AdditionalLogging)
-                    OnException(this, ex);
+                    OnException?.Invoke(this, ex);
                 Disconnecting = true;
                 Sending = false;
             }
@@ -143,21 +153,25 @@ namespace Library.Network
             try
             {
                 Sending = false;
-                Client.Client.EndSend(result);
+                TcpClient client = Client;
+                if (client == null) return;
+
+                client.Client.EndSend(result);
                 UpdateTimeOut();
             }
             catch (Exception ex)
             {
                 if (AdditionalLogging)
-                    OnException(this, ex);
+                    OnException?.Invoke(this, ex);
                 Disconnecting = true;
             }
         }
         public virtual void Enqueue(Packet p)
         {
-            if (!Connected || p == null) return;
+            ConcurrentQueue<Packet> sendList = SendList;
+            if (!Connected || p == null || sendList == null) return;
 
-            SendList.Enqueue(p);
+            sendList.Enqueue(p);
         }
 
         public abstract void TryDisconnect();
@@ -172,8 +186,10 @@ namespace Library.Network
             ReceiveList = null;
             _rawData = null;
 
-            Client.Client.Dispose();
+            TcpClient client = Client;
             Client = null;
+
+            client?.Close();
         }
 
         public abstract void TrySendDisconnect(Packet p);
@@ -202,13 +218,16 @@ namespace Library.Network
             {
                 Disconnecting = true;
 
+                TcpClient client = Client;
+                if (client == null) return;
+
                 TotalBytesSent += data.Count;
-                Client.Client.BeginSend(data.ToArray(), 0, data.Count, SocketFlags.None, SendDataDisconnect, null);
+                client.Client.BeginSend(data.ToArray(), 0, data.Count, SocketFlags.None, SendDataDisconnect, null);
             }
             catch (Exception ex)
             {
                 if (AdditionalLogging)
-                    OnException(this, ex);
+                    OnException?.Invoke(this, ex);
             }
         }
         private void SendDataDisconnect(IAsyncResult result)
@@ -216,40 +235,52 @@ namespace Library.Network
 
             try
             {
-                Client.Client.EndSend(result);
+                TcpClient client = Client;
+                if (client == null) return;
+
+                client.Client.EndSend(result);
             }
             catch (Exception ex)
             {
                 if (AdditionalLogging)
-                    OnException(this, ex);
+                    OnException?.Invoke(this, ex);
             }
         }
 
         public virtual void Process()
         {
-            if (Client == null || !Client.Connected)
+            TcpClient client = Client;
+            if (client == null || !client.Connected)
             {
                 TryDisconnect();
                 return;
             }
 
-            while (!ReceiveList.IsEmpty && !Disconnecting)
+            ConcurrentQueue<Packet> receiveList = ReceiveList;
+            ConcurrentQueue<Packet> sendList = SendList;
+            if (receiveList == null || sendList == null)
+            {
+                TryDisconnect();
+                return;
+            }
+
+            while (!receiveList.IsEmpty && !Disconnecting)
             {
                 try
                 {
                     Packet p;
-                    if (!ReceiveList.TryDequeue(out p)) continue;
+                    if (!receiveList.TryDequeue(out p)) continue;
 
                     ProcessPacket(p);
                 }
                 catch (NotImplementedException ex)
                 {
-                    OnException(this, ex);
+                    OnException?.Invoke(this, ex);
                     Disconnecting = true;
                 }
                 catch (Exception ex)
                 {
-                    OnException(this, ex);
+                    OnException?.Invoke(this, ex);
                     throw;
                 }
             }
@@ -267,14 +298,14 @@ namespace Library.Network
             if (!Disconnecting && Sending)
                 UpdateTimeOut();
 
-            if (SendList.IsEmpty || Sending) return;
+            if (sendList.IsEmpty || Sending) return;
 
             List<byte> data = new List<byte>();
-            while (!SendList.IsEmpty)
+            while (!sendList.IsEmpty)
             {
                 Packet p;
 
-                if (!SendList.TryDequeue(out p)) continue;
+                if (!sendList.TryDequeue(out p)) continue;
 
                 if (p == null) continue;
 
@@ -294,17 +325,17 @@ namespace Library.Network
 
                 if (!Monitor) continue;
 
-                DiagnosticValue value;
                 Type type = p.GetType();
+                DiagnosticValue value = Diagnostics.GetOrAdd(type.FullName, name => new DiagnosticValue { Name = name });
 
-                if (!Diagnostics.TryGetValue(type.FullName, out value))
-                    Diagnostics[type.FullName] = value = new DiagnosticValue { Name = type.FullName };
+                lock (value)
+                {
+                    value.Count++;
+                    value.TotalSize += p.Length;
 
-                value.Count++;
-                value.TotalSize += p.Length;
-
-                if (p.Length > value.LargestSize)
-                    value.LargestSize = p.Length;
+                    if (p.Length > value.LargestSize)
+                        value.LargestSize = p.Length;
+                }
             }
 
             BeginSend(data);
@@ -325,8 +356,7 @@ namespace Library.Network
                 if (!PacketMethods.TryGetValue(key, out info))
                 {
                     info = connectionType.GetMethod("Process", new[] { p.PacketType });
-                    if (info != null)
-                        PacketMethods[key] = info;
+                    PacketMethods[key] = info;
                 }
             }
 
@@ -341,20 +371,20 @@ namespace Library.Network
             if (!Monitor) return;
 
             TimeSpan execution = Time.Now - start;
-            DiagnosticValue value;
+            DiagnosticValue value = Diagnostics.GetOrAdd(p.PacketType.FullName, name => new DiagnosticValue { Name = name });
 
-            if (!Diagnostics.TryGetValue(p.PacketType.FullName, out value))
-                Diagnostics[p.PacketType.FullName] = value = new DiagnosticValue { Name = p.PacketType.FullName };
+            lock (value)
+            {
+                value.Count++;
+                value.TotalTime += execution;
+                value.TotalSize += p.Length;
 
-            value.Count++;
-            value.TotalTime += execution;
-            value.TotalSize += p.Length;
+                if (execution > value.LargestTime)
+                    value.LargestTime = execution;
 
-            if (execution > value.LargestTime)
-                value.LargestTime = execution;
-
-            if (p.Length > value.LargestSize)
-                value.LargestSize = p.Length;
+                if (p.Length > value.LargestSize)
+                    value.LargestSize = p.Length;
+            }
         }
 
         protected virtual void ProcessUnhandledPacket(Packet p)

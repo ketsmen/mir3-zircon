@@ -172,10 +172,51 @@ namespace Library
                 lines.Add(string.Empty);
             }
 
-            if (!Directory.Exists(Path.GetDirectoryName(path)))
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
+            WriteAllLinesAtomically(path, lines, Encoding.Unicode);
+        }
 
-            File.WriteAllLines(path, lines, Encoding.Unicode);
+        private static void WriteAllLinesAtomically(string path, IEnumerable<string> lines, Encoding encoding)
+        {
+            string fullPath = Path.GetFullPath(path);
+            string directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            string tempDirectory = string.IsNullOrEmpty(directory) ? "." : directory;
+            string tempPath = Path.Combine(tempDirectory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+
+            try
+            {
+                File.WriteAllLines(tempPath, lines, encoding);
+                ReplaceOrMoveTempFile(tempPath, fullPath);
+            }
+            catch
+            {
+                TryDeleteTempFile(tempPath);
+                throw;
+            }
+        }
+
+        private static void ReplaceOrMoveTempFile(string tempPath, string destinationPath)
+        {
+            if (File.Exists(destinationPath))
+                File.Replace(tempPath, destinationPath, null);
+            else
+                File.Move(tempPath, destinationPath);
+        }
+
+        private static void TryDeleteTempFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+            }
         }
 
         private static string EscapeSpecialCharacters(string value)

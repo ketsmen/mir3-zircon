@@ -189,7 +189,8 @@ namespace Server.Envir
                 return;
             }
 
-            if (ReceiveList.Count > Config.MaxPacket)
+            var receiveList = ReceiveList;
+            if (receiveList != null && receiveList.Count > Config.MaxPacket)
             {
                 TryDisconnect();
                 SEnvir.IPBlocks[IPAddress] = SEnvir.Now.Add(Config.PacketBanTime);
