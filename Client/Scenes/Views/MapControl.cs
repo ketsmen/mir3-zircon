@@ -18,6 +18,8 @@ namespace Client.Scenes.Views
 {
     public sealed class MapControl : DXControl
     {
+        private const int MaxMapCells = 4 * 1024 * 1024;
+
         #region Properties
 
         public static UserObject User => GameScene.Game.User;
@@ -295,7 +297,7 @@ namespace Client.Scenes.Views
                 foreach (MapObject ob in Objects)
                     ob.DrawDamage();
 
-            if (MapLocation.X >= 0 && MapLocation.X < Width && MapLocation.Y >= 0 && MapLocation.Y < Height)
+            if (IsInsideMap(MapLocation))
             {
                 Cell cell = Cells[MapLocation.X, MapLocation.Y];
                 int layer = 0;
@@ -327,7 +329,7 @@ namespace Client.Scenes.Views
 
         private void DrawBackground()
         {
-            if (MapInfo.Background <= 0) return;
+            if (MapInfo == null || MapInfo.Background <= 0) return;
 
             if (!CEnvir.LibraryList.TryGetValue(LibraryFile.Background, out MirLibrary library)) return;
 
@@ -340,8 +342,15 @@ namespace Client.Scenes.Views
 
         private void DrawObjects()
         {
-            int minX = Math.Max(0, User.CurrentLocation.X - OffSetX - 4), maxX = Math.Min(Width - 1, User.CurrentLocation.X + OffSetX + 4);
-            int minY = Math.Max(0, User.CurrentLocation.Y - OffSetY - 4), maxY = Math.Min(Height - 1, User.CurrentLocation.Y + OffSetY + 25);
+            if (Cells == null || Width <= 0 || Height <= 0 || User == null) return;
+
+            int width = Math.Min(Width, Cells.GetLength(0));
+            int height = Math.Min(Height, Cells.GetLength(1));
+            if (width <= 0 || height <= 0) return;
+
+            int minX = Math.Max(0, User.CurrentLocation.X - OffSetX - 4), maxX = Math.Min(width - 1, User.CurrentLocation.X + OffSetX + 4);
+            int minY = Math.Max(0, User.CurrentLocation.Y - OffSetY - 4), maxY = Math.Min(height - 1, User.CurrentLocation.Y + OffSetY + 25);
+            if (maxX < minX || maxY < minY) return;
 
             List<MapObject>[] drawRows = BuildDrawRows(minY, maxY);
 
@@ -374,22 +383,15 @@ namespace Client.Scenes.Views
                         if (cell.MiddleAnimationFrame > 1 && cell.MiddleAnimationFrame < 255)
                         {
                             blend = cell.MiddleAnimationBlend;
-                            index += Animation % cell.MiddleAnimationCount;
+                            int frameCount = cell.MiddleAnimationCount;
+                            if (frameCount > 0)
+                            {
+                                index += Animation % frameCount;
+                            }
                         }
 
                         Size s = cell.MiddleLibrary.GetSize(index);
-
-                        if ((s.Width != CellWidth || s.Height != CellHeight) && (s.Width != CellWidth * 2 || s.Height != CellHeight * 2))
-                        {
-                            if (!blend)
-                                cell.MiddleLibrary.Draw(index, drawX, drawY - s.Height, Color.White, false, 1F, ImageType.Image);
-                            else
-                                cell.MiddleLibrary.DrawBlend(index, drawX, drawY - s.Height, Color.White, false, 0.5F, ImageType.Image);
-                        }
-                        else
-                        {
-                            cell.MiddleLibrary.Draw(index, drawX, drawY - s.Height, Color.White, false, 1F, ImageType.Image);
-                        }
+                        DrawMapLayer(cell.MiddleLibrary, index, drawX, drawY - s.Height, blend);
                     }
 
                     if (cell.FrontLibrary != null)
@@ -412,20 +414,7 @@ namespace Client.Scenes.Views
                         bool cellSized = (s.Width == CellWidth && s.Height == CellHeight) ||
                                          (s.Width == CellWidth * 2 && s.Height == CellHeight * 2);
 
-                        if (!cellSized)
-                        {
-                            if (!blend)
-                                cell.FrontLibrary.Draw(index, drawX, drawY - s.Height, Color.White, false, 1F, ImageType.Image);
-                            else
-                                cell.FrontLibrary.DrawBlend(index, drawX, drawY - s.Height, Color.White, false, 0.5F, ImageType.Image);
-                        }
-                        else
-                        {
-                            if (!blend)
-                                cell.FrontLibrary.Draw(index, drawX, drawY - CellHeight, Color.White, false, 1F, ImageType.Image);
-                            else
-                                cell.FrontLibrary.DrawBlend(index, drawX, drawY - CellHeight, Color.White, false, 0.5F, ImageType.Image);
-                        }
+                        DrawMapLayer(cell.FrontLibrary, index, drawX, cellSized ? drawY - CellHeight : drawY - s.Height, blend);
                     }
                 }
 
@@ -481,6 +470,14 @@ namespace Client.Scenes.Views
             }
         }
 
+        private static void DrawMapLayer(MirLibrary library, int index, int x, int y, bool blend)
+        {
+            if (!blend)
+                library.Draw(index, x, y, Color.White, false, 1F, ImageType.Image);
+            else
+                library.DrawBlend(index, x, y, Color.White, false, 0.5F, ImageType.Image);
+        }
+
         private List<MapObject>[] BuildDrawRows(int minY, int maxY)
         {
             List<MapObject>[] rows = new List<MapObject>[maxY - minY + 1];
@@ -500,59 +497,85 @@ namespace Client.Scenes.Views
             return rows;
         }
 
+        private void ClearObjectCells()
+        {
+            foreach (MapObject ob in Objects ?? Enumerable.Empty<MapObject>())
+                ob.CurrentCell?.RemoveObject(ob);
+        }
+
         private void LoadMap()
         {
+            ClearObjectCells();
+
+            Width = 0;
+            Height = 0;
+            Cells = new Cell[0, 0];
+
             try
             {
+                if (MapInfo == null || string.IsNullOrWhiteSpace(MapInfo.FileName)) return;
+
                 var path = Path.Combine(Config.MapPath, MapInfo.FileName + ".map");
 
                 if (!File.Exists(path)) return;
 
-                using (MemoryStream mStream = new MemoryStream(File.ReadAllBytes(path)))
+                using (FileStream mStream = File.OpenRead(path))
                 using (BinaryReader reader = new BinaryReader(mStream))
                 {
+                    if (mStream.Length < 26) return;
+
                     mStream.Seek(22, SeekOrigin.Begin);
-                    Width = reader.ReadInt16();
-                    Height = reader.ReadInt16();
+                    int width = reader.ReadInt16();
+                    int height = reader.ReadInt16();
+
+                    if (width <= 0 || height <= 0) return;
+                    if ((long)width * height > MaxMapCells) return;
+                    if (!HasExpectedMapDataLength(mStream.Length, width, height)) return;
 
                     mStream.Seek(28, SeekOrigin.Begin);
 
-                    Cells = new Cell[Width, Height];
-                    for (int x = 0; x < Width; x++)
-                        for (int y = 0; y < Height; y++)
-                            Cells[x, y] = new Cell();
+                    Cell[,] cells = new Cell[width, height];
+                    for (int x = 0; x < width; x++)
+                        for (int y = 0; y < height; y++)
+                            cells[x, y] = new Cell();
 
-                    for (int x = 0; x < Width / 2; x++)
-                        for (int y = 0; y < Height / 2; y++)
+                    for (int x = 0; x < width / 2; x++)
+                        for (int y = 0; y < height / 2; y++)
                         {
-                            Cells[(x * 2), (y * 2)].BackFile = reader.ReadByte();
-                            Cells[(x * 2), (y * 2)].BackImage = reader.ReadUInt16();
+                            cells[(x * 2), (y * 2)].BackFile = reader.ReadByte();
+                            cells[(x * 2), (y * 2)].BackImage = reader.ReadUInt16();
                         }
 
-                    for (int x = 0; x < Width; x++)
-                        for (int y = 0; y < Height; y++)
+                    for (int x = 0; x < width; x++)
+                        for (int y = 0; y < height; y++)
                         {
                             byte flag = reader.ReadByte();
-                            Cells[x, y].MiddleAnimationFrame = reader.ReadByte();
-
                             byte value = reader.ReadByte();
-                            Cells[x, y].FrontAnimationFrame = value == 255 ? 0 : value;
-                            Cells[x, y].FrontAnimationFrame &= 0x8F; //Probably a Blend Flag
+                            cells[x, y].MiddleAnimationFrame = value == 255 ? 0 : value;
+                            cells[x, y].MiddleAnimationFrame &= Cell.MiddleFrameMask | Cell.MiddleBlendBit;
 
-                            Cells[x, y].FrontFile = reader.ReadByte();
-                            Cells[x, y].MiddleFile = reader.ReadByte();
+                            value = reader.ReadByte();
+                            cells[x, y].FrontAnimationFrame = value == 255 ? 0 : value;
+                            cells[x, y].FrontAnimationFrame &= Cell.FrontFrameMask | Cell.FrontBlendBit;
 
-                            Cells[x, y].MiddleImage = reader.ReadUInt16() + 1;
-                            Cells[x, y].FrontImage = reader.ReadUInt16() + 1;
+                            cells[x, y].FrontFile = reader.ReadByte();
+                            cells[x, y].MiddleFile = reader.ReadByte();
+
+                            cells[x, y].MiddleImage = reader.ReadUInt16() + 1;
+                            cells[x, y].FrontImage = reader.ReadUInt16() + 1;
 
                             mStream.Seek(3, SeekOrigin.Current);
 
-                            Cells[x, y].Light = (byte)(reader.ReadByte() & 0x0F) * 2;
+                            cells[x, y].Light = (byte)(reader.ReadByte() & 0x0F) * 2;
 
                             mStream.Seek(1, SeekOrigin.Current);
 
-                            Cells[x, y].Flag = ((flag & 0x01) != 1) || ((flag & 0x02) != 2);
+                            cells[x, y].Flag = ((flag & 0x01) != 1) || ((flag & 0x02) != 2);
                         }
+
+                    Width = width;
+                    Height = height;
+                    Cells = cells;
                 }
             }
             catch (Exception ex)
@@ -560,41 +583,54 @@ namespace Client.Scenes.Views
                 CEnvir.SaveException(ex);
             }
 
-            foreach (MapObject ob in Objects)
-                if (ob.CurrentLocation.X < Width && ob.CurrentLocation.Y < Height)
+            foreach (MapObject ob in Objects ?? Enumerable.Empty<MapObject>())
+                if (ob.CurrentLocation.X >= 0 && ob.CurrentLocation.Y >= 0 &&
+                    ob.CurrentLocation.X < Width && ob.CurrentLocation.Y < Height)
                     Cells[ob.CurrentLocation.X, ob.CurrentLocation.Y].AddObject(ob);
+        }
+
+        private static bool HasExpectedMapDataLength(long length, int width, int height)
+        {
+            long backgroundCells = (long)(width / 2) * (height / 2);
+            long mapCells = (long)width * height;
+            long expectedLength = 28L + backgroundCells * 3L + mapCells * 14L;
+
+            return length >= expectedLength;
         }
 
         private void UpdateWeather()
         {
-            GameScene.Game.MapControl.ParticleEffects.Clear();
+            ClearParticleEffects();
+
+            if (MapInfo == null) return;
 
             if (Config.DrawWeather)
             {
                 var point = new Point((Size.Width) / 2, (Size.Height) / 2);
+                Weather weather = MapInfo.Weather;
 
-                if (GameScene.Game.MapControl.MapInfo.Weather.HasFlag(Weather.Rain))
+                if (weather.HasFlag(Weather.Rain))
                 {
                     var emitter = (ParticleEmitter)Activator.CreateInstance(typeof(Rain), point);
-                    GameScene.Game.MapControl.ParticleEffects.Add(emitter);
+                    ParticleEffects.Add(emitter);
                 }
 
-                if (GameScene.Game.MapControl.MapInfo.Weather.HasFlag(Weather.Snow))
+                if (weather.HasFlag(Weather.Snow))
                 {
                     var emitter = (ParticleEmitter)Activator.CreateInstance(typeof(Snow), point);
-                    GameScene.Game.MapControl.ParticleEffects.Add(emitter);
+                    ParticleEffects.Add(emitter);
                 }
 
-                if (GameScene.Game.MapControl.MapInfo.Weather.HasFlag(Weather.Fog))
+                if (weather.HasFlag(Weather.Fog))
                 {
                     var emitter = (ParticleEmitter)Activator.CreateInstance(typeof(Fog), point);
-                    GameScene.Game.MapControl.ParticleEffects.Add(emitter);
+                    ParticleEffects.Add(emitter);
                 }
 
-                if (GameScene.Game.MapControl.MapInfo.Weather.HasFlag(Weather.Lightning))
+                if (weather.HasFlag(Weather.Lightning))
                 {
                     var emitter = (ParticleEmitter)Activator.CreateInstance(typeof(Lightning), point);
-                    GameScene.Game.MapControl.ParticleEffects.Add(emitter);
+                    ParticleEffects.Add(emitter);
                 }
             }
         }
@@ -805,18 +841,23 @@ namespace Client.Scenes.Views
 
         public void CheckCursor()
         {
+            if (Cells == null) return;
+
+            int width = Math.Min(Width, Cells.GetLength(0));
+            int height = Math.Min(Height, Cells.GetLength(1));
+            if (width <= 0 || height <= 0) return;
+
             MapObject deadObject = null, itemObject = null;
 
             for (int d = 0; d < 4; d++)
             {
                 for (int y = MapLocation.Y - d; y <= MapLocation.Y + d; y++)
                 {
-                    if (y >= Height) continue;
-                    if (y < 0) break;
+                    if (y < 0 || y >= height) continue;
+
                     for (int x = MapLocation.X - d; x <= MapLocation.X + d; x++)
                     {
-                        if (x >= Width) continue;
-                        if (x < 0) break;
+                        if (x < 0 || x >= width) continue;
 
                         List<MapObject> list = Cells[x, y].Objects;
                         if (list == null) continue;
@@ -985,11 +1026,11 @@ namespace Client.Scenes.Views
 
                         if (MapObject.MouseObject != null && MapObject.MouseObject.Race != ObjectType.Item && !MapObject.MouseObject.Dead) break;
 
-                        if (!haselementalhurricane && MapInfo.CanMine && weap != null && weap.Info.ItemEffect == ItemEffect.PickAxe)
+                        if (!haselementalhurricane && MapInfo != null && MapInfo.CanMine && weap != null && weap.Info.ItemEffect == ItemEffect.PickAxe)
                         {
                             MiningPoint = Functions.Move(User.CurrentLocation, direction);
 
-                            if (MiningPoint.X >= 0 && MiningPoint.Y >= 0 && MiningPoint.X < Width && MiningPoint.Y < Height && Cells[MiningPoint.X, MiningPoint.Y].Flag)
+                            if (IsInsideMap(MiningPoint) && Cells[MiningPoint.X, MiningPoint.Y].Flag)
                             {
                                 Mining = true;
                                 break;
@@ -1043,8 +1084,8 @@ namespace Client.Scenes.Views
             {
                 ClientUserItem weap = GameScene.Game.Equipment[(int)EquipmentSlot.Weapon];
 
-                if (MapInfo.CanMine && weap != null && (weap.CurrentDurability > 0 || weap.Info.Durability == 0) && weap.Info.ItemEffect == ItemEffect.PickAxe &&
-                    MiningPoint.X >= 0 && MiningPoint.Y >= 0 && MiningPoint.X < Width && MiningPoint.Y < Height && Cells[MiningPoint.X, MiningPoint.Y].Flag &&
+                if (MapInfo != null && MapInfo.CanMine && weap != null && (weap.CurrentDurability > 0 || weap.Info.Durability == 0) && weap.Info.ItemEffect == ItemEffect.PickAxe &&
+                    IsInsideMap(MiningPoint) && Cells[MiningPoint.X, MiningPoint.Y].Flag &&
                     Functions.Distance(MiningPoint, MapObject.User.CurrentLocation) == 1 && User.Horse == HorseType.None)
                 {
                     if (CEnvir.Now > User.AttackTime)
@@ -1214,7 +1255,7 @@ namespace Client.Scenes.Views
 
             Point loc = Functions.Move(MapObject.User.CurrentLocation, dir, distance);
 
-            if (loc.X >= 0 && loc.Y >= 0 && loc.X < Width && loc.Y < Height && !Cells[loc.X, loc.Y].Blocking()) return dir;
+            if (IsInsideMap(loc) && !Cells[loc.X, loc.Y].Blocking()) return dir;
 
             Point localMouse = new Point(MouseLocation.X - GameScene.Game.Location.X, MouseLocation.Y - GameScene.Game.Location.Y);
 
@@ -1253,7 +1294,7 @@ namespace Client.Scenes.Views
         {
             Point loc = Functions.Move(MapObject.User.CurrentLocation, dir, distance);
 
-            if (loc.X >= 0 && loc.Y >= 0 && loc.X < Width && loc.Y < Height && !Cells[loc.X, loc.Y].Blocking()) return dir;
+            if (IsInsideMap(loc) && !Cells[loc.X, loc.Y].Blocking()) return dir;
 
 
             PointF c = new PointF(MapObject.OffSetX * MapObject.CellWidth + PixelOffsetX + MapObject.CellWidth / 2F, MapObject.OffSetY * MapObject.CellHeight + PixelOffsetY + MapObject.CellHeight / 2F);
@@ -1288,11 +1329,13 @@ namespace Client.Scenes.Views
 
         public bool CanMove(MirDirection dir, int distance)
         {
+            if (Cells == null) return false;
+
             for (int i = 1; i <= distance; i++)
             {
                 Point loc = Functions.Move(User.CurrentLocation, dir, i);
 
-                if (loc.X < 0 || loc.Y < 0 || loc.X >= Width || loc.Y >= Height) return false;
+                if (!IsInsideMap(loc)) return false;
 
                 if (Cells[loc.X, loc.Y].Blocking())
                     return false;
@@ -1345,7 +1388,7 @@ namespace Client.Scenes.Views
             Objects.Add(ob);
             ObjectLookup[ob.ObjectID] = ob;
 
-            if (ob.CurrentLocation.X >= 0 && ob.CurrentLocation.X < Width && ob.CurrentLocation.Y >= 0 && ob.CurrentLocation.Y < Height)
+            if (IsInsideMap(ob.CurrentLocation))
                 Cells[ob.CurrentLocation.X, ob.CurrentLocation.Y].AddObject(ob);
         }
 
@@ -1360,7 +1403,7 @@ namespace Client.Scenes.Views
 
             if (ob.CurrentCell != null)
                 ob.CurrentCell.RemoveObject(ob);
-            else if (ob.CurrentLocation.X >= 0 && ob.CurrentLocation.X < Width && ob.CurrentLocation.Y >= 0 && ob.CurrentLocation.Y < Height)
+            else if (IsInsideMap(ob.CurrentLocation))
                 Cells[ob.CurrentLocation.X, ob.CurrentLocation.Y].RemoveObject(ob);
         }
 
@@ -1375,6 +1418,10 @@ namespace Client.Scenes.Views
             Mining = false;
             FishingState = FishingState.None;
             AutoCast = false;
+            GameScene.Game.SetAutoPath(false, false);
+            GameScene.Game.PathFinder = null;
+            GameScene.Game.CurrentPath = null;
+            GameScene.Game.CurrentPathIndex = 0;
 
             MapObject.MouseObject = null;
             MapObject.TargetObject = null;
@@ -1409,12 +1456,7 @@ namespace Client.Scenes.Views
                 effect.Remove();
 
             if (ParticleEffects != null)
-            {
-                foreach (var effect in ParticleEffects.ToArray())
-                    effect.Dispose();
-
-                ParticleEffects.Clear();
-            }
+                ClearParticleEffects();
 
             if (FLayer != null)
                 FLayer.TextureValid = false;
@@ -1458,7 +1500,7 @@ namespace Client.Scenes.Views
 
         public bool HasTarget(Point loc)
         {
-            if (loc.X < 0 || loc.Y < 0 || loc.X >= Width || loc.Y > Height) return false;
+            if (!IsInsideMap(loc)) return false;
 
             Cell cell = Cells[loc.X, loc.Y];
 
@@ -1494,7 +1536,7 @@ namespace Client.Scenes.Views
 
         public bool EmptyCell(Point location)
         {
-            if (location.X < 0 || location.Y < 0 || location.X >= Width || location.Y >= Height) return false;
+            if (!IsInsideMap(location)) return false;
 
             Cell cell = Cells[location.X, location.Y];
 
@@ -1503,9 +1545,20 @@ namespace Client.Scenes.Views
 
         public bool ValidCell(Point location)
         {
-            if (location.X < 0 || location.Y < 0 || location.X >= Width || location.Y >= Height) return false;
+            if (!IsInsideMap(location)) return false;
 
             return !Cells[location.X, location.Y].Flag;
+        }
+
+        private bool IsInsideMap(Point location)
+        {
+            if (Cells == null || Width <= 0 || Height <= 0) return false;
+
+            int width = Math.Min(Width, Cells.GetLength(0));
+            int height = Math.Min(Height, Cells.GetLength(1));
+
+            return location.X >= 0 && location.Y >= 0 &&
+                   location.X < width && location.Y < height;
         }
         #endregion
 
@@ -1571,17 +1624,19 @@ namespace Client.Scenes.Views
                 OffSetX = 0;
                 OffSetY = 0;
 
-                if (ParticleEffects != null)
-                {
-                    foreach (var effect in ParticleEffects)
-                    {
-                        effect.Dispose();
-                    }
-
-                    ParticleEffects.Clear();
-                    ParticleEffects = null;
-                }
+                ClearParticleEffects();
+                ParticleEffects = null;
             }
+        }
+
+        private void ClearParticleEffects()
+        {
+            if (ParticleEffects == null) return;
+
+            foreach (var effect in ParticleEffects.ToArray())
+                effect.Dispose();
+
+            ParticleEffects.Clear();
         }
 
         #endregion
@@ -1604,24 +1659,31 @@ namespace Client.Scenes.Views
             {
                 base.OnClearTexture();
 
-                int minX = Math.Max(0, User.CurrentLocation.X - OffSetX - 4), maxX = Math.Min(GameScene.Game.MapControl.Width - 1, User.CurrentLocation.X + OffSetX + 4);
-                int minY = Math.Max(0, User.CurrentLocation.Y - OffSetY - 4), maxY = Math.Min(GameScene.Game.MapControl.Height - 1, User.CurrentLocation.Y + OffSetY + 4);
+                MapControl map = GameScene.Game?.MapControl;
+                if (map?.Cells == null || map.Width <= 0 || map.Height <= 0 || MapObject.User == null) return;
+
+                int width = Math.Min(map.Width, map.Cells.GetLength(0));
+                int height = Math.Min(map.Height, map.Cells.GetLength(1));
+                if (width <= 0 || height <= 0) return;
+
+                int minX = Math.Max(0, User.CurrentLocation.X - OffSetX - 4), maxX = Math.Min(width - 1, User.CurrentLocation.X + OffSetX + 4);
+                int minY = Math.Max(0, User.CurrentLocation.Y - OffSetY - 4), maxY = Math.Min(height - 1, User.CurrentLocation.Y + OffSetY + 4);
 
                 for (int y = minY; y <= maxY; y++)
                 {
                     if (y < 0) continue;
-                    if (y >= GameScene.Game.MapControl.Height) break;
+                    if (y >= height) break;
 
                     int drawY = (y - User.CurrentLocation.Y + OffSetY) * CellHeight + PixelOffsetY - User.MovingOffSet.Y - User.ShakeScreenOffset.Y;
 
                     for (int x = minX; x <= maxX; x++)
                     {
                         if (x < 0) continue;
-                        if (x >= GameScene.Game.MapControl.Width) break;
+                        if (x >= width) break;
 
                         int drawX = (x - User.CurrentLocation.X + OffSetX) * CellWidth + PixelOffsetX - User.MovingOffSet.X - User.ShakeScreenOffset.X;
 
-                        Cell tile = GameScene.Game.MapControl.Cells[x, y];
+                        Cell tile = map.Cells[x, y];
 
                         if (y % 2 == 0 && x % 2 == 0)
                         {
@@ -1645,7 +1707,7 @@ namespace Client.Scenes.Views
                     {
                         int drawX = (x - User.CurrentLocation.X + OffSetX) * CellWidth + PixelOffsetX - User.MovingOffSet.X - User.ShakeScreenOffset.X;
 
-                        Cell cell = GameScene.Game.MapControl.Cells[x, y];
+                        Cell cell = map.Cells[x, y];
 
                         MirLibrary library;
                         LibraryFile file;
@@ -1709,6 +1771,13 @@ namespace Client.Scenes.Views
             {
                 base.OnClearTexture();
 
+                MapControl map = GameScene.Game?.MapControl;
+                if (map?.Cells == null || map.Width <= 0 || map.Height <= 0 || MapObject.User == null) return;
+
+                int width = Math.Min(map.Width, map.Cells.GetLength(0));
+                int height = Math.Min(map.Height, map.Cells.GetLength(1));
+                if (width <= 0 || height <= 0) return;
+
                 if (MapObject.User.Dead)
                 {
                     RenderingPipelineManager.Clear(RenderClearFlags.Target, Color.IndianRed, 0, 0);
@@ -1761,7 +1830,7 @@ namespace Client.Scenes.Views
                     return;
                 }
 
-                foreach (MapObject ob in GameScene.Game.MapControl.Objects)
+                foreach (MapObject ob in map.Objects ?? Enumerable.Empty<MapObject>())
                 {
                     if (ob.Light > 0 && (!ob.Dead || ob == MapObject.User || ob.Race == ObjectType.Spell))
                     {
@@ -1773,7 +1842,7 @@ namespace Client.Scenes.Views
                     }
                 }
 
-                foreach (MirEffect ob in GameScene.Game.MapControl.Effects)
+                foreach (MirEffect ob in map.Effects ?? Enumerable.Empty<MirEffect>())
                 {
                     float frameLight = ob.FrameLight;
 
@@ -1787,24 +1856,24 @@ namespace Client.Scenes.Views
                     }
                 }
 
-                int minX = Math.Max(0, User.CurrentLocation.X - OffSetX - 15), maxX = Math.Min(GameScene.Game.MapControl.Width - 1, User.CurrentLocation.X + OffSetX + 15);
-                int minY = Math.Max(0, User.CurrentLocation.Y - OffSetY - 15), maxY = Math.Min(GameScene.Game.MapControl.Height - 1, User.CurrentLocation.Y + OffSetY + 15);
+                int minX = Math.Max(0, User.CurrentLocation.X - OffSetX - 15), maxX = Math.Min(width - 1, User.CurrentLocation.X + OffSetX + 15);
+                int minY = Math.Max(0, User.CurrentLocation.Y - OffSetY - 15), maxY = Math.Min(height - 1, User.CurrentLocation.Y + OffSetY + 15);
 
                 for (int y = minY; y <= maxY; y++)
                 {
                     if (y < 0) continue;
-                    if (y >= GameScene.Game.MapControl.Height) break;
+                    if (y >= height) break;
 
                     int drawY = (y - User.CurrentLocation.Y + OffSetY) * CellHeight + PixelOffsetY - User.MovingOffSet.Y - User.ShakeScreenOffset.Y;
 
                     for (int x = minX; x <= maxX; x++)
                     {
                         if (x < 0) continue;
-                        if (x >= GameScene.Game.MapControl.Width) break;
+                        if (x >= width) break;
 
                         int drawX = (x - User.CurrentLocation.X + OffSetX) * CellWidth + PixelOffsetX - User.MovingOffSet.X - User.ShakeScreenOffset.X;
 
-                        Cell tile = GameScene.Game.MapControl.Cells[x, y];
+                        Cell tile = map.Cells[x, y];
 
                         if (tile.Light == 0) continue;
 
@@ -1835,7 +1904,15 @@ namespace Client.Scenes.Views
 
             public void UpdateLights()
             {
-                switch (GameScene.Game.MapControl.MapInfo.Light)
+                MapControl map = GameScene.Game?.MapControl;
+
+                if (map?.MapInfo == null)
+                {
+                    Visible = false;
+                    return;
+                }
+
+                switch (map.MapInfo.Light)
                 {
                     case LightSetting.Default:
                         byte shading = (byte)(255 * GameScene.Game.DayTime);

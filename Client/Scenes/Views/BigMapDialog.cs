@@ -75,9 +75,9 @@ namespace Client.Scenes.Views
 
             Location = new Point((GameScene.Game.Size.Width - Size.Width) / 2, (GameScene.Game.Size.Height - Size.Height) / 2);
 
-            Size size = GetMapSize(SelectedInfo.FileName);
-            ScaleX = Image.Size.Width / (float)size.Width;
-            ScaleY = Image.Size.Height / (float)size.Height;
+            Size size = GetMapSize(SelectedInfo);
+            ScaleX = size.Width > 0 && Image.Size.Width > 0 ? Image.Size.Width / (float)size.Width : 1F;
+            ScaleY = size.Height > 0 && Image.Size.Height > 0 ? Image.Size.Height / (float)size.Height : 1F;
 
             Image.Location = SelectedInfo == GameScene.Game.MapControl.MapInfo
                 ? GetUserCentredImageLocation(defaultImageLocation)
@@ -142,7 +142,7 @@ namespace Client.Scenes.Views
             if (map == null || map.MiniMap == 0)
             {
                 if (sendMessage)
-                    GameScene.Game.ReceiveChat("No map available.", MessageType.System);
+                    GameScene.Game.ReceiveChat("没有可用地图。", MessageType.System);
 
                 return false;
             }
@@ -155,19 +155,48 @@ namespace Client.Scenes.Views
             SetClientSize(new Size(Math.Min(Math.Max(clientSize.Width, minWidth), maxWidth), Math.Min(Math.Max(clientSize.Height, minHeight), maxHeight)));
         }
 
-        private Size GetMapSize(string fileName)
+        private Size GetMapSize(MapInfo map)
         {
-            var path = Path.Combine(Config.MapPath, fileName + ".map");
+            if (map == null) return Size.Empty;
 
-            if (!File.Exists(path)) return Size.Empty;
+            string fileName = map.FileName;
+            if (string.IsNullOrWhiteSpace(fileName)) return GetFallbackMapSize(map);
 
-            using (FileStream stream = File.OpenRead(path))
-            using (BinaryReader reader = new BinaryReader(stream))
+            try
             {
-                stream.Seek(22, SeekOrigin.Begin);
+                string path = Path.Combine(Config.MapPath ?? string.Empty, fileName + ".map");
+                if (!File.Exists(path)) return GetFallbackMapSize(map);
 
-                return new Size(reader.ReadInt16(), reader.ReadInt16());
+                using (FileStream stream = File.OpenRead(path))
+                using (BinaryReader reader = new BinaryReader(stream))
+                {
+                    if (stream.Length < 26) return GetFallbackMapSize(map);
+
+                    stream.Seek(22, SeekOrigin.Begin);
+                    int width = reader.ReadInt16();
+                    int height = reader.ReadInt16();
+
+                    if (width <= 0 || height <= 0) return GetFallbackMapSize(map);
+
+                    return new Size(width, height);
+                }
             }
+            catch
+            {
+                return GetFallbackMapSize(map);
+            }
+        }
+
+        private Size GetFallbackMapSize(MapInfo map)
+        {
+            MapControl currentMap = GameScene.Game?.MapControl;
+            if (currentMap != null &&
+                map == currentMap.MapInfo &&
+                currentMap.Width > 0 &&
+                currentMap.Height > 0)
+                return new Size(currentMap.Width, currentMap.Height);
+
+            return Size.Empty;
         }
 
         #endregion
@@ -252,7 +281,7 @@ namespace Client.Scenes.Views
             RecenterButton = new DXButton
             {
                 ButtonType = ButtonType.Default,
-                Label = { Text = "Recenter" },
+                Label = { Text = "回到当前" },
                 Parent = this,
                 Size = new Size(80, DefaultHeight)
             };
@@ -266,12 +295,11 @@ namespace Client.Scenes.Views
 
         private void Image_MouseClick(object sender, MouseEventArgs e)
         {
+            if (!TryGetMapPoint(e.Location, out Point target)) return;
+
             if ((e.Button & MouseButtons.Right) == MouseButtons.Right)
             {
-                int x = (int)((e.Location.X - Image.DisplayArea.X) / ScaleX);
-                int y = (int)((e.Location.Y - Image.DisplayArea.Y) / ScaleY);
-
-                CEnvir.Enqueue(new C.TeleportRing { Location = new Point(x, y), Index = SelectedInfo.Index });
+                CEnvir.Enqueue(new C.TeleportRing { Location = target, Index = SelectedInfo.Index });
             }
 
             if ((e.Button & MouseButtons.Left) == MouseButtons.Left)
@@ -284,24 +312,21 @@ namespace Client.Scenes.Views
                     return;
                 }
 
-                int x = (int)((e.Location.X - Image.DisplayArea.X) / ScaleX);
-                int y = (int)((e.Location.Y - Image.DisplayArea.Y) / ScaleY);
-                Point target = new Point(x, y);
-
                 if (!GameScene.Game.MapControl.ValidCell(target))
                 {
-                    GameScene.Game.AutoPath = false;
+                    GameScene.Game.SetAutoPath(false, false);
                     GameScene.Game.ReceiveChat("目标位置不可到达。", MessageType.Hint);
                     return;
                 }
 
-                GameScene.Game.PathFinder ??= new PathFinder(GameScene.Game.MapControl);
+                if (GameScene.Game.PathFinder == null || !GameScene.Game.PathFinder.Matches(GameScene.Game.MapControl))
+                    GameScene.Game.PathFinder = new PathFinder(GameScene.Game.MapControl);
 
                 List<Node> path = GameScene.Game.PathFinder.FindPath(MapObject.User.CurrentLocation, target);
 
                 if (path == null || path.Count == 0)
                 {
-                    GameScene.Game.AutoPath = false;
+                    GameScene.Game.SetAutoPath(false, false);
                     GameScene.Game.ReceiveChat("没有路径可以前进。", MessageType.Hint);
                     return;
                 }
@@ -310,6 +335,23 @@ namespace Client.Scenes.Views
                 GameScene.Game.CurrentPathIndex = 0;
                 GameScene.Game.AutoPath = true;
             }
+        }
+
+        private bool TryGetMapPoint(Point imageLocation, out Point target)
+        {
+            target = Point.Empty;
+            if (SelectedInfo == null || Image == null || ScaleX <= 0 || ScaleY <= 0) return false;
+            if (!Image.DisplayArea.Contains(imageLocation)) return false;
+
+            int x = (int)((imageLocation.X - Image.DisplayArea.X) / ScaleX);
+            int y = (int)((imageLocation.Y - Image.DisplayArea.Y) / ScaleY);
+
+            Size mapSize = GetMapSize(SelectedInfo);
+            if (mapSize.Width <= 0 || mapSize.Height <= 0) return false;
+            if (x < 0 || y < 0 || x >= mapSize.Width || y >= mapSize.Height) return false;
+
+            target = new Point(x, y);
+            return true;
         }
 
         #region Methods
@@ -364,27 +406,24 @@ namespace Client.Scenes.Views
         {
             if (SelectedInfo == null) return;
 
-            if (!MapInfoObjects.TryGetValue(ob, out DXControl control))
+            Size size = GetMapSize(SelectedInfo);
+            if (size.Width <= 0 || size.Height <= 0) return;
+
+            bool onSelectedMap = ob.Region?.Map == SelectedInfo;
+            if (MapInfoObjects.TryGetValue(ob, out DXControl control))
             {
-                if (ob.Region?.Map != SelectedInfo) return;
+                if (onSelectedMap && (CurrentQuest)control.Tag == ob.CurrentQuest) return;
 
-                control = GameScene.Game.GetNPCControl(ob);
-                control.Parent = Image;
-                control.Opacity = Opacity;
-                MapInfoObjects[ob] = control;
+                control.Dispose();
+                MapInfoObjects.Remove(ob);
             }
-            else if ((CurrentQuest)control.Tag == ob.CurrentQuest) return;
 
-            control.Dispose();
-            MapInfoObjects.Remove(ob);
-            if (ob.Region?.Map != SelectedInfo) return;
+            if (!onSelectedMap) return;
 
             control = GameScene.Game.GetNPCControl(ob);
             control.Parent = Image;
             control.Opacity = Opacity;
             MapInfoObjects[ob] = control;
-
-            Size size = GetMapSize(SelectedInfo.FileName);
 
             if (ob.Region.PointList == null)
                 ob.Region.CreatePoints(size.Width);
@@ -412,16 +451,30 @@ namespace Client.Scenes.Views
 
         public void Update(MovementInfo ob)
         {
-            if (ob.SourceRegion == null || ob.SourceRegion.Map != SelectedInfo) return;
-            if (ob.DestinationRegion?.Map == null || ob.Icon == MapIcon.None) return;
+            if (ob.SourceRegion == null || ob.SourceRegion.Map != SelectedInfo ||
+                ob.DestinationRegion?.Map == null || ob.Icon == MapIcon.None)
+            {
+                Remove(ob);
+                return;
+            }
 
             if (GameScene.Game.MapControl.InstanceInfo != null)
             {
-                if (!GameScene.Game.MapControl.InstanceInfo.Maps.Any(m => m.Map == ob.SourceRegion.Map) && ob.NeedInstance == null) return;
-                if (!GameScene.Game.MapControl.InstanceInfo.Maps.Any(m => m.Map == ob.DestinationRegion?.Map) && ob.NeedInstance == null) return;
+                if (!GameScene.Game.MapControl.InstanceInfo.Maps.Any(m => m.Map == ob.SourceRegion.Map) && ob.NeedInstance == null)
+                {
+                    Remove(ob);
+                    return;
+                }
+
+                if (!GameScene.Game.MapControl.InstanceInfo.Maps.Any(m => m.Map == ob.DestinationRegion?.Map) && ob.NeedInstance == null)
+                {
+                    Remove(ob);
+                    return;
+                }
             }
 
-            Size size = GetMapSize(SelectedInfo.FileName);
+            Size size = GetMapSize(SelectedInfo);
+            if (size.Width <= 0 || size.Height <= 0) return;
 
             if (ob.SourceRegion.PointList == null)
                 ob.SourceRegion.CreatePoints(size.Width);
@@ -444,34 +497,53 @@ namespace Client.Scenes.Views
             int x = (minX + maxX) / 2;
             int y = (minY + maxY) / 2;
 
-            DXImageControl control;
-            MapInfoObjects[ob] = control = new DXImageControl
-            {
-                LibraryFile = LibraryFile.MiniMapIcon,
-                Parent = Image,
-                Opacity = Opacity,
-                ImageOpacity = Opacity,
-                Hint = ob.DestinationRegion.Map.PlayerDescription
-            };
-            control.OpacityChanged += (o, e) => control.ImageOpacity = control.Opacity;
+            DXImageControl control = null;
 
-            GameScene.Game.UpdateMapIcon(control, ob.Icon);
-
-            control.MouseClick += (o, e) =>
+            if (MapInfoObjects.TryGetValue(ob, out DXControl existing))
             {
-                if (!TryShowMap(ob.DestinationRegion.Map))
+                control = existing as DXImageControl;
+
+                if (control == null)
                 {
-                    return;
+                    existing.Dispose();
+                    MapInfoObjects.Remove(ob);
                 }
+            }
 
-                SelectedInfo = ob.DestinationRegion.Map;
-            };
+            if (control == null)
+            {
+                control = new DXImageControl
+                {
+                    LibraryFile = LibraryFile.MiniMapIcon,
+                    Parent = Image
+                };
+                control.OpacityChanged += (o, e) => control.ImageOpacity = control.Opacity;
+                control.MouseClick += (o, e) =>
+                {
+                    if (!TryShowMap(ob.DestinationRegion.Map))
+                    {
+                        return;
+                    }
+
+                    SelectedInfo = ob.DestinationRegion.Map;
+                };
+
+                MapInfoObjects[ob] = control;
+            }
+
+            control.Opacity = Opacity;
+            control.ImageOpacity = Opacity;
+            control.Hint = ob.DestinationRegion.Map.PlayerDescription;
+            GameScene.Game.UpdateMapIcon(control, ob.Icon);
             control.Location = new Point((int)(ScaleX * x) - control.Size.Width / 2, (int)(ScaleY * y) - control.Size.Height / 2);
         }
 
         public void Update(ClientObjectData ob)
         {
             if (SelectedInfo == null) return;
+
+            Size mapSize = GetMapSize(SelectedInfo);
+            if (mapSize.Width <= 0 || mapSize.Height <= 0) return;
 
             if (!MapInfoObjects.TryGetValue(ob, out DXControl existing))
             {

@@ -312,23 +312,48 @@ namespace Client.Scenes
         private bool _AutoRun;
 
         private bool _AutoPath;
+        private bool _AutoPathNotify;
         public bool AutoPath
         {
             get => _AutoPath;
-            set
+            set => SetAutoPath(value, true);
+        }
+
+        public void SetAutoPath(bool value, bool notify)
+        {
+            if (_AutoPath == value)
             {
-                if (_AutoPath == value) return;
+                if (value)
+                {
+                    if (notify && !_AutoPathNotify)
+                        ReceiveChat(CEnvir.Language.GameSceneAutoPathOn, MessageType.Hint);
 
-                _AutoPath = value;
-
-                if (!_AutoPath)
+                    _AutoPathNotify |= notify;
+                }
+                else
                 {
                     CurrentPath = null;
                     CurrentPathIndex = 0;
+                    _AutoPathNotify = false;
                 }
 
-                ReceiveChat(value ? CEnvir.Language.GameSceneAutoPathOn : CEnvir.Language.GameSceneAutoPathOff, MessageType.Hint);
+                return;
             }
+
+            bool sendMessage = notify && (value || _AutoPathNotify);
+            _AutoPath = value;
+
+            if (_AutoPath)
+                _AutoPathNotify = notify;
+            else
+            {
+                CurrentPath = null;
+                CurrentPathIndex = 0;
+                _AutoPathNotify = false;
+            }
+
+            if (sendMessage)
+                ReceiveChat(value ? CEnvir.Language.GameSceneAutoPathOn : CEnvir.Language.GameSceneAutoPathOff, MessageType.Hint);
         }
 
         private const int AutoFightSearchRange = 100;
@@ -1341,7 +1366,7 @@ namespace Client.Scenes
         {
             CurrentPath = null;
             CurrentPathIndex = 0;
-            _AutoPath = false;
+            SetAutoPath(false, false);
         }
 
         private bool IsAutoFightTarget(MapObject ob)
@@ -1602,7 +1627,7 @@ namespace Client.Scenes
 
                 CurrentPath = path;
                 CurrentPathIndex = 0;
-                _AutoPath = true;
+                SetAutoPath(true, false);
                 return;
             }
 
@@ -1628,7 +1653,7 @@ namespace Client.Scenes
 
                 CurrentPath = path;
                 CurrentPathIndex = 0;
-                _AutoPath = true;
+                SetAutoPath(true, false);
                 return;
             }
         }
@@ -1637,7 +1662,7 @@ namespace Client.Scenes
         {
             if (MapControl == null || MapControl.Cells == null || MapControl.Width <= 0 || MapControl.Height <= 0) return false;
 
-            if (PathFinder == null)
+            if (PathFinder == null || !PathFinder.Matches(MapControl))
                 PathFinder = new PathFinder(MapControl);
 
             return true;
@@ -1696,7 +1721,7 @@ namespace Client.Scenes
 
         private int GetAutoFightRange(MirClass mirClass)
         {
-            return IsAutoFightRangedClass(mirClass) ? Math.Min(Globals.MagicRange, 7) : 3;
+            return IsAutoFightRangedClass(mirClass) ? Math.Min(Globals.MagicRange, 7) : 1;
         }
 
         private bool IsAutoFightRangedClass(MirClass mirClass)
@@ -6010,7 +6035,7 @@ namespace Client.Scenes
 
                 CanRun = false;
                 AutoRun = false;
-                AutoPath = false;
+                SetAutoPath(false, false);
                 PathFinder = null;
                 CurrentPath = null;
                 CurrentPathIndex = 0;

@@ -5631,13 +5631,16 @@ namespace Client.Models
 
         public virtual void LocationChanged()
         {
-            if (CurrentCell == null) return;
+            MapControl map = GameScene.Game?.MapControl;
+            CurrentCell?.RemoveObject(this);
 
-            CurrentCell.RemoveObject(this);
+            if (map?.Cells == null) return;
 
+            int width = map.Cells.GetLength(0);
+            int height = map.Cells.GetLength(1);
             if (CurrentLocation.X >= 0 && CurrentLocation.Y >= 0 &&
-                CurrentLocation.X < GameScene.Game.MapControl.Width && CurrentLocation.Y < GameScene.Game.MapControl.Height)
-                GameScene.Game.MapControl.Cells[CurrentLocation.X, CurrentLocation.Y].AddObject(this);
+                CurrentLocation.X < width && CurrentLocation.Y < height)
+                map.Cells[CurrentLocation.X, CurrentLocation.Y].AddObject(this);
         }
 
         public virtual void DeadChanged()

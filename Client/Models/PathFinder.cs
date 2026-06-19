@@ -13,11 +13,14 @@ namespace Client.Models
 
         public Heap(int maxHeapSize)
         {
-            items = new T[maxHeapSize];
+            items = new T[Math.Max(1, maxHeapSize)];
         }
 
         public void Add(T item)
         {
+            if (currentItemCount >= items.Length)
+                throw new InvalidOperationException("Heap capacity exceeded.");
+
             item.HeapIndex = currentItemCount;
             items[currentItemCount] = item;
             SortUp(item);
@@ -26,14 +29,22 @@ namespace Client.Models
 
         public T RemoveFirst()
         {
+            if (currentItemCount == 0)
+                throw new InvalidOperationException("Cannot remove an item from an empty heap.");
+
             T firstItem = items[0];
             currentItemCount--;
 
             items[0] = items[currentItemCount];
-            items[0].HeapIndex = 0;
+            items[currentItemCount] = default;
 
-            SortDown(items[0]);
+            if (currentItemCount > 0)
+            {
+                items[0].HeapIndex = 0;
+                SortDown(items[0]);
+            }
 
+            firstItem.HeapIndex = -1;
             return firstItem;
         }
 
@@ -46,6 +57,7 @@ namespace Client.Models
 
         public bool Contains(T item)
         {
+            if (ReferenceEquals(item, null) || item.HeapIndex < 0 || item.HeapIndex >= currentItemCount) return false;
             return Equals(items[item.HeapIndex], item);
         }
 
@@ -86,10 +98,9 @@ namespace Client.Models
 
         private void SortUp(T item)
         {
-            int parentIndex = (item.HeapIndex - 1) / 2;
-
-            while (true)
+            while (item.HeapIndex > 0)
             {
+                int parentIndex = (item.HeapIndex - 1) / 2;
                 T parentItem = items[parentIndex];
                 if (item.CompareTo(parentItem) > 0)
                 {
@@ -97,8 +108,6 @@ namespace Client.Models
                 }
                 else
                     break;
-
-                parentIndex = (item.HeapIndex - 1) / 2;
             }
         }
 
@@ -133,6 +142,7 @@ namespace Client.Models
         public Node Parent;
 
         public int GCost, HCost;
+        public int SearchID;
 
         public int FCost
         {
@@ -161,18 +171,23 @@ namespace Client.Models
         {
             Map = map;
             Location = new Point(x, y);
+            HeapIndex = -1;
+            GCost = int.MaxValue;
         }
     }
 
     public class PathFinder
     {
+        private static readonly Point InvalidLocation = new Point(-1, -1);
+
         private Node[,] Grid;
+        private int _searchID;
 
         public MapControl Map;
 
         public int MaxSize
         {
-            get { return Map.Width * Map.Height; }
+            get { return Grid == null ? 0 : Grid.GetLength(0) * Grid.GetLength(1); }
         }
 
         public PathFinder(MapControl map)
@@ -182,13 +197,28 @@ namespace Client.Models
             CreateGrid();
         }
 
+        public bool Matches(MapControl map)
+        {
+            int width = GetSafeWidth(map);
+            int height = GetSafeHeight(map);
+
+            return map != null &&
+                   ReferenceEquals(Map, map) &&
+                   Grid != null &&
+                   Grid.GetLength(0) == width &&
+                   Grid.GetLength(1) == height;
+        }
+
         private void CreateGrid()
         {
-            Grid = new Node[Map.Width, Map.Height];
+            int width = GetSafeWidth(Map);
+            int height = GetSafeHeight(Map);
 
-            for (int x = 0; x < Map.Width; x++)
+            Grid = new Node[width, height];
+
+            for (int x = 0; x < width; x++)
             {
-                for (int y = 0; y < Map.Height; y++)
+                for (int y = 0; y < height; y++)
                 {
                     Grid[x, y] = new Node(Map, x, y);
                 }
@@ -197,29 +227,59 @@ namespace Client.Models
 
         public Point GetRandomLocation(Point location, int range, int attempts = 25)
         {
+            int width = GetSafeWidth(Map);
+            int height = GetSafeHeight(Map);
+
+            if (width <= 0 || height <= 0) return InvalidLocation;
+
             int minX = Math.Max(0, location.X - range);
-            int maxX = Math.Min(Map.Width, location.X + range);
+            int maxX = Math.Min(width - 1, location.X + range);
             int minY = Math.Max(0, location.Y - range);
-            int maxY = Math.Min(Map.Height, location.Y + range);
+            int maxY = Math.Min(height - 1, location.Y + range);
+
+            if (minX > maxX || minY > maxY) return InvalidLocation;
 
             for (int i = 0; i < attempts; i++)
             {
-                Point test = new Point(Envir.CEnvir.Random.Next(minX, maxX), Envir.CEnvir.Random.Next(minY, maxY));
+                Point test = new Point(Envir.CEnvir.Random.Next(minX, maxX + 1), Envir.CEnvir.Random.Next(minY, maxY + 1));
 
                 if (Map.EmptyCell(test))
                     return test;
             }
 
-            return Point.Empty;
+            return InvalidLocation;
+        }
+
+        private static int GetSafeWidth(MapControl map)
+        {
+            if (map?.Cells == null || map.Width <= 0) return 0;
+
+            return Math.Min(map.Width, map.Cells.GetLength(0));
+        }
+
+        private static int GetSafeHeight(MapControl map)
+        {
+            if (map?.Cells == null || map.Height <= 0) return 0;
+
+            return Math.Min(map.Height, map.Cells.GetLength(1));
         }
 
         public List<Node> FindPath(Point start, Point target, int MaxNodes = 0)
         {
+            if (MaxSize <= 0 || !IsInsideMap(start) || !IsInsideMap(target)) return null;
+
+            BeginSearch();
+
             Node startNode = GetNode(start);
             Node targetNode = GetNode(target);
 
             Heap<Node> openSet = new Heap<Node>(MaxSize);
             HashSet<Node> closedSet = new HashSet<Node>();
+
+            PrepareNode(startNode);
+            startNode.GCost = 0;
+            startNode.HCost = GetDistance(startNode, targetNode);
+            startNode.Parent = null;
 
             openSet.Add(startNode);
 
@@ -232,22 +292,25 @@ namespace Client.Models
                 if (currentNode == targetNode)
                 {
                     var path = RetracePath(startNode, targetNode);
-                    return MaxNodes == 0 || path.Count < MaxNodes ? path : null;
+                    return MaxNodes == 0 || path.Count <= MaxNodes ? path : null;
                 }
 
                 foreach (Node neighbor in GetNeighbours(currentNode))
                 {
+                    PrepareNode(neighbor);
+
                     if (!neighbor.Walkable || closedSet.Contains(neighbor))
                         continue;
 
                     int newMovementCostToNeighbor = currentNode.GCost + GetDistance(currentNode, neighbor);
-                    if (newMovementCostToNeighbor < neighbor.GCost || !openSet.Contains(neighbor))
+                    bool isOpen = openSet.Contains(neighbor);
+                    if (newMovementCostToNeighbor < neighbor.GCost || !isOpen)
                     {
                         neighbor.GCost = newMovementCostToNeighbor;
                         neighbor.HCost = GetDistance(neighbor, targetNode);
                         neighbor.Parent = currentNode;
 
-                        if (!openSet.Contains(neighbor))
+                        if (!isOpen)
                             openSet.Add(neighbor);
                         else
                         {
@@ -258,6 +321,30 @@ namespace Client.Models
             }
 
             return null;
+        }
+
+        private void BeginSearch()
+        {
+            if (_searchID == int.MaxValue)
+            {
+                foreach (Node node in Grid)
+                    node.SearchID = 0;
+
+                _searchID = 0;
+            }
+
+            _searchID++;
+        }
+
+        private void PrepareNode(Node node)
+        {
+            if (node.SearchID == _searchID) return;
+
+            node.SearchID = _searchID;
+            node.GCost = int.MaxValue;
+            node.HCost = 0;
+            node.Parent = null;
+            node.HeapIndex = -1;
         }
 
         public List<Node> RetracePath(Node startNode, Node endNode)
@@ -291,6 +378,13 @@ namespace Client.Models
         private Node GetNode(Point location)
         {
             return Grid[location.X, location.Y];
+        }
+
+        private bool IsInsideMap(Point location)
+        {
+            return Grid != null &&
+                   location.X >= 0 && location.Y >= 0 &&
+                   location.X < Grid.GetLength(0) && location.Y < Grid.GetLength(1);
         }
 
         private List<Node> GetNeighbours(Node node)

@@ -120,12 +120,19 @@ namespace Client.Scenes.Views
 
             MapInfoObjects.Clear();
 
-            GameScene.Game.AutoPath = false;
+            GameScene.Game.SetAutoPath(false, false);
             GameScene.Game.CurrentPath = null;
             GameScene.Game.CurrentPathIndex = 0;
-            GameScene.Game.PathFinder = GameScene.Game.MapControl.MapInfo == null ? null : new PathFinder(GameScene.Game.MapControl);
+            GameScene.Game.PathFinder = HasUsableMap() ? new PathFinder(GameScene.Game.MapControl) : null;
 
-            if (GameScene.Game.MapControl.MapInfo == null) return;
+            if (GameScene.Game.MapControl.MapInfo == null)
+            {
+                TitleLabel.Text = string.Empty;
+                Image.Index = 0;
+                ScaleX = 1F;
+                ScaleY = 1F;
+                return;
+            }
 
             TitleLabel.Text = GameScene.Game.MapControl.MapInfo.PlayerDescription;
             Image.Index = GameScene.Game.MapControl.MapInfo.MiniMap;
@@ -140,6 +147,13 @@ namespace Client.Scenes.Views
             {
                 Size = new Size(Size.Width, originalMiniMapHeight);
                 AllowResize = true;
+            }
+
+            if (!HasUsableMap())
+            {
+                ScaleX = 1F;
+                ScaleY = 1F;
+                return;
             }
 
             ScaleX = Image.Size.Width / (float)GameScene.Game.MapControl.Width;
@@ -157,23 +171,18 @@ namespace Client.Scenes.Views
 
         public void Update(NPCInfo ob)
         {
-            if (GameScene.Game.MapControl.MapInfo == null) return;
+            if (!HasUsableMap()) return;
 
-            DXControl control;
-
-            if (!MapInfoObjects.TryGetValue(ob, out control))
+            bool onCurrentMap = ob.Region?.Map == GameScene.Game.MapControl.MapInfo;
+            if (MapInfoObjects.TryGetValue(ob, out DXControl control))
             {
-                if (ob.Region?.Map != GameScene.Game.MapControl.MapInfo) return;
+                if (onCurrentMap && (CurrentQuest)control.Tag == ob.CurrentQuest) return;
 
-                control = GameScene.Game.GetNPCControl(ob);
-                control.Parent = Image;
-                control.Opacity = Opacity;
+                control.Dispose();
+                MapInfoObjects.Remove(ob);
             }
-            else if ((CurrentQuest)control.Tag == ob.CurrentQuest) return;
 
-            control.Dispose();
-            MapInfoObjects.Remove(ob);
-            if (ob.Region?.Map != GameScene.Game.MapControl.MapInfo) return;
+            if (!onCurrentMap) return;
 
             control = GameScene.Game.GetNPCControl(ob);
             control.Parent = Image;
@@ -206,13 +215,28 @@ namespace Client.Scenes.Views
         }
         public void Update(MovementInfo ob)
         {
-            if (ob.SourceRegion == null || ob.SourceRegion.Map != GameScene.Game.MapControl.MapInfo) return;
-            if (ob.DestinationRegion?.Map == null || ob.Icon == MapIcon.None) return;
+            if (!HasUsableMap()) return;
+
+            if (ob.SourceRegion == null || ob.SourceRegion.Map != GameScene.Game.MapControl.MapInfo ||
+                ob.DestinationRegion?.Map == null || ob.Icon == MapIcon.None)
+            {
+                Remove(ob);
+                return;
+            }
 
             if (GameScene.Game.MapControl.InstanceInfo != null)
             {
-                if (!GameScene.Game.MapControl.InstanceInfo.Maps.Any(m => m.Map == ob.SourceRegion.Map) && ob.NeedInstance == null) return;
-                if (!GameScene.Game.MapControl.InstanceInfo.Maps.Any(m => m.Map == ob.DestinationRegion?.Map) && ob.NeedInstance == null) return;
+                if (!GameScene.Game.MapControl.InstanceInfo.Maps.Any(m => m.Map == ob.SourceRegion.Map) && ob.NeedInstance == null)
+                {
+                    Remove(ob);
+                    return;
+                }
+
+                if (!GameScene.Game.MapControl.InstanceInfo.Maps.Any(m => m.Map == ob.DestinationRegion?.Map) && ob.NeedInstance == null)
+                {
+                    Remove(ob);
+                    return;
+                }
             }
 
             if (ob.SourceRegion.PointList == null)
@@ -237,17 +261,33 @@ namespace Client.Scenes.Views
             int y = (minY + maxY) / 2;
 
 
-            DXImageControl control;
-            MapInfoObjects[ob] = control = new DXImageControl
-            {
-                LibraryFile = LibraryFile.MiniMapIcon,
-                Parent = Image,
-                Opacity = Opacity,
-                ImageOpacity = Opacity,
-                Hint = ob.DestinationRegion.Map.PlayerDescription,
-            };
-            control.OpacityChanged += (o, e) => control.ImageOpacity = control.Opacity;
+            DXImageControl control = null;
 
+            if (MapInfoObjects.TryGetValue(ob, out DXControl existing))
+            {
+                control = existing as DXImageControl;
+
+                if (control == null)
+                {
+                    existing.Dispose();
+                    MapInfoObjects.Remove(ob);
+                }
+            }
+
+            if (control == null)
+            {
+                control = new DXImageControl
+                {
+                    LibraryFile = LibraryFile.MiniMapIcon,
+                    Parent = Image
+                };
+                control.OpacityChanged += (o, e) => control.ImageOpacity = control.Opacity;
+                MapInfoObjects[ob] = control;
+            }
+
+            control.Opacity = Opacity;
+            control.ImageOpacity = Opacity;
+            control.Hint = ob.DestinationRegion.Map.PlayerDescription;
             GameScene.Game.UpdateMapIcon(control, ob.Icon);
 
             //control.MouseClick += (o, e) => SelectedInfo = ob.DestinationRegion.Map;
@@ -256,7 +296,7 @@ namespace Client.Scenes.Views
 
         public void Update(ClientObjectData ob, bool playLocatorAnim = false)
         {
-            if (GameScene.Game.MapControl.MapInfo == null) return;
+            if (!HasUsableMap()) return;
 
             if (!MapInfoObjects.TryGetValue(ob, out DXControl control))
             {
@@ -413,6 +453,7 @@ namespace Client.Scenes.Views
 
         public void UpdateMapPosition()
         {
+            if (!HasUsableMap()) return;
             if (MapObject.User == null) return;
 
             ClientObjectData data;
@@ -429,6 +470,8 @@ namespace Client.Scenes.Views
 
         private void ClipMap()
         {
+            if (Image == null || Panel == null) return;
+
             int x = Image.Location.X;
 
             if (x + Image.Size.Width < Panel.Size.Width)
@@ -479,6 +522,17 @@ namespace Client.Scenes.Views
                 Parent = Image,
                 Opacity = Opacity,
             };
+        }
+
+        private static bool HasUsableMap()
+        {
+            MapControl map = GameScene.Game?.MapControl;
+            return map?.MapInfo != null &&
+                   map.Cells != null &&
+                   map.Width > 0 &&
+                   map.Height > 0 &&
+                   map.Cells.GetLength(0) >= map.Width &&
+                   map.Cells.GetLength(1) >= map.Height;
         }
 
         public void Remove(object ob)
@@ -547,6 +601,9 @@ namespace Client.Scenes.Views
                 Area = Rectangle.Empty;
                 ScaleX = 0;
                 ScaleY = 0;
+
+                if (GameScene.Game?.MapControl != null)
+                    GameScene.Game.MapControl.MapInfoChanged -= MapControl_MapInfoChanged;
 
                 foreach (KeyValuePair<object, DXControl> pair in MapInfoObjects)
                 {
