@@ -1,7 +1,7 @@
 ﻿using Client.Controls;
 using Client.Envir.Translations;
 using Client.Models;
-using Client.Rendering;
+using Shared.Rendering;
 using Client.Scenes;
 using Client.Scenes.Views;
 using Client.UserModels;
@@ -62,10 +62,13 @@ namespace Client.Envir
         public static DBCollection<WindowSetting> WindowSettings;
         public static DBCollection<CastleInfo> CastleInfoList;
         public static MirDB.Session Session;
+        public static string ClientSystemDatabaseVersion, ServerSystemDatabaseVersion;
+        public static bool ClientSystemDatabaseExists;
 
         public static ConcurrentQueue<string> ChatLog = new ConcurrentQueue<string>();
 
         public static bool Loaded;
+        public static bool DatabaseLoadAttempted;
         public static bool Loading { get; private set; }
 
         public static string BuyAddress;
@@ -565,10 +568,9 @@ namespace Client.Envir
                 connectionText = $"Ping: {Connection.Ping}, Sent: {sent}, Received: {received}";
             }
 
-            if (Config.FullScreen)
+            if (Config.FullScreen || Config.Borderless)
             {
                 DXControl.DebugLabel.Text = debugText;
-
                 DXControl.DebugLabel.IsVisible = Config.DebugLabel;
                 DXControl.PingLabel.IsVisible = Config.DebugLabel;
 
@@ -580,7 +582,7 @@ namespace Client.Envir
             }
             else
             {
-                CEnvir.Target.Text = $"{Globals.ClientName} - {debugText} - {connectionText}";
+                CEnvir.Target.Text = Config.DebugLabel ? $"{Globals.ClientName} - {debugText} - {connectionText}" : Globals.ClientName;
 
                 DXControl.PingLabel.Text = string.Empty;
                 DXControl.DebugLabel.Text = string.Empty;
@@ -645,10 +647,10 @@ namespace Client.Envir
                 return;
             }
 
-            if (RenderingPipelineManager.RenderFrame(() => DXControl.ActiveScene?.Draw()))
-            {
+            static void drawScene() => DXControl.ActiveScene?.Draw();
+
+            if (RenderingPipelineManager.RenderFrame(drawScene))
                 FPSCounter++;
-            }
         }
 
         public static void ReturnToLogin()
@@ -664,6 +666,11 @@ namespace Client.Envir
 
         public static void LoadDatabase()
         {
+            DatabaseLoadAttempted = true;
+            Loaded = false;
+            ClientSystemDatabaseVersion = null;
+            ClientSystemDatabaseExists = false;
+
             Loading = true;
             Task.Run(() =>
             {
@@ -675,6 +682,11 @@ namespace Client.Envir
                         Assembly.GetAssembly(typeof(ItemInfo)),
                         Assembly.GetAssembly(typeof(WindowSetting))
                     );
+
+                    ClientSystemDatabaseVersion = Session.SystemDatabaseVersion;
+                    ClientSystemDatabaseExists = Session.SystemDatabaseExists;
+
+                    if (!ClientSystemDatabaseExists) return;
 
                     Globals.ItemInfoList = Session.GetCollection<ItemInfo>();
                     Globals.MagicInfoList = Session.GetCollection<MagicInfo>();

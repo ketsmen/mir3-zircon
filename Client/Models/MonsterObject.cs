@@ -1,5 +1,5 @@
 ﻿using Client.Envir;
-using Client.Rendering;
+using Shared.Rendering;
 using Client.Scenes;
 using Client.Scenes.Views;
 using Library;
@@ -3206,6 +3206,15 @@ namespace Client.Models
         {
             if (!Visible || GetCurrentBodyLibrary() == null) return;
 
+            int y = GetBodyDrawY();
+
+            DrawShadow(DrawX, y);
+
+            DrawBody(DrawX, y, MouseObject == this);
+        }
+
+        private int GetBodyDrawY()
+        {
             int y = DrawY;
 
             switch (Image)
@@ -3218,9 +3227,7 @@ namespace Client.Models
                     break;
             }
 
-            DrawShadow(DrawX, y);
-
-            DrawBody(DrawX, y, MouseObject == this);
+            return y;
         }
 
         public void DrawShadow(int x, int y)
@@ -3850,17 +3857,19 @@ namespace Client.Models
             if (UsingCustomVisual)
             {
                 Point offset = GetCurrentCustomAnimationOffset();
-                return library.VisiblePixel(BodyFrame, new Point(p.X - DrawX - offset.X, p.Y - DrawY - offset.Y), false, true);
+                return library.VisiblePixel(BodyFrame, new Point(p.X - DrawX - offset.X, p.Y - GetBodyDrawY() - offset.Y), false, true);
             }
+
+            Point local = new Point(p.X - DrawX, p.Y - GetBodyDrawY());
 
             switch (Image)
             {
                 case MonsterImage.LobsterLord:
-                    return library.VisiblePixel(BodyFrame, new Point(p.X - DrawX, p.Y - DrawY), false, true) ||
-                           library.VisiblePixel(BodyFrame + 1000, new Point(p.X - DrawX, p.Y - DrawY), false, true) ||
-                           library.VisiblePixel(BodyFrame + 2000, new Point(p.X - DrawX, p.Y - DrawY), false, true);
+                    return library.VisiblePixel(BodyFrame, local, false, true) ||
+                           library.VisiblePixel(BodyFrame + 1000, local, false, true) ||
+                           library.VisiblePixel(BodyFrame + 2000, local, false, true);
                 default:
-                    return library.VisiblePixel(BodyFrame, new Point(p.X - DrawX, p.Y - DrawY), false, true);
+                    return library.VisiblePixel(BodyFrame, local, false, true);
             }
 
         }

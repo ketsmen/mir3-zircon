@@ -1,6 +1,6 @@
 ﻿using Client.Controls;
 using Client.Envir;
-using Client.Rendering;
+using Shared.Rendering;
 using Client.Scenes.Views.Character;
 using Client.UserModels;
 using Library;
@@ -1488,6 +1488,9 @@ namespace Client.Scenes.Views
 
     public sealed class RankingLine : DXControl
     {
+        private const string RankChangeUpArrow = "\u25B2";
+        private const string RankChangeDownArrow = "\u25BC";
+
         #region Properties
 
         #region Rank
@@ -1539,7 +1542,7 @@ namespace Client.Scenes.Views
                 }
                 else
                 {
-                    ChangeLabel.Text = $"{(change > 0 ? "▲" : "▼")}{Math.Abs(Rank.RankChange)}";
+                    ChangeLabel.Text = $"{(change > 0 ? RankChangeUpArrow : RankChangeDownArrow)}{Math.Abs(Rank.RankChange)}";
                     ChangeLabel.ForeColour = change > 0 ? Color.OrangeRed : Color.DodgerBlue;
                 }
 
@@ -1630,7 +1633,7 @@ namespace Client.Scenes.Views
         public RankingLine()
         {
             Size = new Size(288, 22);
-            DrawTexture = true;
+            DrawTexture = false;
             BackColour = Color.Empty;
 
             OnlineImage = new DXImageControl
@@ -1689,6 +1692,13 @@ namespace Client.Scenes.Views
         }
 
         #region Methods
+
+        protected override void DrawControl()
+        {
+            if (BackColour == Color.Empty) return;
+
+            RenderingPipelineManager.FillRectangle(DisplayArea, BackColour);
+        }
 
         public override void OnMouseClick(MouseEventArgs e)
         {

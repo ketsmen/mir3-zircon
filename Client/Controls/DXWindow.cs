@@ -1,5 +1,5 @@
 ﻿using Client.Envir;
-using Client.Rendering;
+using Shared.Rendering;
 using Client.UserModels;
 using Library;
 using System;
@@ -305,6 +305,7 @@ namespace Client.Controls
 
             WindowTexture = default;
             WindowSurface = default;
+            WindowValid = false;
         }
         private void UpdateLocations()
         {

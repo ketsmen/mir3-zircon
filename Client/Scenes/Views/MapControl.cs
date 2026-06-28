@@ -2,7 +2,6 @@
 using Client.Envir;
 using Client.Models;
 using Client.Models.Particles;
-using Client.Rendering;
 using Library;
 using Library.SystemModels;
 using System;
@@ -324,6 +323,7 @@ namespace Client.Scenes.Views
             DrawControl();
 
             DrawBorder();
+
             OnAfterDraw();
         }
 
@@ -333,11 +333,9 @@ namespace Client.Scenes.Views
 
             if (!CEnvir.LibraryList.TryGetValue(LibraryFile.Background, out MirLibrary library)) return;
 
-            MirImage image = library.CreateImage(MapInfo.Background, ImageType.Image);
+            if (!library.TryGetTexture(MapInfo.Background, ImageType.Image, out _, out var texture, out var sourceRectangle)) return;
 
-            if (image?.Image == null) return;
-
-            PresentTexture(image.Image, Parent, DisplayArea, Color.White, this, 0, 0, 1F);
+            PresentTexture(texture, sourceRectangle, Parent, DisplayArea, Color.White, this, 0, 0, 1F);
         }
 
         private void DrawObjects()
@@ -1754,6 +1752,14 @@ namespace Client.Scenes.Views
 
         public sealed class Light : DXControl
         {
+            private const float LightScale = 0.02F;
+            private const float BaseLightSize = 0.1F;
+            private const float TileLightScaleMultiplier = 30F;
+            private const float EffectLightScaleDivisor = 5F;
+            private const int TileLightSearchPadding = 15;
+
+            private int _lastLightSignature;
+
             public Light()
             {
                 IsControl = false;
@@ -1764,7 +1770,25 @@ namespace Client.Scenes.Views
 
             public void CheckTexture()
             {
+                UpdateAmbientLight();
+
+                if (!ShouldRenderLightLayer())
+                {
+                    _lastLightSignature = 0;
+
+                    if (TextureValid)
+                        DisposeTexture();
+
+                    return;
+                }
+
+                int signature = GetLightSignature();
+
+                if (TextureValid && signature == _lastLightSignature)
+                    return;
+
                 CreateTexture();
+                _lastLightSignature = signature;
             }
 
             protected override void OnClearTexture()
@@ -1772,13 +1796,15 @@ namespace Client.Scenes.Views
                 base.OnClearTexture();
 
                 MapControl map = GameScene.Game?.MapControl;
-                if (map?.Cells == null || map.Width <= 0 || map.Height <= 0 || MapObject.User == null) return;
+                UserObject user = MapObject.User;
+
+                if (map?.Cells == null || map.MapInfo == null || map.Width <= 0 || map.Height <= 0 || user == null) return;
 
                 int width = Math.Min(map.Width, map.Cells.GetLength(0));
                 int height = Math.Min(map.Height, map.Cells.GetLength(1));
                 if (width <= 0 || height <= 0) return;
 
-                if (MapObject.User.Dead)
+                if (user.Dead)
                 {
                     RenderingPipelineManager.Clear(RenderClearFlags.Target, Color.IndianRed, 0, 0);
                     return;
@@ -1806,22 +1832,19 @@ namespace Client.Scenes.Views
 
                 Rectangle lightSource = new Rectangle(0, 0, lightSize.Width, lightSize.Height);
 
-                const float lightScale = 0.02F; //Players/Monsters
-                const float baseSize = 0.1F;
-
-                if ((MapObject.User.Poison & PoisonType.Abyss) == PoisonType.Abyss)
+                if ((user.Poison & PoisonType.Abyss) == PoisonType.Abyss)
                 {
                     RenderingPipelineManager.Clear(RenderClearFlags.Target, Color.Black, 0, 0);
 
-                    float scale = baseSize + 4 * lightScale;
-                    float abyssX = (OffSetX + MapObject.User.CurrentLocation.X - User.CurrentLocation.X) * CellWidth + PixelOffsetX + CellWidth / 2F - (lightSize.Width * scale) / 2F;
-                    float abyssY = (OffSetY + MapObject.User.CurrentLocation.Y - User.CurrentLocation.Y) * CellHeight + PixelOffsetY - (lightSize.Height * scale) / 2F;
+                    float scale = BaseLightSize + 4 * LightScale;
+                    float abyssX = OffSetX * CellWidth + PixelOffsetX + CellWidth / 2F - (lightSize.Width * scale) / 2F;
+                    float abyssY = OffSetY * CellHeight + PixelOffsetY - (lightSize.Height * scale) / 2F;
 
                     DrawLight(lightTexture, lightSource, lightSize, abyssX, abyssY, scale, Color.White);
 
                     RenderingPipelineManager.SetBlend(previousBlendEnabled, previousBlendRate, previousBlendMode);
 
-                    var abyssEffects = MapObject.User.CreateMagicEffect(MagicEffect.Abyss);
+                    var abyssEffects = user.CreateMagicEffect(MagicEffect.Abyss);
 
                     foreach (var effect in abyssEffects)
                     {
@@ -1832,14 +1855,14 @@ namespace Client.Scenes.Views
 
                 foreach (MapObject ob in map.Objects ?? Enumerable.Empty<MapObject>())
                 {
-                    if (ob.Light > 0 && (!ob.Dead || ob == MapObject.User || ob.Race == ObjectType.Spell))
-                    {
-                        float scale = baseSize + ob.Light * 2 * lightScale;
-                        float objectX = (OffSetX + ob.CurrentLocation.X - User.CurrentLocation.X) * CellWidth + PixelOffsetX + ob.MovingOffSet.X - User.MovingOffSet.X + CellWidth / 2F - (lightSize.Width * scale) / 2F;
-                        float objectY = (OffSetY + ob.CurrentLocation.Y - User.CurrentLocation.Y) * CellHeight + PixelOffsetY + ob.MovingOffSet.Y - User.MovingOffSet.Y - (lightSize.Height * scale) / 2F;
+                    if (!ShouldDrawObjectLight(ob, user))
+                        continue;
 
-                        DrawLight(lightTexture, lightSource, lightSize, objectX, objectY, scale, ob.LightColour);
-                    }
+                    float scale = BaseLightSize + ob.Light * 2 * LightScale;
+                    float objectX = (OffSetX + ob.CurrentLocation.X - user.CurrentLocation.X) * CellWidth + PixelOffsetX + ob.MovingOffSet.X - user.MovingOffSet.X + CellWidth / 2F - (lightSize.Width * scale) / 2F;
+                    float objectY = (OffSetY + ob.CurrentLocation.Y - user.CurrentLocation.Y) * CellHeight + PixelOffsetY + ob.MovingOffSet.Y - user.MovingOffSet.Y - (lightSize.Height * scale) / 2F;
+
+                    DrawLight(lightTexture, lightSource, lightSize, objectX, objectY, scale, ob.LightColour);
                 }
 
                 foreach (MirEffect ob in map.Effects ?? Enumerable.Empty<MirEffect>())
@@ -1848,7 +1871,7 @@ namespace Client.Scenes.Views
 
                     if (frameLight > 0)
                     {
-                        float scale = baseSize + frameLight * 2 * lightScale / 5;
+                        float scale = BaseLightSize + frameLight * 2 * LightScale / EffectLightScaleDivisor;
                         float effectX = ob.DrawX + CellWidth / 2F - (lightSize.Width * scale) / 2F;
                         float effectY = ob.DrawY + CellHeight / 2F - (lightSize.Height * scale) / 2F;
 
@@ -1856,28 +1879,30 @@ namespace Client.Scenes.Views
                     }
                 }
 
-                int minX = Math.Max(0, User.CurrentLocation.X - OffSetX - 15), maxX = Math.Min(width - 1, User.CurrentLocation.X + OffSetX + 15);
-                int minY = Math.Max(0, User.CurrentLocation.Y - OffSetY - 15), maxY = Math.Min(height - 1, User.CurrentLocation.Y + OffSetY + 15);
+                int minX = Math.Max(0, user.CurrentLocation.X - OffSetX - TileLightSearchPadding);
+                int maxX = Math.Min(width - 1, user.CurrentLocation.X + OffSetX + TileLightSearchPadding);
+                int minY = Math.Max(0, user.CurrentLocation.Y - OffSetY - TileLightSearchPadding);
+                int maxY = Math.Min(height - 1, user.CurrentLocation.Y + OffSetY + TileLightSearchPadding);
 
                 for (int y = minY; y <= maxY; y++)
                 {
                     if (y < 0) continue;
                     if (y >= height) break;
 
-                    int drawY = (y - User.CurrentLocation.Y + OffSetY) * CellHeight + PixelOffsetY - User.MovingOffSet.Y - User.ShakeScreenOffset.Y;
+                    int drawY = (y - user.CurrentLocation.Y + OffSetY) * CellHeight + PixelOffsetY - user.MovingOffSet.Y - user.ShakeScreenOffset.Y;
 
                     for (int x = minX; x <= maxX; x++)
                     {
                         if (x < 0) continue;
                         if (x >= width) break;
 
-                        int drawX = (x - User.CurrentLocation.X + OffSetX) * CellWidth + PixelOffsetX - User.MovingOffSet.X - User.ShakeScreenOffset.X;
+                        int drawX = (x - user.CurrentLocation.X + OffSetX) * CellWidth + PixelOffsetX - user.MovingOffSet.X - user.ShakeScreenOffset.X;
 
                         Cell tile = map.Cells[x, y];
 
                         if (tile.Light == 0) continue;
 
-                        float scale = baseSize + tile.Light * 30 * lightScale;
+                        float scale = BaseLightSize + tile.Light * TileLightScaleMultiplier * LightScale;
                         float tileX = drawX + CellWidth / 2F - (lightSize.Width * scale) / 2F;
                         float tileY = drawY + CellHeight / 2F - (lightSize.Height * scale) / 2F;
 
@@ -1902,7 +1927,18 @@ namespace Client.Scenes.Views
                 RenderingPipelineManager.DrawTexture(lightTexture, sourceRectangle, destination, colour);
             }
 
+            private static bool ShouldDrawObjectLight(MapObject ob, UserObject user)
+            {
+                return ob.Light > 0 && (!ob.Dead || ob == user || ob.Race == ObjectType.Spell);
+            }
+
             public void UpdateLights()
+            {
+                UpdateAmbientLight();
+                TextureValid = false;
+            }
+
+            private void UpdateAmbientLight()
             {
                 MapControl map = GameScene.Game?.MapControl;
 
@@ -1937,6 +1973,81 @@ namespace Client.Scenes.Views
                 {
                     BackColour = Color.FromArgb(15, 15, 15);
                     Visible = false;
+                }
+            }
+
+            private static bool ShouldRenderLightLayer()
+            {
+                MapControl map = GameScene.Game?.MapControl;
+                UserObject user = MapObject.User;
+
+                if (map?.MapInfo == null)
+                    return false;
+
+                if (user != null && (user.Dead || (user.Poison & PoisonType.Abyss) == PoisonType.Abyss))
+                    return true;
+
+                Light lightLayer = map.LLayer;
+
+                if (map.MapInfo.Light == LightSetting.Light)
+                    return false;
+
+                return lightLayer.BackColour.R < 255 || lightLayer.BackColour.G < 255 || lightLayer.BackColour.B < 255;
+            }
+
+            private static int GetLightSignature()
+            {
+                unchecked
+                {
+                    int hash = 17;
+                    MapControl map = GameScene.Game?.MapControl;
+                    UserObject user = MapObject.User;
+
+                    if (map?.Cells == null || map.MapInfo == null || user == null)
+                        return 0;
+
+                    hash = hash * 31 + map.Size.Width;
+                    hash = hash * 31 + map.Size.Height;
+                    hash = hash * 31 + (int)map.MapInfo.Light;
+                    hash = hash * 31 + map.LLayer.BackColour.ToArgb();
+                    hash = hash * 31 + user.CurrentLocation.X;
+                    hash = hash * 31 + user.CurrentLocation.Y;
+                    hash = hash * 31 + user.MovingOffSet.X;
+                    hash = hash * 31 + user.MovingOffSet.Y;
+                    hash = hash * 31 + user.ShakeScreenOffset.X;
+                    hash = hash * 31 + user.ShakeScreenOffset.Y;
+                    hash = hash * 31 + user.Light;
+                    hash = hash * 31 + user.LightColour.ToArgb();
+                    hash = hash * 31 + (int)user.Poison;
+
+                    foreach (MapObject ob in map.Objects ?? Enumerable.Empty<MapObject>())
+                    {
+                        if (!ShouldDrawObjectLight(ob, user))
+                            continue;
+
+                        hash = hash * 31 + ob.ObjectID.GetHashCode();
+                        hash = hash * 31 + ob.CurrentLocation.X;
+                        hash = hash * 31 + ob.CurrentLocation.Y;
+                        hash = hash * 31 + ob.MovingOffSet.X;
+                        hash = hash * 31 + ob.MovingOffSet.Y;
+                        hash = hash * 31 + ob.Light;
+                        hash = hash * 31 + ob.LightColour.ToArgb();
+                        hash = hash * 31 + (ob.Dead ? 1 : 0);
+                    }
+
+                    foreach (MirEffect effect in map.Effects ?? Enumerable.Empty<MirEffect>())
+                    {
+                        float frameLight = effect.FrameLight;
+                        if (frameLight <= 0)
+                            continue;
+
+                        hash = hash * 31 + effect.DrawX;
+                        hash = hash * 31 + effect.DrawY;
+                        hash = hash * 31 + (int)(frameLight * 100);
+                        hash = hash * 31 + effect.FrameLightColour.ToArgb();
+                    }
+
+                    return hash;
                 }
             }
             protected override void DrawControl()

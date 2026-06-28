@@ -1,12 +1,13 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace LibraryEditor
@@ -16,10 +17,8 @@ namespace LibraryEditor
         private readonly Dictionary<int, int> _indexList = new Dictionary<int, int>();
         private Mir3Library _library;
         private Mir3Library.Mir3Image _selectedImage, _exportImage;
-        private Image _zoomImage;
-        private bool _libraryDirty;
-        private const int ImagePreviewPadding = 8;
-        private const int MaxImportedImagePixels = 16777216;
+        private Image _originalImage;
+        public int newImages;
 
         [DllImport("user32.dll")]
         private static extern int SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
@@ -27,70 +26,134 @@ namespace LibraryEditor
         public LMain()
         {
             InitializeComponent();
-            splitContainer1.Panel2.Resize += PreviewListPanel_Resize;
-            panel.Resize += ImagePanel_Resize;
-            RefreshPreviewListLayout();
-            RefreshImageBoxLayout();
 
             SendMessage(PreviewListView.Handle, 4149, 0, 5242946); //80 x 66
 
             this.AllowDrop = true;
             this.DragEnter += new DragEventHandler(Form1_DragEnter);
             this.DragDrop += new DragEventHandler(Form1_DragDrop);
+            AddAtlasMenuItems();
+
             if (Program.openFileWith.Length > 0 &&
                 File.Exists(Program.openFileWith))
             {
-                try
-                {
-                    OpenLibraryDialog.FileName = Program.openFileWith;
-                    _library = new Mir3Library(OpenLibraryDialog.FileName);
-                    PreviewListView.VirtualListSize = _library.Images.Count;
-                    RefreshPreviewListLayout();
+                OpenLibraryDialog.FileName = Program.openFileWith;
+                _library = new Mir3Library(OpenLibraryDialog.FileName);
+                PreviewListView.VirtualListSize = _library.Images.Count;
 
-                    _libraryDirty = false;
-                    UpdateWindowTitle();
+                // Show .Lib path in application title.
+                this.Text = OpenLibraryDialog.FileName.ToString();
+                UpdateLibraryVersionLabel();
 
-                    PreviewListView.SelectedIndices.Clear();
+                PreviewListView.SelectedIndices.Clear();
 
-                    if (PreviewListView.Items.Count > 0)
-                        PreviewListView.Items[0].Selected = true;
+                if (PreviewListView.Items.Count > 0)
+                    PreviewListView.Items[0].Selected = true;
 
-                    radioButtonImage.Enabled = true;
-                    radioButtonShadow.Enabled = true;
-                    radioButtonOverlay.Enabled = true;
-                }
-                catch (Exception ex)
-                {
-                    ReleaseCurrentLibrary();
-                    MessageBox.Show(
-                        "打开图库失败，已启动空编辑器。\r\n\r\n" + ex,
-                        "打开图库",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Error);
-                }
+                radioButtonImage.Enabled = true;
+                radioButtonShadow.Enabled = true;
+                radioButtonOverlay.Enabled = true;
             }
         }
 
-        protected override void OnFormClosed(FormClosedEventArgs e)
+        private void AddAtlasMenuItems()
         {
-            ReleaseCurrentLibrary();
-            base.OnFormClosed(e);
-        }
-
-        protected override void OnFormClosing(FormClosingEventArgs e)
-        {
-            if (!ConfirmSaveOrDiscardLibraryChanges())
+            ToolStripMenuItem validateAtlasMenuItem = new ToolStripMenuItem("Validate ZL Atlas Metadata")
             {
-                e.Cancel = true;
-                return;
-            }
+                ToolTipText = "Check that generated atlas page/source metadata is internally consistent."
+            };
+            validateAtlasMenuItem.Click += validateAtlasToolStripMenuItem_Click;
 
-            base.OnFormClosing(e);
+            ToolStripMenuItem exportAtlasMenuItem = new ToolStripMenuItem("Export ZL Atlas Debug Pages")
+            {
+                ToolTipText = "Export atlas page PNGs and rectangle overlays for visual validation."
+            };
+            exportAtlasMenuItem.Click += exportAtlasToolStripMenuItem_Click;
+
+            functionsToolStripMenuItem.DropDownItems.Add(new ToolStripSeparator());
+            functionsToolStripMenuItem.DropDownItems.Add(validateAtlasMenuItem);
+            functionsToolStripMenuItem.DropDownItems.Add(exportAtlasMenuItem);
+        }
+
+        private void validateAtlasToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (_library == null) return;
+
+            string report = _library.ValidateAtlasMetadata();
+            toolStripStatusLabel.ForeColor = report.StartsWith("Atlas metadata valid")
+                ? SystemColors.ControlText
+                : Color.Red;
+            toolStripStatusLabel.Text = report.Split(new[] { Environment.NewLine }, StringSplitOptions.None)[0];
+            MessageBox.Show(report, "ZL Atlas Validation");
+        }
+
+        private void exportAtlasToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (_library == null) return;
+
+            using (FolderBrowserDialog dialog = new FolderBrowserDialog())
+            {
+                dialog.Description = "Choose where to export atlas debug PNGs.";
+                dialog.SelectedPath = GetDefaultAtlasDebugDirectory();
+
+                if (dialog.ShowDialog() != DialogResult.OK) return;
+
+                string reportPath = _library.ExportAtlasDebugPages(dialog.SelectedPath);
+                toolStripStatusLabel.ForeColor = SystemColors.ControlText;
+                toolStripStatusLabel.Text = $"Exported atlas debug pages. Report: {Path.GetFileName(reportPath)}";
+                MessageBox.Show($"Atlas debug pages exported to:{Environment.NewLine}{dialog.SelectedPath}", "ZL Atlas Debug Export");
+            }
+        }
+
+
+        private void PrepareSaveDialogForCurrentLibrary()
+        {
+            if (string.IsNullOrEmpty(_library.FileName))
+                return;
+
+            string directory = Path.GetDirectoryName(_library.FileName);
+            if (!string.IsNullOrEmpty(directory))
+                SaveLibraryDialog.InitialDirectory = directory;
+
+            SaveLibraryDialog.FileName = Path.GetFileName(_library.FileName);
+        }
+
+        private string GetDefaultAtlasDebugDirectory()
+        {
+            if (_library == null || string.IsNullOrEmpty(_library.FileName))
+                return Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+
+            string directory = Path.GetDirectoryName(_library.FileName);
+            if (string.IsNullOrEmpty(directory))
+                return Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+
+            return Path.Combine(directory, "AtlasDebug", Path.GetFileNameWithoutExtension(_library.FileName));
+        }
+
+        private async Task RunModalProgressAsync(string title, Action<IProgress<LibraryProgress>, CancellationToken> work)
+        {
+            using (CancellationTokenSource cancellation = new CancellationTokenSource())
+            using (ProgressDialog dialog = new ProgressDialog(title))
+            {
+                dialog.CancelRequested += (_, _) => cancellation.Cancel();
+                Progress<LibraryProgress> progress = new Progress<LibraryProgress>(dialog.Report);
+                _ = dialog.Handle;
+                Task task = Task.Run(() => work(progress, cancellation.Token), cancellation.Token);
+
+                _ = task.ContinueWith(_ =>
+                {
+                    if (dialog.IsHandleCreated && !dialog.IsDisposed)
+                        dialog.BeginInvoke(new Action(dialog.Close));
+                }, TaskScheduler.Default);
+
+                dialog.ShowDialog(this);
+                await task;
+            }
         }
 
         private void Form1_DragDrop(object sender, DragEventArgs e)
         {
-            // 拖拽导入暂未启用。
+            // Drag-drop import is disabled until it is ported to the current library format.
         }
 
         private void Form1_DragEnter(object sender, DragEventArgs e)
@@ -101,57 +164,211 @@ namespace LibraryEditor
         private void ClearInterface()
         {
             _selectedImage = null;
-            SetImageBoxImage(null);
+            ImageBox.Image = null;
             ZoomTrackBar.Value = 1;
-            RefreshImageBoxLayout(true);
 
-            WidthLabel.Text = "无图片";
-            HeightLabel.Text = "无图片";
-            ShadowTypeLabel.Text = "无图片";
+            WidthLabel.Text = "<No Image>";
+            HeightLabel.Text = "<No Image>";
+            ShadowTypeLabel.Text = "<No Image>";
             OffSetXTextBox.Text = string.Empty;
             OffSetYTextBox.Text = string.Empty;
             OffSetXTextBox.BackColor = SystemColors.Window;
             OffSetYTextBox.BackColor = SystemColors.Window;
+            UpdateLibraryVersionLabel();
         }
 
-        private bool TryGetSelectedIndex(out int index)
+        private void UpdateLibraryVersionLabel(Mir3Library.Mir3Image image = null)
         {
-            index = -1;
+            string libraryText = GetLibraryVersionText(image, false);
+            string atlasText = GetAtlasText(image, false);
 
-            if (PreviewListView.SelectedIndices.Count == 0)
-                return false;
-
-            int selectedIndex = PreviewListView.SelectedIndices[0];
-            if (selectedIndex < 0 || selectedIndex >= PreviewListView.Items.Count)
-                return false;
-
-            index = selectedIndex;
-            return true;
+            LibraryVersionLabel.Text = libraryText;
+            AtlasLabel.Text = atlasText;
+            toolTip.SetToolTip(LibraryVersionLabel, GetLibraryVersionText(image, true));
+            toolTip.SetToolTip(AtlasLabel, GetAtlasText(image, true));
         }
 
-        private bool TryEnsureImageVisible(int index)
+        private string GetLibraryVersionText(Mir3Library.Mir3Image image, bool fullText)
         {
-            if (index < 0 || index >= PreviewListView.Items.Count)
+            if (_library == null)
+                return "<None>";
+
+            if (image == null)
+                return "<No Format>";
+
+            switch (_library.Version)
+            {
+                case 0:
+                    return "ZL v0 (DXT1)";
+                case Mir3Library.LIBRARY_VERSION:
+                    return "ZL v1 (DXT5)";
+                case Mir3Library.COMPRESSED_LIBRARY_VERSION:
+                    string typeText = GetCompressedLibraryTypeText(image, fullText);
+                    return fullText
+                        ? "ZL v2 compressed (" + typeText + ")"
+                        : "ZL v2 (" + (typeText.EndsWith(" Only") ? typeText : typeText.Replace(" ", string.Empty)) + ")";
+                default:
+                    return "ZL v" + _library.Version;
+            }
+        }
+
+        private string GetCompressedLibraryTypeText(Mir3Library.Mir3Image image, bool fullText)
+        {
+            string sourceText = GetSelectedSourceCodecText(image);
+            string atlasText = GetSelectedAtlasRuntimeText(image);
+
+            if (string.IsNullOrEmpty(atlasText))
+                return GetLibraryTypeText(image);
+
+            return fullText
+                ? $"{sourceText} source + {atlasText} atlas"
+                : $"{sourceText} + {atlasText}";
+        }
+
+        private string GetSelectedSourceCodecText(Mir3Library.Mir3Image image)
+        {
+            if (image == null)
+                return "PNG";
+
+            if (!SelectedLayerHasPayload(image))
+                return "<No Format>";
+
+            if (radioButtonShadow.Checked)
+                return image.ShadowCodec.ToString();
+
+            if (radioButtonOverlay.Checked)
+                return image.OverlayCodec.ToString();
+
+            return image.ImageCodec.ToString();
+        }
+
+        private string GetSelectedAtlasRuntimeText(Mir3Library.Mir3Image image)
+        {
+            int selectedPage = GetSelectedAtlasPage(image);
+            if (selectedPage < 0 || _library?.AtlasPages == null || selectedPage >= _library.AtlasPages.Count)
+                return null;
+
+            Mir3Library.Mir3AtlasPage page = _library.AtlasPages[selectedPage];
+            if (page == null)
+                return null;
+
+            if (page.Bc7DataSize > 0 || page.RuntimePreference == ZlRuntimeTexturePreference.Bc7)
+                return "BC7";
+
+            if (page.FallbackDataSize > 0 || page.RuntimePreference == ZlRuntimeTexturePreference.Bc7Dxt5)
+                return "BC7/DXT5";
+
+            return page.Codec == ZlImageCodec.Png ? "BGRA32" : page.Codec.ToString();
+        }
+
+        private string GetLibraryTypeText(Mir3Library.Mir3Image image)
+        {
+            if (image == null)
+                return "<No Format>";
+
+            if (!SelectedLayerHasPayload(image))
+                return "<No Format>";
+
+            ZlImageCodec codec = image.ImageCodec;
+            ZlRuntimeTexturePreference preference = image.ImageRuntimePreference;
+
+            if (radioButtonShadow.Checked)
+            {
+                codec = image.ShadowCodec;
+                preference = image.ShadowRuntimePreference;
+            }
+            else if (radioButtonOverlay.Checked)
+            {
+                codec = image.OverlayCodec;
+                preference = image.OverlayRuntimePreference;
+            }
+
+            if (preference == ZlRuntimeTexturePreference.Bc7)
+                return codec == ZlImageCodec.Bc7 ? "BC7 Only" : codec + " + BC7";
+
+            if (preference == ZlRuntimeTexturePreference.Bc7Dxt5)
+                return codec + " + BC7/DXT5";
+
+            if (preference == ZlRuntimeTexturePreference.Dxt1)
+                return codec == ZlImageCodec.Dxt1 ? "DXT1" : codec + " + DXT1";
+
+            if (preference == ZlRuntimeTexturePreference.Dxt5)
+                return codec == ZlImageCodec.Dxt5 ? "DXT5" : codec + " + DXT5";
+
+            if (image.DataSize == 0)
+                return "<No Format>";
+
+            return codec + " + " + preference;
+        }
+
+        private bool SelectedLayerHasPayload(Mir3Library.Mir3Image image)
+        {
+            if (image == null)
                 return false;
 
-            PreviewListView.Items[index].EnsureVisible();
-            return true;
+            if (radioButtonShadow.Checked)
+            {
+                return image.ShadowWidth > 0 &&
+                       image.ShadowHeight > 0 &&
+                       (image.ShadowDataSize > 0 || image.ShadowBc7DataSize > 0 || image.ShadowFallbackDataSize > 0 || image.ShadowAtlasPage >= 0);
+            }
+
+            if (radioButtonOverlay.Checked)
+            {
+                return image.OverlayWidth > 0 &&
+                       image.OverlayHeight > 0 &&
+                       (image.OverlayDataSize > 0 || image.OverlayBc7DataSize > 0 || image.OverlayFallbackDataSize > 0 || image.OverlayAtlasPage >= 0);
+            }
+
+            return image.Width > 0 &&
+                   image.Height > 0 &&
+                   (image.ImageDataSize > 0 || image.ImageBc7DataSize > 0 || image.ImageFallbackDataSize > 0 || image.AtlasPage >= 0);
+        }
+
+        private string GetAtlasText(Mir3Library.Mir3Image image, bool fullText)
+        {
+            if (_library == null)
+                return "<None>";
+
+            int atlasCount = _library.AtlasPages?.Count ?? 0;
+            if (atlasCount == 0)
+                return "No";
+
+            int selectedPage = GetSelectedAtlasPage(image);
+            if (selectedPage >= 0)
+            {
+                if (fullText)
+                    return $"Yes ({atlasCount} pages, selected page {selectedPage})";
+
+                return $"{atlasCount} pages, p{selectedPage}";
+            }
+
+            return fullText ? $"Yes ({atlasCount} pages)" : $"{atlasCount} pages";
+        }
+
+        private int GetSelectedAtlasPage(Mir3Library.Mir3Image image)
+        {
+            if (image == null)
+                return -1;
+
+            if (radioButtonShadow.Checked)
+                return image.ShadowAtlasPage;
+
+            if (radioButtonOverlay.Checked)
+                return image.OverlayAtlasPage;
+
+            return image.AtlasPage;
         }
 
         private void PreviewListView_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (_library == null)
+            if (PreviewListView.SelectedIndices.Count == 0)
             {
                 ClearInterface();
                 return;
             }
 
-            if (!TryGetSelectedIndex(out int selectedIndex))
-            {
-                ClearInterface();
-                return;
-            }
-
+            int selectedIndex = PreviewListView.SelectedIndices[0];
             _selectedImage = _library.GetImage(selectedIndex);
 
             if (_selectedImage == null)
@@ -170,7 +387,7 @@ namespace LibraryEditor
                 OffSetXTextBox.Text = _selectedImage.OffSetX.ToString();
                 OffSetYTextBox.Text = _selectedImage.OffSetY.ToString();
 
-                SetImageBoxImage(_selectedImage.Image);
+                ImageBox.Image = _selectedImage.Image;
             }
             else if (radioButtonShadow.Checked)
             {
@@ -182,7 +399,7 @@ namespace LibraryEditor
                 OffSetXTextBox.Text = _selectedImage.ShadowOffSetX.ToString();
                 OffSetYTextBox.Text = _selectedImage.ShadowOffSetY.ToString();
 
-                SetImageBoxImage(_selectedImage.ShadowImage);
+                ImageBox.Image = _selectedImage.ShadowImage;
             }
             if (radioButtonOverlay.Checked)
             {
@@ -194,26 +411,26 @@ namespace LibraryEditor
                 OffSetXTextBox.Text = _selectedImage.OffSetX.ToString();
                 OffSetYTextBox.Text = _selectedImage.OffSetY.ToString();
 
-                SetImageBoxImage(_selectedImage.OverlayImage);
+                ImageBox.Image = _selectedImage.OverlayImage;
             }
 
-            RefreshImageBoxLayout(true);
+            UpdateLibraryVersionLabel(_selectedImage);
 
             // Keep track of what image/s are selected.
             if (PreviewListView.SelectedIndices.Count > 1)
             {
                 toolStripStatusLabel.ForeColor = Color.Red;
-                toolStripStatusLabel.Text = "已选择多张图片。";
+                toolStripStatusLabel.Text = "Multiple images selected.";
             }
             else
             {
                 toolStripStatusLabel.ForeColor = SystemColors.ControlText;
-                toolStripStatusLabel.Text = "当前图片: " + string.Format("{0} / {1}",
-                selectedIndex.ToString(),
+                toolStripStatusLabel.Text = "Selected Image: " + string.Format("{0} / {1}",
+                PreviewListView.SelectedIndices[0].ToString(),
                 (PreviewListView.Items.Count - 1).ToString());
             }
 
-            nudJump.Value = selectedIndex;
+            nudJump.Value = PreviewListView.SelectedIndices[0];
         }
 
         private void PreviewListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e)
@@ -240,7 +457,7 @@ namespace LibraryEditor
         private void AddButton_Click(object sender, EventArgs e)
         {
             if (_library == null) return;
-            if (_library.FileName == null) return;
+            if (_library._fileName == null) return;
 
             if (ImportImageDialog.ShowDialog() != DialogResult.OK) return;
 
@@ -249,110 +466,86 @@ namespace LibraryEditor
             //fileNames.Sort();
             toolStripProgressBar.Value = 0;
             toolStripProgressBar.Maximum = fileNames.Count;
-            List<string> failures = new List<string>();
-            int failureCount = 0;
-            int successCount = 0;
 
             for (int i = 0; i < fileNames.Count; i++)
             {
                 string fileName = fileNames[i];
-                Bitmap image = null;
+                Bitmap image;
 
                 try
                 {
-                    image = LoadBitmapDetached(fileName);
-
-                    string placementFile = Path.Combine(Path.GetDirectoryName(fileName) ?? string.Empty, "Placements", Path.GetFileNameWithoutExtension(fileName));
-                    placementFile = Path.ChangeExtension(placementFile, ".txt");
-
-                    short x = 0;
-                    short y = 0;
-
-                    if (File.Exists(placementFile))
-                    {
-                        string[] placements = File.ReadAllLines(placementFile);
-
-                        if (placements.Length > 0)
-                            short.TryParse(placements[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out x);
-                        if (placements.Length > 1)
-                            short.TryParse(placements[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out y);
-                    }
-
-                    _library.AddImage(image, x, y);
-                    image = null;
-                    successCount++;
-                    toolStripProgressBar.Value++;
+                    image = new Bitmap(fileName);
                 }
-                catch (Exception ex)
+                catch
                 {
-                    image?.Dispose();
-                    AddImageImportFailure(failures, ref failureCount, fileName, ex);
+                    continue;
                 }
+
+                fileName = Path.Combine(Path.GetDirectoryName(fileName), "Placements", Path.GetFileNameWithoutExtension(fileName));
+                fileName = Path.ChangeExtension(fileName, ".txt");
+
+                short x = 0;
+                short y = 0;
+
+                if (File.Exists(fileName))
+                {
+                    string[] placements = File.ReadAllLines(fileName);
+
+                    if (placements.Length > 0)
+                        short.TryParse(placements[0], out x);
+                    if (placements.Length > 1)
+                        short.TryParse(placements[1], out y);
+                }
+
+                _library.AddImage(image, x, y);
+                toolStripProgressBar.Value++;
+                //image.Dispose();
             }
 
             PreviewListView.VirtualListSize = _library.Images.Count;
             toolStripProgressBar.Value = 0;
-            ShowImageImportFailures("添加图片", failures, failureCount);
-            if (successCount > 0)
-                MarkLibraryDirty("已添加图片，尚未保存。");
         }
 
         private void newToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (!ConfirmSaveOrDiscardLibraryChanges()) return;
             if (SaveLibraryDialog.ShowDialog() != DialogResult.OK) return;
 
-            Mir3Library newLibrary = Mir3Library.CreateEmpty(SaveLibraryDialog.FileName);
-            try
-            {
-                newLibrary.Save(SaveLibraryDialog.FileName);
-            }
-            catch (Exception ex)
-            {
-                newLibrary.Dispose();
-                MessageBox.Show(
-                    "新建图库失败，当前已打开的图库未受影响。\r\n\r\n" + ex,
-                    "新建图库",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-                return;
-            }
-
-            ReleaseCurrentLibrary();
-            _library = newLibrary;
-            PreviewListView.VirtualListSize = _library.Images.Count;
-            OpenLibraryDialog.FileName = _library.FileName;
-            _libraryDirty = false;
-            UpdateWindowTitle();
+            if (_library != null) _library.Close();
+            _library = new Mir3Library(SaveLibraryDialog.FileName);
+            PreviewListView.VirtualListSize = 0;
+            _library.Save(SaveLibraryDialog.FileName);
+            UpdateLibraryVersionLabel();
         }
 
         private void openToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (!ConfirmSaveOrDiscardLibraryChanges()) return;
             if (OpenLibraryDialog.ShowDialog() != DialogResult.OK) return;
+            ClearInterface();
+            PreviewListView.VirtualListSize = 0;
+            ImageList.Images.Clear();
+            PreviewListView.Items.Clear();
+            _indexList.Clear();
 
-            Mir3Library library;
+            if (_library != null) _library.Close();
             try
             {
-                library = new Mir3Library(OpenLibraryDialog.FileName);
+                _library = new Mir3Library(OpenLibraryDialog.FileName);
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    "打开图库失败，当前已打开的图库未受影响。\r\n\r\n" + ex,
-                    "打开图库",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                _library = null;
+                PreviewListView.VirtualListSize = 0;
+                toolStripStatusLabel.ForeColor = Color.Red;
+                toolStripStatusLabel.Text = "Failed to open library.";
+                MessageBox.Show(this, ex.Message, "Open Library", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
-            ReleaseCurrentLibrary();
-            _library = library;
             PreviewListView.VirtualListSize = _library.Images.Count;
-            RefreshPreviewListLayout();
+            UpdateLibraryVersionLabel();
 
-            _libraryDirty = false;
-            UpdateWindowTitle();
+            // Show .Lib path in application title.
+            this.Text = OpenLibraryDialog.FileName.ToString();
 
             PreviewListView.SelectedIndices.Clear();
 
@@ -364,24 +557,147 @@ namespace LibraryEditor
             radioButtonOverlay.Enabled = true;
         }
 
-        private void saveToolStripMenuItem_Click(object sender, EventArgs e)
+        private async void saveToolStripMenuItem_Click(object sender, EventArgs e)
         {
             if (_library == null) return;
-            if (_library.FileName == null) return;
 
-            TrySaveLibrary(_library.FileName, "保存图库");
+            LibrarySaveOptions options = ShowSaveOptionsDialog();
+            if (options == null) return;
+
+            try
+            {
+                await RunModalProgressAsync("Saving Library", (progress, token) =>
+                {
+                    token.ThrowIfCancellationRequested();
+                    progress.Report(new LibraryProgress("Saving " + Path.GetFileName(_library.FileName), isMarquee: true));
+                    SaveCurrentLibrary(_library.FileName, options, progress, token);
+                });
+
+                OnLibrarySaved(_library.FileName, options);
+            }
+            catch (OperationCanceledException)
+            {
+                toolStripStatusLabel.Text = "Save cancelled.";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.ToString());
+            }
         }
 
-        private void saveAsToolStripMenuItem_Click(object sender, EventArgs e)
+        private async void saveAsToolStripMenuItem_Click(object sender, EventArgs e)
         {
             if (_library == null) return;
+
+            LibrarySaveOptions options = ShowSaveOptionsDialog();
+            if (options == null) return;
+
+            PrepareSaveDialogForCurrentLibrary();
             if (SaveLibraryDialog.ShowDialog() != DialogResult.OK) return;
 
-            if (!TrySaveLibrary(SaveLibraryDialog.FileName, "另存图库"))
-                return;
+            try
+            {
+                _library._fileName = SaveLibraryDialog.FileName;
+                await RunModalProgressAsync("Saving Library", (progress, token) =>
+                {
+                    token.ThrowIfCancellationRequested();
+                    progress.Report(new LibraryProgress("Saving " + Path.GetFileName(SaveLibraryDialog.FileName), isMarquee: true));
+                    SaveCurrentLibrary(_library._fileName, options, progress, token);
+                });
 
-            OpenLibraryDialog.FileName = _library.FileName;
-            UpdateWindowTitle();
+                OnLibrarySaved(_library._fileName, options);
+            }
+            catch (OperationCanceledException)
+            {
+                toolStripStatusLabel.Text = "Save cancelled.";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.ToString());
+            }
+        }
+
+        private LibrarySaveOptions ShowSaveOptionsDialog()
+        {
+            using (SaveOptionsDialog dialog = new SaveOptionsDialog(CountShadowEntries(_library), CountOverlayEntries(_library)))
+            {
+                return dialog.ShowDialog(this) == DialogResult.OK ? dialog.Options : null;
+            }
+        }
+
+        private void SaveCurrentLibrary(string path, LibrarySaveOptions options, IProgress<LibraryProgress> progress, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+
+            _library.Version = Mir3Library.COMPRESSED_LIBRARY_VERSION;
+            _library.ContainerCompression = options.ContainerCompression;
+
+            foreach (Mir3Library.Mir3Image image in _library.Images)
+            {
+                token.ThrowIfCancellationRequested();
+                image?.SetVersion(Mir3Library.COMPRESSED_LIBRARY_VERSION);
+            }
+
+            _library.SetRuntimePreferenceForAllImages(options.IndividualRuntimePreference, options.StorePngSourceImages, progress, Path.GetFileName(path), token);
+
+            if (options.BuildAtlasMetadata)
+            {
+                _library.BuildAtlasMetadata(options.AtlasPageSize, 2, options.AtlasGroupImageCount, options.AtlasRuntimePreference, progress, Path.GetFileName(path), true, options.BuildShadowAtlasMetadata, options.BuildOverlayAtlasMetadata);
+            }
+            else
+            {
+                ClearAtlasMetadata();
+            }
+
+            token.ThrowIfCancellationRequested();
+            _library.Save(path);
+        }
+
+        private void ClearAtlasMetadata()
+        {
+            _library.AtlasPages.Clear();
+            _library.AtlasGroupImageCount = 0;
+            _library.AtlasPageSize = 0;
+
+            foreach (Mir3Library.Mir3Image image in _library.Images)
+            {
+                if (image == null)
+                    continue;
+
+                image.AtlasPage = -1;
+                image.ShadowAtlasPage = -1;
+                image.OverlayAtlasPage = -1;
+                image.SourceRectangle = Rectangle.Empty;
+                image.ShadowSourceRectangle = Rectangle.Empty;
+                image.OverlaySourceRectangle = Rectangle.Empty;
+                image.VisibleBounds = Rectangle.Empty;
+            }
+        }
+
+        private static int CountShadowEntries(Mir3Library library)
+        {
+            return library?.CountAtlasLayerEntries(ZlAtlasLayer.Shadow) ?? 0;
+        }
+
+        private static int CountOverlayEntries(Mir3Library library)
+        {
+            return library?.CountAtlasLayerEntries(ZlAtlasLayer.Overlay) ?? 0;
+        }
+
+        private void OnLibrarySaved(string path, LibrarySaveOptions options)
+        {
+            toolStripStatusLabel.ForeColor = SystemColors.ControlText;
+            toolStripStatusLabel.Text = options.BuildAtlasMetadata
+                ? $"Saved ZL v2 with atlas metadata using {options.ContainerCompression}."
+                : $"Saved ZL v2 without atlas metadata using {options.ContainerCompression}.";
+
+            if (!string.IsNullOrEmpty(_library.LastCompressionReport))
+                toolStripStatusLabel.Text += $" Report: {Path.GetFileName(path)}.report.txt";
+
+            _library.FileName = path;
+            _library._fileName = path;
+            Text = path;
+            UpdateLibraryVersionLabel(_selectedImage);
         }
 
         private void closeToolStripMenuItem_Click(object sender, EventArgs e)
@@ -395,16 +711,13 @@ namespace LibraryEditor
             if (_library.FileName == null) return;
             if (PreviewListView.SelectedIndices.Count == 0) return;
 
-            if (MessageBox.Show("确定要删除选中的图片吗？",
-                "删除选中图片",
+            if (MessageBox.Show("Are you sure you want to delete the selected Image?",
+                "Delete Selected.",
                 MessageBoxButtons.YesNoCancel) != DialogResult.Yes) return;
 
             var removeList = PreviewListView.SelectedIndices.Cast<int>().ToList();
 
             removeList.Sort();
-
-            SetImageBoxImage(null);
-            _selectedImage = null;
 
             for (int i = removeList.Count - 1; i >= 0; i--)
                 _library.RemoveImage(removeList[i]);
@@ -412,128 +725,169 @@ namespace LibraryEditor
             ImageList.Images.Clear();
             _indexList.Clear();
             PreviewListView.VirtualListSize -= removeList.Count;
-            MarkLibraryDirty("已删除图片，尚未保存。");
         }
 
-        private void convertToolStripMenuItem_Click(object sender, EventArgs e)
+        private async void convertToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (OpenWeMadeDialog.ShowDialog() != DialogResult.OK) return;
-
-            toolStripProgressBar.Maximum = OpenWeMadeDialog.FileNames.Length;
-            toolStripProgressBar.Value = 0;
-            List<string> failures = new List<string>();
-            int failureCount = 0;
-            int successCount = 0;
-
-            foreach (string fileName in OpenWeMadeDialog.FileNames)
+            LibraryConversionOptions options;
+            using (ConversionOptionsDialog dialog = new ConversionOptionsDialog())
             {
-                try
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                    return;
+
+                options = dialog.Options;
+            }
+
+            toolStripProgressBar.Maximum = options.FileNames.Length;
+            toolStripProgressBar.Value = 0;
+
+            try
+            {
+                await RunModalProgressAsync("Converting Libraries", (progress, token) =>
                 {
-                    ConvertLegacyLibraryFile(fileName);
-                    successCount++;
-                }
-                catch (Exception ex)
-                {
-                    AddImageImportFailure(failures, ref failureCount, fileName, ex);
-                }
-                finally
-                {
-                    toolStripProgressBar.Value++;
-                }
+                    string[] fileNames = options.FileNames;
+                    for (int i = 0; i < fileNames.Length; i++)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        string fileName = fileNames[i];
+                        string displayName = Path.GetFileName(fileName);
+                        IProgress<LibraryProgress> fileProgress = new FileProgress(progress, i, fileNames.Length, displayName);
+
+                        fileProgress.Report(new LibraryProgress($"Converting {displayName}", 0, 0, true));
+                        ConvertLibrary(fileName, options, fileProgress, token);
+                        progress.Report(new LibraryProgress($"Converted {displayName}", 1, 1)
+                        {
+                            CountText = "Complete",
+                            OverallValue = i + 1,
+                            OverallMaximum = fileNames.Length,
+                            OverallText = $"File {i + 1:N0} of {fileNames.Length:N0}: {displayName}",
+                            GroupText = options.BuildAtlasMetadata ? "Atlas complete" : "Runtime textures complete"
+                        });
+                    }
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                toolStripProgressBar.Value = 0;
+                toolStripStatusLabel.Text = "Conversion cancelled.";
+                return;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.ToString());
+                return;
             }
 
             toolStripProgressBar.Value = 0;
-            ShowImageImportFailures("转换图库", failures, failureCount);
 
-            MessageBox.Show(string.Format("已成功转换 {0} 个图库。",
-                successCount.ToString(CultureInfo.InvariantCulture)));
+            MessageBox.Show(string.Format("Successfully converted {0} {1}",
+                (options.FileNames.Length).ToString(),
+                (options.FileNames.Length > 1) ? "libraries" : "library"));
+        }
+
+        private void ConvertLibrary(string fileName, LibraryConversionOptions options, IProgress<LibraryProgress> progress, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            string extension = Path.GetExtension(fileName).ToUpper();
+
+            if (extension == ".WTL")
+            {
+                WTLLibrary WTLlib = new WTLLibrary(fileName);
+                WTLlib.ToMLibrary(false, progress, token, options);
+            }
+            else if (extension == ".LIB")
+            {
+                int currentVersion;
+                using (FileStream stream = new FileStream(fileName, FileMode.Open, FileAccess.Read))
+                using (BinaryReader reader = new BinaryReader(stream))
+                {
+                    currentVersion = reader.ReadInt32();
+                }
+
+                if (currentVersion == 1)
+                {
+                    CrystalLibraryV1 v1Lib = new CrystalLibraryV1(fileName);
+                    v1Lib.ToMLibrary(false, progress, token, options);
+                }
+                else
+                {
+                    CrystalLibraryV2 v2Lib = new CrystalLibraryV2(fileName);
+                    v2Lib.ToMLibrary(false, progress, token, options);
+                }
+            }
+            else
+            {
+                WeMadeLibrary WILlib = new WeMadeLibrary(fileName);
+                WILlib.ToMLibrary(false, progress, token, options);
+            }
+        }
+
+        private sealed class FileProgress : IProgress<LibraryProgress>
+        {
+            private readonly IProgress<LibraryProgress> _inner;
+            private readonly int _fileIndex;
+            private readonly int _fileCount;
+            private readonly string _fileName;
+
+            public FileProgress(IProgress<LibraryProgress> inner, int fileIndex, int fileCount, string fileName)
+            {
+                _inner = inner;
+                _fileIndex = fileIndex;
+                _fileCount = fileCount;
+                _fileName = fileName;
+            }
+
+            public void Report(LibraryProgress value)
+            {
+                if (value == null)
+                    return;
+
+                if (value.OverallMaximum <= 0)
+                    value.OverallMaximum = _fileCount;
+
+                if (value.OverallValue <= 0)
+                    value.OverallValue = _fileIndex;
+
+                if (string.IsNullOrEmpty(value.OverallText))
+                    value.OverallText = $"File {_fileIndex + 1:N0} of {_fileCount:N0}: {_fileName}";
+
+                _inner.Report(value);
+            }
         }
 
         private void copyToToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (_library == null) return;
             if (PreviewListView.SelectedIndices.Count == 0) return;
             if (SaveLibraryDialog.ShowDialog() != DialogResult.OK) return;
 
-            string targetPath = SaveLibraryDialog.FileName;
+            Mir3Library tempLibrary = new Mir3Library(SaveLibraryDialog.FileName);
 
-            try
+            List<int> copyList = new List<int>();
+
+            for (int i = 0; i < PreviewListView.SelectedIndices.Count; i++)
+                copyList.Add(PreviewListView.SelectedIndices[i]);
+
+            copyList.Sort();
+
+            for (int i = 0; i < copyList.Count; i++)
             {
-                List<int> copyList = new List<int>();
-
-                for (int i = 0; i < PreviewListView.SelectedIndices.Count; i++)
-                    copyList.Add(PreviewListView.SelectedIndices[i]);
-
-                copyList.Sort();
-
-                if (IsSameFilePath(targetPath, _library.FileName))
-                {
-                    CopySelectedImagesToCurrentLibrary(copyList);
-                    return;
-                }
-
-                using Mir3Library tempLibrary = new Mir3Library(targetPath);
-
-                for (int i = 0; i < copyList.Count; i++)
-                {
-                    Mir3Library.Mir3Image image = _library.GetImage(copyList[i]);
-                    tempLibrary.Images.Add(CloneMir3Image(image, tempLibrary));
-                }
-
-                tempLibrary.Save(targetPath);
+                Mir3Library.Mir3Image image = _library.GetImage(copyList[i]);
+                tempLibrary.AddImage(image.Image, image.OffSetX, image.OffSetY);
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString(), "复制到图库失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
 
-        private void CopySelectedImagesToCurrentLibrary(List<int> copyList)
-        {
-            int originalCount = _library.Images.Count;
-
-            try
-            {
-                for (int i = 0; i < copyList.Count; i++)
-                {
-                    Mir3Library.Mir3Image image = _library.GetImage(copyList[i]);
-                    _library.Images.Add(CloneMir3Image(image, _library));
-                }
-
-                ImageList.Images.Clear();
-                _indexList.Clear();
-                PreviewListView.VirtualListSize = _library.Images.Count;
-
-                if (!TrySaveLibrary(_library.FileName, "复制到图库"))
-                    MarkLibraryDirty("已复制图片，但保存失败。");
-            }
-            catch (Exception ex)
-            {
-                RollBackImages(originalCount);
-                ImageList.Images.Clear();
-                _indexList.Clear();
-                PreviewListView.VirtualListSize = _library.Images.Count;
-                MessageBox.Show(ex.ToString(), "复制到图库失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            tempLibrary.Save(SaveLibraryDialog.FileName);
         }
 
         private void removeBlanksToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (_library == null) return;
-            if (MessageBox.Show("确定要移除空白图片吗？",
-                "移除空白图片",
+            if (MessageBox.Show("Are you sure you want to remove the blank images?",
+                "Remove Blanks",
                 MessageBoxButtons.YesNo) != DialogResult.Yes) return;
 
-            SetImageBoxImage(null);
-            _selectedImage = null;
-            int originalCount = _library.Images.Count;
             _library.RemoveBlanks();
             ImageList.Images.Clear();
             _indexList.Clear();
             PreviewListView.VirtualListSize = _library.Images.Count;
-
-            if (_library.Images.Count != originalCount)
-                MarkLibraryDirty("已移除空白图片，尚未保存。");
         }
 
         private void countBlanksToolStripMenuItem_Click(object sender, EventArgs e)
@@ -546,35 +900,26 @@ namespace LibraryEditor
                 return;
             }
 
+            OpenLibraryDialog.Multiselect = false;
+
+            CrystalLibraryV2.Load = false;
+
             int count = 0;
-            try
-            {
-                MLibraryV2.Load = false;
 
-                for (int i = 0; i < OpenLibraryDialog.FileNames.Length; i++)
+            for (int i = 0; i < OpenLibraryDialog.FileNames.Length; i++)
+            {
+                CrystalLibraryV2 library = new CrystalLibraryV2(OpenLibraryDialog.FileNames[i]);
+
+                for (int x = 0; x < library.Count; x++)
                 {
-                    MLibraryV2 library = new MLibraryV2(OpenLibraryDialog.FileNames[i]);
-                    try
-                    {
-                        for (int x = 0; x < library.Count; x++)
-                        {
-                            if (library.Images[x]?.Length <= 8)
-                                count++;
-                        }
-                    }
-                    finally
-                    {
-                        library.Close();
-                    }
-
+                    if (library.Images[x].Length <= 8)
+                        count++;
                 }
-            }
-            finally
-            {
-                MLibraryV2.Load = true;
-                OpenLibraryDialog.Multiselect = false;
+
+                library.Close();
             }
 
+            CrystalLibraryV2.Load = true;
             MessageBox.Show(count.ToString());
         }
 
@@ -586,7 +931,7 @@ namespace LibraryEditor
 
             short temp;
 
-            if (!short.TryParse(control.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out temp))
+            if (!short.TryParse(control.Text, out temp))
             {
                 control.BackColor = Color.Red;
                 return;
@@ -594,10 +939,11 @@ namespace LibraryEditor
 
             control.BackColor = SystemColors.Window;
 
-            if (ApplyOffsetChange(temp, isXOffset: true))
-                MarkLibraryDirty(radioButtonShadow.Checked
-                    ? "已修改阴影 X 偏移，尚未保存。"
-                    : "已修改图片 X 偏移，尚未保存。");
+            for (int i = 0; i < PreviewListView.SelectedIndices.Count; i++)
+            {
+                Mir3Library.Mir3Image image = _library.GetImage(PreviewListView.SelectedIndices[i]);
+                image.OffSetX = temp;
+            }
         }
 
         private void OffSetYTextBox_TextChanged(object sender, EventArgs e)
@@ -608,7 +954,7 @@ namespace LibraryEditor
 
             short temp;
 
-            if (!short.TryParse(control.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out temp))
+            if (!short.TryParse(control.Text, out temp))
             {
                 control.BackColor = Color.Red;
                 return;
@@ -616,136 +962,81 @@ namespace LibraryEditor
 
             control.BackColor = SystemColors.Window;
 
-            if (ApplyOffsetChange(temp, isXOffset: false))
-                MarkLibraryDirty(radioButtonShadow.Checked
-                    ? "已修改阴影 Y 偏移，尚未保存。"
-                    : "已修改图片 Y 偏移，尚未保存。");
-        }
-
-        private bool ApplyOffsetChange(short value, bool isXOffset)
-        {
-            if (_library == null || radioButtonOverlay.Checked) return false;
-
-            bool changed = false;
             for (int i = 0; i < PreviewListView.SelectedIndices.Count; i++)
             {
                 Mir3Library.Mir3Image image = _library.GetImage(PreviewListView.SelectedIndices[i]);
-                if (image == null) continue;
-
-                if (radioButtonShadow.Checked)
-                {
-                    if (isXOffset)
-                    {
-                        if (image.ShadowOffSetX == value) continue;
-                        image.ShadowOffSetX = value;
-                    }
-                    else
-                    {
-                        if (image.ShadowOffSetY == value) continue;
-                        image.ShadowOffSetY = value;
-                    }
-                }
-                else
-                {
-                    if (isXOffset)
-                    {
-                        if (image.OffSetX == value) continue;
-                        image.OffSetX = value;
-                    }
-                    else
-                    {
-                        if (image.OffSetY == value) continue;
-                        image.OffSetY = value;
-                    }
-                }
-
-                changed = true;
+                image.OffSetY = temp;
             }
-
-            return changed;
         }
 
         private void InsertImageButton_Click(object sender, EventArgs e)
         {
             if (_library == null) return;
             if (_library.FileName == null) return;
-            if (!TryGetSelectedIndex(out int index)) return;
+            if (PreviewListView.SelectedIndices.Count == 0) return;
             if (ImportImageDialog.ShowDialog() != DialogResult.OK) return;
 
             List<string> fileNames = new List<string>(ImportImageDialog.FileNames);
 
             //fileNames.Sort();
 
+            int index = PreviewListView.SelectedIndices[0];
+
             toolStripProgressBar.Value = 0;
             toolStripProgressBar.Maximum = fileNames.Count;
-            List<string> failures = new List<string>();
-            int failureCount = 0;
-            int successCount = 0;
 
             for (int i = fileNames.Count - 1; i >= 0; i--)
             {
                 string fileName = fileNames[i];
 
-                Bitmap image = null;
+                Bitmap image;
 
                 try
                 {
-                    image = LoadBitmapDetached(fileName);
-
-                    string placementFile = Path.Combine(Path.GetDirectoryName(fileName) ?? string.Empty, "Placements", Path.GetFileNameWithoutExtension(fileName));
-                    placementFile = Path.ChangeExtension(placementFile, ".txt");
-
-                    short x = 0;
-                    short y = 0;
-
-                    if (File.Exists(placementFile))
-                    {
-                        string[] placements = File.ReadAllLines(placementFile);
-
-                        if (placements.Length > 0)
-                            short.TryParse(placements[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out x);
-                        if (placements.Length > 1)
-                            short.TryParse(placements[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out y);
-                    }
-
-                    _library.InsertImage(index, image, x, y);
-                    image = null;
-
-                    successCount++;
-                    toolStripProgressBar.Value++;
+                    image = new Bitmap(fileName);
                 }
-                catch (Exception ex)
+                catch
                 {
-                    image?.Dispose();
-                    AddImageImportFailure(failures, ref failureCount, fileName, ex);
+                    continue;
                 }
+
+                fileName = Path.Combine(Path.GetDirectoryName(fileName), "Placements", Path.GetFileNameWithoutExtension(fileName));
+                fileName = Path.ChangeExtension(fileName, ".txt");
+
+                short x = 0;
+                short y = 0;
+
+                if (File.Exists(fileName))
+                {
+                    string[] placements = File.ReadAllLines(fileName);
+
+                    if (placements.Length > 0)
+                        short.TryParse(placements[0], out x);
+                    if (placements.Length > 1)
+                        short.TryParse(placements[1], out y);
+                }
+
+                _library.InsertImage(index, image, x, y);
+
+                toolStripProgressBar.Value++;
             }
 
             ImageList.Images.Clear();
             _indexList.Clear();
             PreviewListView.VirtualListSize = _library.Images.Count;
             toolStripProgressBar.Value = 0;
-            ShowImageImportFailures("插入图片", failures, failureCount);
-            if (successCount > 0)
-                MarkLibraryDirty("已插入图片，尚未保存。");
+            _library.Save(_library._fileName);
         }
 
         private void safeToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (_library == null) return;
-            if (MessageBox.Show("确定要移除空白图片吗？",
-                "移除空白图片", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
+            if (MessageBox.Show("Are you sure you want to remove the blank images?",
+                "Remove Blanks", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
 
-            SetImageBoxImage(null);
-            _selectedImage = null;
-            int originalCount = _library.Images.Count;
             _library.RemoveBlanks(true);
             ImageList.Images.Clear();
             _indexList.Clear();
             PreviewListView.VirtualListSize = _library.Images.Count;
-
-            if (_library.Images.Count != originalCount)
-                MarkLibraryDirty("已移除空白图片，尚未保存。");
         }
 
         private const int HowDeepToScan = 6;
@@ -816,232 +1107,81 @@ namespace LibraryEditor
             if (_library.FileName == null) return;
             if (PreviewListView.SelectedIndices.Count == 0) return;
 
-            string libraryName = Path.GetFileNameWithoutExtension(_library.FileName);
-            if (string.IsNullOrWhiteSpace(libraryName))
-                libraryName = "Library";
+            string _fileName = Path.GetFileName(OpenLibraryDialog.FileName);
+            string _newName = _fileName.Remove(_fileName.IndexOf('.'));
+            string _folder = Application.StartupPath + "\\Exported\\" + _newName + "\\";
 
-            string _folder = Path.Combine(Application.StartupPath, "Exported", libraryName) + Path.DirectorySeparatorChar;
+            Bitmap blank = new Bitmap(1, 1);
 
-            using Bitmap blank = new Bitmap(1, 1);
+            // Create the folder if it doesn't exist.
+            (new FileInfo(_folder)).Directory.Create();
 
-            List<int> selectedIndices = PreviewListView.SelectedIndices.Cast<int>().OrderBy(x => x).ToList();
-            string placementFolder = Path.Combine(_folder, "Placements");
+            ListView.SelectedIndexCollection _col = PreviewListView.SelectedIndices;
 
             toolStripProgressBar.Value = 0;
-            toolStripProgressBar.Maximum = selectedIndices.Count;
+            toolStripProgressBar.Maximum = _col.Count;
 
-            try
+            for (int i = _col[0]; i < (_col[0] + _col.Count); i++)
             {
-                Directory.CreateDirectory(_folder);
-                Directory.CreateDirectory(placementFolder);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("创建导出目录失败。\r\n\r\n" + ex, "导出图片", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                toolStripProgressBar.Value = 0;
-                return;
-            }
-
-            List<string> failures = new List<string>();
-            int failureCount = 0;
-            int successCount = 0;
-
-            foreach (int i in selectedIndices)
-            {
-                string imageFileName = Path.Combine(_folder, i.ToString(CultureInfo.InvariantCulture) + ".png");
-
-                try
+                _exportImage = _library.GetImage(i);
+                if (_exportImage?.Image == null)
                 {
-                    _exportImage = _library.GetImage(i);
-
-                    LibraryFileWriter.WriteFileAtomically(
-                        imageFileName,
-                        tempPath =>
-                        {
-                            if (_exportImage?.Image == null)
-                                blank.Save(tempPath, ImageFormat.Png);
-                            else
-                                _exportImage.Image.Save(tempPath, ImageFormat.Png);
-                        });
-
-                    int offSetX = _exportImage?.OffSetX ?? 0;
-                    int offSetY = _exportImage?.OffSetY ?? 0;
-
-                    LibraryFileWriter.WriteAllLinesAtomically(
-                        Path.Combine(placementFolder, i.ToString(CultureInfo.InvariantCulture) + ".txt"),
-                        new[]
-                        {
-                            offSetX.ToString(CultureInfo.InvariantCulture),
-                            offSetY.ToString(CultureInfo.InvariantCulture)
-                        });
-
-                    successCount++;
+                    blank.Save(_folder + i.ToString() + ".png", ImageFormat.Png);
                 }
-                catch (Exception ex)
+                else
                 {
-                    AddImageImportFailure(failures, ref failureCount, imageFileName, ex);
+                    _exportImage.Image.Save(_folder + i.ToString() + ".png", ImageFormat.Png);
                 }
-                finally
-                {
-                    toolStripProgressBar.Value++;
-                }
+
+                toolStripProgressBar.Value++;
+
+                if (!Directory.Exists(_folder + "/Placements/"))
+                    Directory.CreateDirectory(_folder + "/Placements/");
+
+                int offSetX = _exportImage?.OffSetX ?? 0;
+                int offSetY = _exportImage?.OffSetY ?? 0;
+
+                File.WriteAllLines(_folder + "/Placements/" + i.ToString() + ".txt", new string[] { offSetX.ToString(), offSetY.ToString() });
             }
 
             toolStripProgressBar.Value = 0;
-            ShowImageImportFailures("导出图片", failures, failureCount);
-
-            if (successCount > 0)
-                MessageBox.Show(
-                    string.Format(CultureInfo.InvariantCulture, "已导出 {0} 张图片到 {1}", successCount, _folder),
-                    "图片已导出",
-                    MessageBoxButtons.OK);
+            MessageBox.Show("Saving to " + _folder + "...", "Image Saved", MessageBoxButtons.OK);
         }
 
         // Don't let the splitter go out of sight on resizing.
         private void LMain_Resize(object sender, EventArgs e)
         {
-            ClampMainSplitter();
-            RefreshPreviewListLayout();
-        }
-
-        private void PreviewListPanel_Resize(object sender, EventArgs e)
-        {
-            RefreshPreviewListLayout();
-        }
-
-        private void ImagePanel_Resize(object sender, EventArgs e)
-        {
-            RefreshImageBoxLayout();
-        }
-
-        private void ClampMainSplitter()
-        {
-            const int minimumPreviewHeight = 150;
-
-            int maxDistance = splitContainer1.ClientSize.Height - splitContainer1.SplitterWidth - minimumPreviewHeight;
-
-            if (maxDistance < splitContainer1.Panel1MinSize)
-                maxDistance = splitContainer1.Panel1MinSize;
-
-            if (splitContainer1.SplitterDistance > maxDistance)
+            if (splitContainer1.SplitterDistance <= this.Height - 150) return;
+            if (this.Height - 150 > 0)
             {
-                splitContainer1.SplitterDistance = maxDistance;
+                splitContainer1.SplitterDistance = this.Height - 150;
             }
         }
 
-        private void RefreshPreviewListLayout()
+        // Resize the image(Zoom).
+        private Image ImageBoxZoom(Image image, Size size)
         {
-            PreviewListView.Dock = DockStyle.Fill;
-            PreviewListView.Bounds = splitContainer1.Panel2.ClientRectangle;
-            PreviewListView.Invalidate();
-        }
-
-        private void RefreshImageBoxLayout(bool resetScroll = false)
-        {
-            if (ImageBox.Image == null)
-            {
-                panel.AutoScrollMinSize = Size.Empty;
-                ImageBox.Location = new Point(ImagePreviewPadding, ImagePreviewPadding);
-                return;
-            }
-
-            if (resetScroll)
-                panel.AutoScrollPosition = Point.Empty;
-
-            ImageBox.Size = ImageBox.Image.Size;
-
-            Size viewport = panel.ClientSize;
-            Size imageSize = ImageBox.Size;
-            Size paddedImageSize = new Size(
-                imageSize.Width + ImagePreviewPadding * 2,
-                imageSize.Height + ImagePreviewPadding * 2);
-
-            panel.AutoScrollMinSize = paddedImageSize;
-
-            bool needsHorizontalScroll = paddedImageSize.Width > viewport.Width;
-            bool needsVerticalScroll = paddedImageSize.Height > viewport.Height;
-
-            int x = needsHorizontalScroll
-                ? ImagePreviewPadding
-                : Math.Max(ImagePreviewPadding, (viewport.Width - imageSize.Width) / 2);
-
-            int y = needsVerticalScroll
-                ? ImagePreviewPadding
-                : Math.Max(ImagePreviewPadding, (viewport.Height - imageSize.Height) / 2);
-
-            ImageBox.Location = new Point(x, y);
-        }
-
-        private Image GetSelectedImage()
-        {
-            if (_selectedImage == null) return null;
-
-            if (radioButtonShadow.Checked)
-                return _selectedImage.ShadowImage;
-
-            if (radioButtonOverlay.Checked)
-                return _selectedImage.OverlayImage;
-
-            return _selectedImage.Image;
-        }
-
-        private void SetImageBoxImage(Image image)
-        {
-            if (_zoomImage != null)
-            {
-                if (ReferenceEquals(ImageBox.Image, _zoomImage))
-                    ImageBox.Image = null;
-
-                _zoomImage.Dispose();
-                _zoomImage = null;
-            }
-
-            ImageBox.Image = image;
+            _originalImage = _selectedImage.Image;
+            Bitmap _bmp = new Bitmap(_originalImage, Convert.ToInt32(_originalImage.Width * size.Width), Convert.ToInt32(_originalImage.Height * size.Height));
+            Graphics _gfx = Graphics.FromImage(_bmp);
+            return _bmp;
         }
 
         // Zoom in and out.
         private void ZoomTrackBar_Scroll(object sender, EventArgs e)
         {
-            Image sourceImage = GetSelectedImage();
-
-            if (sourceImage == null)
+            if (ImageBox.Image == null)
             {
                 ZoomTrackBar.Value = 1;
-                SetImageBoxImage(null);
-                RefreshImageBoxLayout(true);
-                return;
             }
-
-            if (ZoomTrackBar.Value == 1)
-            {
-                SetImageBoxImage(sourceImage);
-                RefreshImageBoxLayout(true);
-                return;
-            }
-
             if (ZoomTrackBar.Value > 0)
             {
-                Bitmap newBmp = null;
                 try
                 {
-                    if (!TryGetSelectedIndex(out int selectedIndex) || !TryEnsureImageVisible(selectedIndex))
-                        return;
+                    PreviewListView.Items[(int)nudJump.Value].EnsureVisible();
 
-                    int zoom = ZoomTrackBar.Value;
-                    long zoomWidth = (long)sourceImage.Width * zoom;
-                    long zoomHeight = (long)sourceImage.Height * zoom;
-                    if (!CanAllocatePreviewBitmap(zoomWidth, zoomHeight))
-                    {
-                        SetImageBoxImage(sourceImage);
-                        ZoomTrackBar.Value = 1;
-                        RefreshImageBoxLayout(true);
-                        toolStripStatusLabel.ForeColor = Color.Red;
-                        toolStripStatusLabel.Text = $"预览缩放尺寸过大，已恢复 1x: {zoomWidth:#,##0}x{zoomHeight:#,##0}";
-                        return;
-                    }
-
-                    newBmp = new Bitmap((int)zoomWidth, (int)zoomHeight);
-                    using (System.Drawing.Graphics g = System.Drawing.Graphics.FromImage(newBmp))
+                    Bitmap _newBMP = new Bitmap(_selectedImage.Width * ZoomTrackBar.Value, _selectedImage.Height * ZoomTrackBar.Value);
+                    using (System.Drawing.Graphics g = System.Drawing.Graphics.FromImage(_newBMP))
                     {
                         if (checkBoxPreventAntiAliasing.Checked == true)
                         {
@@ -1054,22 +1194,17 @@ namespace LibraryEditor
                             g.InterpolationMode = InterpolationMode.NearestNeighbor;
                         }
 
-                        g.DrawImage(sourceImage, new Rectangle(0, 0, newBmp.Width, newBmp.Height));
+                        g.DrawImage(_selectedImage.Image, new Rectangle(0, 0, _newBMP.Width, _newBMP.Height));
                     }
-
-                    SetImageBoxImage(newBmp);
-                    _zoomImage = newBmp;
-                    newBmp = null;
-                    RefreshImageBoxLayout(true);
+                    ImageBox.Image = _newBMP;
 
                     toolStripStatusLabel.ForeColor = SystemColors.ControlText;
-                    toolStripStatusLabel.Text = "当前图片: " + string.Format("{0} / {1}",
-                        selectedIndex.ToString(),
+                    toolStripStatusLabel.Text = "Selected Image: " + string.Format("{0} / {1}",
+                        PreviewListView.SelectedIndices[0].ToString(),
                         (PreviewListView.Items.Count - 1).ToString());
                 }
                 catch
                 {
-                    newBmp?.Dispose();
                     return;
                 }
             }
@@ -1096,7 +1231,7 @@ namespace LibraryEditor
             if (_col.Count > 1)
             {
                 toolStripStatusLabel.ForeColor = Color.Red;
-                toolStripStatusLabel.Text = "已选择多张图片。";
+                toolStripStatusLabel.Text = "Multiple images selected.";
             }
         }
 
@@ -1104,47 +1239,24 @@ namespace LibraryEditor
         {
             if (_library == null) return;
             if (_library.FileName == null) return;
-            if (!TryGetSelectedIndex(out int selectedIndex)) return;
+            if (PreviewListView.SelectedIndices.Count == 0) return;
 
-            using OpenFileDialog ofd = new OpenFileDialog();
-            if (ofd.ShowDialog() != DialogResult.OK || string.IsNullOrWhiteSpace(ofd.FileName)) return;
+            OpenFileDialog ofd = new OpenFileDialog();
+            ofd.ShowDialog();
+
+            if (ofd.FileName == "") return;
+
+            Bitmap newBmp = new Bitmap(ofd.FileName);
 
             ImageList.Images.Clear();
             _indexList.Clear();
-            SetImageBoxImage(null);
-            _selectedImage = null;
-
-            Bitmap newBmp = null;
-            try
-            {
-                short offsetX = _library.Images[selectedIndex]?.OffSetX ?? 0;
-                short offsetY = _library.Images[selectedIndex]?.OffSetY ?? 0;
-
-                newBmp = LoadBitmapDetached(ofd.FileName);
-                _library.ReplaceImage(selectedIndex, newBmp, offsetX, offsetY);
-                newBmp = null;
-            }
-            catch (Exception ex)
-            {
-                newBmp?.Dispose();
-                MessageBox.Show(ex.ToString(), "替换图片失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
+            _library.ReplaceImage(PreviewListView.SelectedIndices[0], newBmp, 0, 0);
             PreviewListView.VirtualListSize = _library.Images.Count;
 
             try
             {
-                if (PreviewListView.Items.Count > 0)
-                    PreviewListView.RedrawItems(0, PreviewListView.Items.Count - 1, true);
-
-                if (selectedIndex < 0 || selectedIndex >= _library.Images.Count)
-                    return;
-
-                _selectedImage = _library.Images[selectedIndex];
-                SetImageBoxImage(_selectedImage.Image);
-                RefreshImageBoxLayout(true);
-                MarkLibraryDirty("已替换图片，尚未保存。");
+                PreviewListView.RedrawItems(0, PreviewListView.Items.Count - 1, true);
+                ImageBox.Image = _library.Images[PreviewListView.SelectedIndices[0]].Image;
             }
             catch (Exception)
             {
@@ -1154,50 +1266,52 @@ namespace LibraryEditor
 
         private void previousImageToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (!PreviewListView.Visible || PreviewListView.Items.Count == 0) return;
+            try
+            {
+                if (PreviewListView.Visible && PreviewListView.Items.Count > 0)
+                {
+                    int index = PreviewListView.SelectedIndices[0];
+                    index = index - 1;
+                    PreviewListView.SelectedIndices.Clear();
+                    this.PreviewListView.Items[index].Selected = true;
+                    PreviewListView.Items[index].EnsureVisible();
 
-            int index = TryGetSelectedIndex(out int selectedIndex)
-                ? selectedIndex - 1
-                : PreviewListView.Items.Count - 1;
-
-            while (index >= 0)
+                    if (_selectedImage == null || _selectedImage.Height == 1 && _selectedImage.Width == 1 && PreviewListView.SelectedIndices[0] != 0)
+                    {
+                        previousImageToolStripMenuItem_Click(null, null);
+                    }
+                }
+            }
+            catch (Exception)
             {
                 PreviewListView.SelectedIndices.Clear();
-                PreviewListView.Items[index].Selected = true;
-                PreviewListView.Items[index].EnsureVisible();
-
-                if (!IsBlankSlot(_selectedImage) || index == 0)
-                    return;
-
-                index--;
+                this.PreviewListView.Items[PreviewListView.Items.Count - 1].Selected = true;
             }
-
-            PreviewListView.SelectedIndices.Clear();
-            PreviewListView.Items[0].Selected = true;
         }
 
         private void nextImageToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (!PreviewListView.Visible || PreviewListView.Items.Count == 0) return;
+            try
+            {
+                if (PreviewListView.Visible && PreviewListView.Items.Count > 0)
+                {
+                    int index = PreviewListView.SelectedIndices[0];
+                    index = index + 1;
+                    PreviewListView.SelectedIndices.Clear();
+                    this.PreviewListView.Items[index].Selected = true;
+                    PreviewListView.Items[index].EnsureVisible();
 
-            int index = TryGetSelectedIndex(out int selectedIndex)
-                ? selectedIndex + 1
-                : 0;
-
-            while (index < PreviewListView.Items.Count)
+                    if (_selectedImage == null || _selectedImage.Height == 1 && _selectedImage.Width == 1 && PreviewListView.SelectedIndices[0] != 0)
+                    {
+                        nextImageToolStripMenuItem_Click(null, null);
+                    }
+                }
+            }
+            catch (Exception)
             {
                 PreviewListView.SelectedIndices.Clear();
-                PreviewListView.Items[index].Selected = true;
-                PreviewListView.Items[index].EnsureVisible();
-
-                if (!IsBlankSlot(_selectedImage) || index == 0)
-                    return;
-
-                index++;
+                this.PreviewListView.Items[0].Selected = true;
             }
-
-            PreviewListView.SelectedIndices.Clear();
-            PreviewListView.Items[0].Selected = true;
         }
 
         // Move Left and Right through images.
@@ -1217,11 +1331,8 @@ namespace LibraryEditor
 
             if (keyData == Keys.Up) //Not 100% accurate but works for now.
             {
-                if (PreviewListView.Items.Count == 0 || !TryGetSelectedIndex(out int selectedIndex))
-                    return base.ProcessCmdKey(ref msg, keyData);
-
                 double d = Math.Floor((double)(PreviewListView.Width / 67));
-                int index = selectedIndex - (int)d;
+                int index = PreviewListView.SelectedIndices[0] - (int)d;
 
                 PreviewListView.SelectedIndices.Clear();
                 if (index < 0)
@@ -1234,11 +1345,8 @@ namespace LibraryEditor
 
             if (keyData == Keys.Down) //Not 100% accurate but works for now.
             {
-                if (PreviewListView.Items.Count == 0 || !TryGetSelectedIndex(out int selectedIndex))
-                    return base.ProcessCmdKey(ref msg, keyData);
-
                 double d = Math.Floor((double)(PreviewListView.Width / 67));
-                int index = selectedIndex + (int)d;
+                int index = PreviewListView.SelectedIndices[0] + (int)d;
 
                 PreviewListView.SelectedIndices.Clear();
                 if (index > PreviewListView.Items.Count - 1)
@@ -1274,13 +1382,12 @@ namespace LibraryEditor
 
         private void nudJump_ValueChanged(object sender, EventArgs e)
         {
-            int index = (int)nudJump.Value;
-            if (index < 0 || index >= PreviewListView.Items.Count)
-                return;
-
-            PreviewListView.SelectedIndices.Clear();
-            PreviewListView.Items[index].Selected = true;
-            PreviewListView.Items[index].EnsureVisible();
+            if (PreviewListView.Items.Count - 1 >= nudJump.Value)
+            {
+                PreviewListView.SelectedIndices.Clear();
+                PreviewListView.Items[(int)nudJump.Value].Selected = true;
+                PreviewListView.Items[(int)nudJump.Value].EnsureVisible();
+            }
         }
 
         private void OpenLibraryDialog_FileOk(object sender, System.ComponentModel.CancelEventArgs e)
@@ -1288,80 +1395,87 @@ namespace LibraryEditor
 
         }
 
-        private void RefreshPreviewMode(bool enableImageEditing)
+        private void radioButtonImage_CheckedChanged(object sender, EventArgs e)
         {
-            if (_library == null) return;
-
-            bool enableOffsetEditing = !radioButtonOverlay.Checked;
-            int index = PreviewListView.SelectedIndices.Count > 0
-                ? PreviewListView.SelectedIndices[0]
-                : -1;
-
+            int index = PreviewListView.SelectedIndices[0];
             ImageList.Images.Clear();
+            PreviewListView.Items.Clear();
             _indexList.Clear();
 
-            PreviewListView.SelectedIndices.Clear();
             PreviewListView.VirtualListSize = 0;
             PreviewListView.VirtualListSize = _library.Images.Count;
 
-            bool hasSelection = index >= 0 && index < PreviewListView.Items.Count;
-
-            OffSetXTextBox.Enabled = enableOffsetEditing && hasSelection;
-            OffSetYTextBox.Enabled = enableOffsetEditing && hasSelection;
-            AddButton.Enabled = enableImageEditing;
-            DeleteButton.Enabled = enableImageEditing && hasSelection;
-            buttonReplace.Enabled = enableImageEditing && hasSelection;
-            InsertImageButton.Enabled = enableImageEditing && hasSelection;
-
-            if (!hasSelection)
-            {
-                ClearInterface();
-                return;
-            }
+            OffSetXTextBox.Enabled = true;
+            OffSetYTextBox.Enabled = true;
+            AddButton.Enabled = true;
+            DeleteButton.Enabled = true;
+            buttonReplace.Enabled = true;
+            InsertImageButton.Enabled = true;
 
             PreviewListView.Items[index].Selected = true;
             PreviewListView.Items[index].EnsureVisible();
         }
 
-        private void radioButtonImage_CheckedChanged(object sender, EventArgs e)
-        {
-            if (!radioButtonImage.Checked) return;
-
-            RefreshPreviewMode(true);
-        }
-
         private void radioButtonShadow_CheckedChanged(object sender, EventArgs e)
         {
-            if (!radioButtonShadow.Checked) return;
+            int index = PreviewListView.SelectedIndices[0];
+            ImageList.Images.Clear();
+            PreviewListView.Items.Clear();
+            _indexList.Clear();
 
-            RefreshPreviewMode(false);
+            PreviewListView.VirtualListSize = 0;
+            PreviewListView.VirtualListSize = _library.Images.Count;
+
+            OffSetXTextBox.Enabled = false;
+            OffSetYTextBox.Enabled = false;
+            AddButton.Enabled = false;
+            DeleteButton.Enabled = false;
+            buttonReplace.Enabled = false;
+            InsertImageButton.Enabled = false;
+
+            PreviewListView.Items[index].Selected = true;
+            PreviewListView.Items[index].EnsureVisible();
         }
 
         private void radioButtonOverlay_CheckedChanged(object sender, EventArgs e)
         {
-            if (!radioButtonOverlay.Checked) return;
+            int index = PreviewListView.SelectedIndices[0];
+            ImageList.Images.Clear();
+            PreviewListView.Items.Clear();
+            _indexList.Clear();
 
-            RefreshPreviewMode(false);
+            PreviewListView.VirtualListSize = 0;
+            PreviewListView.VirtualListSize = _library.Images.Count;
+
+            OffSetXTextBox.Enabled = false;
+            OffSetYTextBox.Enabled = false;
+            AddButton.Enabled = false;
+            DeleteButton.Enabled = false;
+            buttonReplace.Enabled = false;
+            InsertImageButton.Enabled = false;
+
+            PreviewListView.Items[index].Selected = true;
+            PreviewListView.Items[index].EnsureVisible();
         }
 
         private void nudJump_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Enter)
             {
-                int index = (int)nudJump.Value;
-                if (TryEnsureImageVisible(index))
+                //Enter key is down.
+                if (PreviewListView.Items.Count - 1 >= nudJump.Value)
                 {
                     PreviewListView.SelectedIndices.Clear();
-                    PreviewListView.Items[index].Selected = true;
+                    PreviewListView.Items[(int)nudJump.Value].Selected = true;
+                    PreviewListView.Items[(int)nudJump.Value].EnsureVisible();
                 }
-
                 e.Handled = true;
                 e.SuppressKeyPress = true;
             }
         }
         public static DialogResult InputBox(string title, string promptText, ref string value)
         {
-            using Form form = new Form();
+            Form form = new Form();
             Label label = new Label();
             TextBox textBox = new TextBox();
             Button buttonOk = new Button();
@@ -1371,24 +1485,24 @@ namespace LibraryEditor
             label.Text = promptText;
             textBox.Text = value;
 
-            buttonOk.Text = "确定";
-            buttonCancel.Text = "取消";
+            buttonOk.Text = "OK";
+            buttonCancel.Text = "Cancel";
             buttonOk.DialogResult = DialogResult.OK;
             buttonCancel.DialogResult = DialogResult.Cancel;
 
-            label.SetBounds(12, 18, 416, 18);
-            textBox.SetBounds(12, 42, 416, 23);
-            buttonOk.SetBounds(260, 78, 80, 26);
-            buttonCancel.SetBounds(348, 78, 80, 26);
+            label.SetBounds(9, 20, 372, 13);
+            textBox.SetBounds(12, 36, 372, 20);
+            buttonOk.SetBounds(228, 72, 75, 23);
+            buttonCancel.SetBounds(309, 72, 75, 23);
 
             label.AutoSize = true;
             textBox.Anchor = textBox.Anchor | AnchorStyles.Right;
             buttonOk.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             buttonCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
 
-            form.ClientSize = new Size(440, 116);
+            form.ClientSize = new Size(396, 107);
             form.Controls.AddRange(new Control[] { label, textBox, buttonOk, buttonCancel });
-            form.ClientSize = new Size(Math.Max(440, label.Right + 12), form.ClientSize.Height);
+            form.ClientSize = new Size(Math.Max(300, label.Right + 10), form.ClientSize.Height);
             form.FormBorderStyle = FormBorderStyle.FixedDialog;
             form.StartPosition = FormStartPosition.CenterScreen;
             form.MinimizeBox = false;
@@ -1407,54 +1521,63 @@ namespace LibraryEditor
         private void AddBlanksButton_Click(object sender, EventArgs e)
         {
             if (_library == null) return;
-            if (_library.FileName == null) return;
+            if (_library._fileName == null) return;
 
             string value = "0";
-            if (InputBox("添加空白图片", "要在图库末尾添加多少张空白图片：", ref value) != DialogResult.OK)
-                return;
-
-            if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int blankCount))
+            int temp = 0;
+            if (InputBox("Add Blanks To End Of Library", "How Many Blank Images To Add:", ref value) == DialogResult.OK)
             {
-                MessageBox.Show("请输入数字。");
-                return;
+                if (!int.TryParse(value, out temp))
+                {
+                    MessageBox.Show("Should be a numeric value");
+                    return;
+                }
+                if (temp <= 0)
+                {
+                    MessageBox.Show("Must be atleast 1");
+                    return;
+                }
+                newImages = temp;
             }
-            if (blankCount <= 0)
+            for (int i = 0; i < newImages; i++)
             {
-                MessageBox.Show("数量必须至少为 1。");
-                return;
+                Bitmap image = new Bitmap(1, 1);
+                _library.AddImage(image, 0, 0);
             }
-
-            _library.AddBlankImages(blankCount);
             PreviewListView.VirtualListSize = _library.Images.Count;
-            MarkLibraryDirty("已添加空白图片，尚未保存。");
         }
         private void InsertBlanksButton_Click(object sender, EventArgs e)
         {
             if (_library == null) return;
-            if (_library.FileName == null) return;
-            if (!TryGetSelectedIndex(out int index)) return;
+            if (_library._fileName == null) return;
+            if (PreviewListView.SelectedIndices.Count == 0) return;
 
             string value = "0";
-            if (InputBox("插入空白图片", "要在当前选中位置插入多少张空白图片：", ref value) != DialogResult.OK)
-                return;
-
-            if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int blankCount))
+            int temp = 0;
+            if (InputBox("Insert Blank Images At Current Selected Position", "How Many Blank Images To Insert:", ref value) == DialogResult.OK)
             {
-                MessageBox.Show("请输入数字。");
-                return;
+                if (!int.TryParse(value, out temp))
+                {
+                    MessageBox.Show("Should be a numeric value");
+                    return;
+                }
+                if (temp <= 0)
+                {
+                    MessageBox.Show("Must be atleast 1");
+                    return;
+                }
+                newImages = temp;
             }
-            if (blankCount <= 0)
+            int index = PreviewListView.SelectedIndices[0];
+            for (int i = 0; i < newImages; i++)
             {
-                MessageBox.Show("数量必须至少为 1。");
-                return;
+                Bitmap image = new Bitmap(1, 1);
+                _library.InsertImage(index, image, 0, 0);
             }
-
-            _library.InsertBlankImages(index, blankCount);
 
             ImageList.Images.Clear();
             _indexList.Clear();
             PreviewListView.VirtualListSize = _library.Images.Count;
-            MarkLibraryDirty("已插入空白图片，尚未保存。");
         }
         private void MergeButton_Click(object sender, EventArgs e)
         {
@@ -1462,94 +1585,77 @@ namespace LibraryEditor
             if (_library.FileName == null) return;
 
             string value = "1000";
-            if (InputBox("合并图库", "每个对象预留多少张图片：", ref value) != DialogResult.OK)
-                return;
+            int temp = 0;
+            if (InputBox("Merge Blanks", "How Many Images Per Object:", ref value) == DialogResult.OK)
+            {
+                if (!int.TryParse(value, out temp))
+                {
+                    MessageBox.Show("Should be a numeric value");
+                    return;
+                }
+                if (temp <= 0)
+                {
+                    MessageBox.Show("Must be atleast 1");
+                    return;
+                }
+                newImages = temp;
+            }
 
-            if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int reservedImages))
-            {
-                MessageBox.Show("请输入数字。");
-                return;
-            }
-            if (reservedImages <= 0)
-            {
-                MessageBox.Show("数量必须至少为 1。");
-                return;
-            }
+            _library.AddBlanks(newImages);
 
             if (OpenMergeDialog.ShowDialog() != DialogResult.OK) return;
 
             toolStripProgressBar.Maximum = OpenMergeDialog.FileNames.Length;
             toolStripProgressBar.Value = 0;
 
-            int originalImageCount = _library.Images.Count;
-
             try
             {
-                _library.AddBlanks(reservedImages);
-
                 foreach (string file in OpenMergeDialog.FileNames)
                 {
                     if (Path.GetExtension(file).ToUpper() == ".ZL")
                     {
-                        using Mir3Library newLib = new Mir3Library(file);
+                        Mir3Library newLib = new Mir3Library(file);
                         foreach (Mir3Library.Mir3Image image in newLib.Images)
                         {
-                            _library.Images.Add(CloneMir3Image(image, _library));
+                            if (image == null)
+                            {
+                                Bitmap blank = new Bitmap(1, 1);
+                                _library.AddImage(blank, 0, 0);
+                            }
+                            else
+                            {
+                                _library.AddImage(image.Image, image.OffSetX, image.OffSetY);
+                            }
                         }
-
-                        _library.AddBlanks(reservedImages);
                     }
                     else if (Path.GetExtension(file).ToUpper() == ".WTL")
                     {
                         WTLLibrary WTLlib = new WTLLibrary(file);
-                        try
-                        {
-                            WTLlib.MergeToMLibrary(_library, reservedImages);
-                        }
-                        finally
-                        {
-                            WTLlib.Close();
-                        }
+                        WTLlib.MergeToMLibrary(_library, newImages);
                     }
                     else if (Path.GetExtension(file).ToUpper() == ".LIB")
                     {
-                        int CurrentVersion = ReadMirLibraryVersion(file);
+                        FileStream stream = new FileStream(file, FileMode.Open, FileAccess.ReadWrite);
+                        BinaryReader reader = new BinaryReader(stream);
+                        int CurrentVersion = reader.ReadInt32();
+                        stream.Close();
+                        stream.Dispose();
+                        reader.Dispose();
                         if (CurrentVersion == 1)
                         {
-                            MLibrary v1Lib = new MLibrary(file);
-                            try
-                            {
-                                v1Lib.MergeToMLibrary(_library, reservedImages);
-                            }
-                            finally
-                            {
-                                v1Lib.Close();
-                            }
+                            CrystalLibraryV1 v1Lib = new CrystalLibraryV1(file);
+                            v1Lib.MergeToMLibrary(_library, newImages);
                         }
                         else
                         {
-                            MLibraryV2 v2Lib = new MLibraryV2(file);
-                            try
-                            {
-                                v2Lib.MergeToMLibrary(_library, reservedImages);
-                            }
-                            finally
-                            {
-                                v2Lib.Close();
-                            }
+                            CrystalLibraryV2 v2Lib = new CrystalLibraryV2(file);
+                            v2Lib.MergeToMLibrary(_library, newImages);
                         }
                     }
                     else
                     {
                         WeMadeLibrary WILlib = new WeMadeLibrary(file);
-                        try
-                        {
-                            WILlib.MergeToMLibrary(_library, reservedImages);
-                        }
-                        finally
-                        {
-                            WILlib.Close();
-                        }
+                        WILlib.MergeToMLibrary(_library, newImages);
 
                     }
                     toolStripProgressBar.Value++;
@@ -1557,307 +1663,20 @@ namespace LibraryEditor
             }
             catch (Exception ex)
             {
-                RollBackImages(originalImageCount);
-                ImageList.Images.Clear();
-                _indexList.Clear();
-                PreviewListView.VirtualListSize = _library.Images.Count;
-                MessageBox.Show("合并图库失败，已撤销本次合并新增的图片，未保存图库。\r\n\r\n" + ex, "合并图库", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
+                MessageBox.Show(ex.ToString());
             }
-            finally
-            {
-                toolStripProgressBar.Value = 0;
-            }
+
+            toolStripProgressBar.Value = 0;
+
+            MessageBox.Show(string.Format("Successfully merged {0} {1}",
+                (OpenMergeDialog.FileNames.Length).ToString(),
+                (OpenMergeDialog.FileNames.Length > 1) ? "libraries" : "library"));
 
             ImageList.Images.Clear();
             _indexList.Clear();
             PreviewListView.VirtualListSize = _library.Images.Count;
 
-            if (!TrySaveLibrary(_library.FileName, "合并图库"))
-            {
-                MarkLibraryDirty("合并图库已修改，但保存失败。");
-                return;
-            }
-
-            MessageBox.Show(string.Format("已成功合并 {0} 个图库。",
-                (OpenMergeDialog.FileNames.Length).ToString()));
-        }
-
-        private static Bitmap CloneBitmap(Bitmap image)
-        {
-            return image == null ? new Bitmap(1, 1) : new Bitmap(image);
-        }
-
-        private static Bitmap LoadBitmapDetached(string fileName)
-        {
-            using Bitmap source = new Bitmap(fileName);
-            ValidateImportedBitmapDimensions(source, Path.GetFileName(fileName));
-            return new Bitmap(source);
-        }
-
-        private static void ValidateImportedBitmapDimensions(Bitmap bitmap, string description)
-        {
-            if (bitmap == null)
-                throw new InvalidDataException($"{description}: 图片为空。");
-
-            if (bitmap.Width <= 0 ||
-                bitmap.Height <= 0 ||
-                bitmap.Width > short.MaxValue ||
-                bitmap.Height > short.MaxValue ||
-                (long)Pad4(bitmap.Width) * Pad4(bitmap.Height) > MaxImportedImagePixels)
-                throw new InvalidDataException($"{description}: 图片尺寸无效或过大: {bitmap.Width}x{bitmap.Height}。");
-        }
-
-        private static bool CanAllocatePreviewBitmap(long width, long height)
-        {
-            return width > 0 &&
-                   height > 0 &&
-                   width <= int.MaxValue &&
-                   height <= int.MaxValue &&
-                   width * height <= MaxImportedImagePixels;
-        }
-
-        private static int Pad4(int value)
-        {
-            return value + (4 - value % 4) % 4;
-        }
-
-        private static Bitmap CloneNullableBitmap(Bitmap image)
-        {
-            return image == null ? null : new Bitmap(image);
-        }
-
-        private static Mir3Library.Mir3Image CloneMir3Image(Mir3Library.Mir3Image source, Mir3Library targetLibrary)
-        {
-            if (source?.Image == null)
-                return null;
-
-            return new Mir3Library.Mir3Image(
-                CloneNullableBitmap(source.Image),
-                CloneNullableBitmap(source.ShadowImage),
-                CloneNullableBitmap(source.OverlayImage),
-                targetLibrary.Version,
-                targetLibrary.UseBlackKeyTransparency)
-            {
-                OffSetX = source.OffSetX,
-                OffSetY = source.OffSetY,
-                ShadowOffSetX = source.ShadowOffSetX,
-                ShadowOffSetY = source.ShadowOffSetY,
-                ShadowType = source.ShadowType
-            };
-        }
-
-        private static bool IsBlankSlot(Mir3Library.Mir3Image image)
-        {
-            return image == null || (image.Width <= 1 && image.Height <= 1);
-        }
-
-        private static bool IsSameFilePath(string left, string right)
-        {
-            if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
-                return false;
-
-            try
-            {
-                string normalizedLeft = Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                string normalizedRight = Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-                return string.Equals(normalizedLeft, normalizedRight, StringComparison.OrdinalIgnoreCase);
-            }
-            catch
-            {
-                return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
-            }
-        }
-
-        private static int ReadMirLibraryVersion(string fileName)
-        {
-            using FileStream stream = new FileStream(fileName, FileMode.Open, FileAccess.Read, FileShare.Read);
-            using BinaryReader reader = new BinaryReader(stream);
-
-            return reader.ReadInt32();
-        }
-
-        private static void ConvertLegacyLibraryFile(string fileName)
-        {
-            string extension = Path.GetExtension(fileName).ToUpperInvariant();
-
-            if (extension == ".WTL")
-            {
-                WTLLibrary library = new WTLLibrary(fileName);
-                try
-                {
-                    library.ToMLibrary();
-                }
-                finally
-                {
-                    library.Close();
-                }
-
-                return;
-            }
-
-            if (extension == ".LIB")
-            {
-                int currentVersion = ReadMirLibraryVersion(fileName);
-                if (currentVersion == 1)
-                {
-                    MLibrary library = new MLibrary(fileName);
-                    try
-                    {
-                        library.ToMLibrary();
-                    }
-                    finally
-                    {
-                        library.Close();
-                    }
-                }
-                else
-                {
-                    MLibraryV2 library = new MLibraryV2(fileName);
-                    try
-                    {
-                        library.ToMLibrary();
-                    }
-                    finally
-                    {
-                        library.Close();
-                    }
-                }
-
-                return;
-            }
-
-            WeMadeLibrary wilLibrary = new WeMadeLibrary(fileName);
-            try
-            {
-                wilLibrary.ToMLibrary();
-            }
-            finally
-            {
-                wilLibrary.Close();
-            }
-        }
-
-        private static void AddImageImportFailure(List<string> failures, ref int failureCount, string fileName, Exception ex)
-        {
-            failureCount++;
-            if (failures.Count >= 20) return;
-
-            failures.Add($"{Path.GetFileName(fileName)}: {ex.Message}");
-        }
-
-        private void ShowImageImportFailures(string title, List<string> failures, int failureCount)
-        {
-            if (failures == null || failureCount == 0) return;
-
-            string message = string.Join("\r\n", failures);
-            if (failureCount > failures.Count)
-                message += $"\r\n... 另有 {failureCount - failures.Count} 项未显示。";
-
-            MessageBox.Show(
-                message,
-                $"{title}失败 {failureCount} 项",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
-        }
-
-        private bool TrySaveLibrary(string path, string title)
-        {
-            if (_library == null) return false;
-
-            try
-            {
-                _library.Save(path);
-                _libraryDirty = false;
-                UpdateWindowTitle();
-                toolStripStatusLabel.ForeColor = SystemColors.ControlText;
-                toolStripStatusLabel.Text = "图库已保存。";
-                return true;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(
-                    "图库保存失败，当前内存中的修改尚未写入文件。\r\n\r\n" + ex,
-                    title,
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-                return false;
-            }
-        }
-
-        private void MarkLibraryDirty(string message)
-        {
-            if (_library == null) return;
-
-            _libraryDirty = true;
-            UpdateWindowTitle();
-
-            if (!string.IsNullOrWhiteSpace(message))
-            {
-                toolStripStatusLabel.ForeColor = Color.Red;
-                toolStripStatusLabel.Text = message;
-            }
-        }
-
-        private void UpdateWindowTitle()
-        {
-            string title = _library?.FileName;
-            Text = string.IsNullOrWhiteSpace(title)
-                ? "Mir3 图库编辑器"
-                : title + (_libraryDirty ? " *" : string.Empty);
-        }
-
-        private bool ConfirmSaveOrDiscardLibraryChanges()
-        {
-            if (!_libraryDirty || _library == null)
-                return true;
-
-            DialogResult result = MessageBox.Show(
-                this,
-                "当前图库有未保存修改，是否先保存？",
-                "未保存的图库",
-                MessageBoxButtons.YesNoCancel,
-                MessageBoxIcon.Warning);
-
-            if (result == DialogResult.Cancel)
-                return false;
-
-            if (result == DialogResult.No)
-                return true;
-
-            string path = _library.FileName;
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                if (SaveLibraryDialog.ShowDialog(this) != DialogResult.OK)
-                    return false;
-
-                path = SaveLibraryDialog.FileName;
-            }
-
-            return TrySaveLibrary(path, "保存图库");
-        }
-
-        private void RollBackImages(int count)
-        {
-            while (_library != null && _library.Images.Count > count)
-                _library.RemoveImage(_library.Images.Count - 1);
-        }
-
-        private void ReleaseCurrentLibrary()
-        {
-            SetImageBoxImage(null);
-            _selectedImage = null;
-            _exportImage = null;
-
-            PreviewListView.SelectedIndices.Clear();
-            PreviewListView.VirtualListSize = 0;
-            ImageList.Images.Clear();
-            _indexList.Clear();
-
-            _library?.Dispose();
-            _library = null;
-            _libraryDirty = false;
+            _library.Save(_library.FileName);
         }
 
     }

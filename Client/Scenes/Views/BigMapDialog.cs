@@ -1,7 +1,7 @@
 ﻿using Client.Controls;
 using Client.Envir;
 using Client.Models;
-using Client.Rendering;
+using Shared.Rendering;
 using Client.UserModels;
 using Library;
 using Library.SystemModels;
@@ -576,6 +576,8 @@ namespace Client.Scenes.Views
             Color colour = Color.White;
             string name = ob.Name;
             bool isGroupMember = GameScene.Game.GroupBox.Members.Any(x => x.ObjectID == ob.ObjectID);
+            if (control is DXMapInfoControl mapInfoControl)
+                mapInfoControl.Hollow = false;
 
             control.Visible = true;
 
@@ -606,12 +608,11 @@ namespace Client.Scenes.Views
 
                     if (control.Controls.Count == 0) // This is disgusting but its cheap
                     {
-                        new DXControl
+                        new DXMapInfoControl
                         {
                             Parent = control,
                             Location = new Point(1, 1),
                             BackColour = colour,
-                            DrawTexture = true,
                             Size = new Size(3, 3)
                         };
                     }
@@ -645,9 +646,13 @@ namespace Client.Scenes.Views
             {
                 if (MapObject.User.ObjectID == ob.ObjectID)
                 {
-                    size = new Size(3, 3);
-                    control.BorderColour = Color.Lime;
-                    colour = Color.Transparent;
+                    size = new Size(5, 5);
+                    control.Border = false;
+                    control.BorderSize = 1f;
+                    control.BorderColour = Color.Transparent;
+                    colour = Color.Lime;
+                    if (control is DXMapInfoControl playerControl)
+                        playerControl.Hollow = true;
 
                     if (SelectedInfo == GameScene.Game.MapControl.MapInfo)
                     {
@@ -662,14 +667,17 @@ namespace Client.Scenes.Views
                         {
                             bool isVisibleSecond = CEnvir.Now.Millisecond < 500;
 
-                            control.Border = true;
-                            control.BorderSize = 1f;
-                            control.BorderColour = isVisibleSecond ? Color.Lime : Color.Transparent;
+                            control.Border = false;
+                            control.BackColour = isVisibleSecond ? Color.Lime : Color.Transparent;
+                            if (control is DXMapInfoControl playerControl)
+                                playerControl.Hollow = true;
                         }
                         else
                         {
-                            control.BorderSize = 3f;
-                            control.BorderColour = colour;
+                            control.Border = false;
+                            control.BackColour = Color.Lime;
+                            if (control is DXMapInfoControl playerControl)
+                                playerControl.Hollow = true;
                         }
                     };
                 }

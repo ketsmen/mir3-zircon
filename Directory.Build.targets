@@ -1,0 +1,46 @@
+<Project>
+  <Target Name="CleanLegacyRenderingOutput" AfterTargets="Build" Condition="'$(OutputPath)' != ''">
+    <ItemGroup>
+      <LegacyRenderingDirectories Include="$(OutputPath)Rendering\SharpDXD3D9" />
+      <LegacyRenderingDirectories Include="$(OutputPath)Rendering\SharpDXD3D11" />
+      <ServerRenderingDirectories Include="$(OutputPath)Rendering\SilkD3D11" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingDirectories Include="$(OutputPath)Rendering\SilkVulkan" Condition="'$(MSBuildProjectName)' == 'Server'" />
+
+      <LegacyRenderingFiles Include="$(OutputPath)SharpDX.D3DCompiler.dll" />
+      <LegacyRenderingFiles Include="$(OutputPath)SharpDX.Desktop.dll" />
+      <LegacyRenderingFiles Include="$(OutputPath)SharpDX.Direct2D1.dll" />
+      <LegacyRenderingFiles Include="$(OutputPath)SharpDX.Direct3D11.dll" />
+      <LegacyRenderingFiles Include="$(OutputPath)SharpDX.Direct3D9.dll" />
+      <LegacyRenderingFiles Include="$(OutputPath)SharpDX.DXGI.dll" />
+      <LegacyRenderingFiles Include="$(OutputPath)SharpDX.Mathematics.dll" />
+
+      <ServerRenderingFiles Include="$(OutputPath)BCnEncoder.dll" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)CommunityToolkit.HighPerformance.dll" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)RenderingCore.dll" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)RenderingCore.pdb" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)SharpDX.dll" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)SharpDX.DirectSound.dll" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)Silk.NET.Core.dll" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)Silk.NET.Direct3D11.dll" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)Silk.NET.DXGI.dll" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)Silk.NET.Maths.dll" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)Silk.NET.Shaderc.dll" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)Silk.NET.Vulkan.dll" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)Silk.NET.Vulkan.Extensions.KHR.dll" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)runtimes\**\native\shaderc_shared.dll" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)runtimes\**\native\libshaderc_shared.so" Condition="'$(MSBuildProjectName)' == 'Server'" />
+      <ServerRenderingFiles Include="$(OutputPath)runtimes\**\native\libshaderc_shared.dylib" Condition="'$(MSBuildProjectName)' == 'Server'" />
+
+      <NonWinX64ShadercFiles Include="$(OutputPath)runtimes\linux-*\native\libshaderc_shared.so" />
+      <NonWinX64ShadercFiles Include="$(OutputPath)runtimes\osx-*\native\libshaderc_shared.dylib" />
+      <NonWinX64ShadercFiles Include="$(OutputPath)runtimes\win-arm64\native\shaderc_shared.dll" />
+      <NonWinX64ShadercFiles Include="$(OutputPath)runtimes\win-x86\native\shaderc_shared.dll" />
+    </ItemGroup>
+
+    <RemoveDir Directories="@(LegacyRenderingDirectories)" Condition="Exists('%(LegacyRenderingDirectories.Identity)')" />
+    <RemoveDir Directories="@(ServerRenderingDirectories)" Condition="Exists('%(ServerRenderingDirectories.Identity)')" />
+    <Delete Files="@(LegacyRenderingFiles)" TreatErrorsAsWarnings="true" />
+    <Delete Files="@(ServerRenderingFiles)" TreatErrorsAsWarnings="true" />
+    <Delete Files="@(NonWinX64ShadercFiles)" TreatErrorsAsWarnings="true" />
+  </Target>
+</Project>

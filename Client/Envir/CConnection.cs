@@ -176,6 +176,7 @@ namespace Client.Envir
         public void Process(G.GoodVersion p)
         {
             Encryption.SetKey(p.DatabaseKey);
+            CEnvir.ServerSystemDatabaseVersion = p.SystemDatabaseVersion;
 
             LoginScene scene = DXControl.ActiveScene as LoginScene;
 

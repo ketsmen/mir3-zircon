@@ -1,4 +1,4 @@
-﻿using Client.Rendering;
+﻿using Shared.Rendering;
 using Library;
 using SharpDX.DirectSound;
 using System;
@@ -1217,7 +1217,6 @@ namespace Client.Envir
         }
     }
 
-
     public enum SoundType
     {
         None,
@@ -1229,4 +1228,3 @@ namespace Client.Envir
         Player,
     }
 }
-
