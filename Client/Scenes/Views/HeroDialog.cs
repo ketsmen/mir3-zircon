@@ -97,7 +97,7 @@ namespace Client.Scenes.Views
             ClassLabel = CreateLabel(CharacterTab, "职业: -", 12, 30, 120);
             LevelLabel = CreateLabel(CharacterTab, "等级: -", 140, 30, 120);
             StateLabel = CreateLabel(CharacterTab, "状态: -", 285, 8, 145);
-            BehaviourLabel = CreateLabel(CharacterTab, "模式: -", 285, 30, 145);
+            BehaviourLabel = CreateLabel(CharacterTab, "模式: -", 285, 30, 190);
 
             HealthLabel = CreateLabel(CharacterTab, "生命: -", 12, 54, 180);
             ManaLabel = CreateLabel(CharacterTab, "魔法: -", 210, 54, 180);
@@ -122,7 +122,8 @@ namespace Client.Scenes.Views
             FollowButton = CreateButtonControl(CharacterTab, "跟随", 344, 103, 52);
             FollowButton.MouseClick += (o, e) => CEnvir.Enqueue(new C.SetHeroBehaviour { Behaviour = HeroBehaviour.Follow });
 
-            CustomButton = CreateButtonControl(CharacterTab, "自定", 402, 103, 52);
+            CustomButton = CreateButtonControl(CharacterTab, "自定=主动", 402, 103, 86);
+            CustomButton.Hint = "自定义模式当前按主动模式执行，尚未提供独立策略。";
             CustomButton.MouseClick += (o, e) => CEnvir.Enqueue(new C.SetHeroBehaviour { Behaviour = HeroBehaviour.Custom });
 
             CreateInfoLabel = CreateLabel(CharacterTab, "创建: 战士 男", 12, 132, 145);
@@ -1041,7 +1042,7 @@ namespace Client.Scenes.Views
                 HeroBehaviour.Attack => "主动",
                 HeroBehaviour.CounterAttack => "反击",
                 HeroBehaviour.Follow => "跟随",
-                HeroBehaviour.Custom => "自定义",
+                HeroBehaviour.Custom => "自定义(按主动执行)",
                 _ => value.ToString()
             };
         }

@@ -3498,7 +3498,7 @@ namespace Server.Models
                 HeroBehaviour.Attack => "主动",
                 HeroBehaviour.CounterAttack => "反击",
                 HeroBehaviour.Follow => "跟随",
-                HeroBehaviour.Custom => "自定义",
+                HeroBehaviour.Custom => "自定义(按主动执行)",
                 _ => behaviour.ToString()
             };
         }
