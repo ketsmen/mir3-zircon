@@ -15,3 +15,11 @@ Visit our forum at [LOMCN](http://www.lomcn.org/forum/forumdisplay.php?735) for 
 ```cmd
 Tools\LocalValidate.cmd
 ```
+
+默认数据库路径优先级为：命令参数、`MIR3_DATABASE_ROOT`、`ZIRCON_DATABASE_ROOT`、`D:\MirProject\Mir3\Debug\Server\Database\`。
+
+生成机器可读摘要：
+
+```powershell
+.\Tools\LocalValidate.ps1 -SummaryFile .\generated\local-validate.json
+```

@@ -345,7 +345,7 @@ namespace Server.Models
 
         public virtual void ProcessSearch()
         {
-            if (Behaviour == HeroBehaviour.Follow || Behaviour == HeroBehaviour.CounterAttack && Target == null) return;
+            if (!CanSearchForBehaviour()) return;
             if (Target != null || SEnvir.Now < SearchTime) return;
 
             SearchTime = SEnvir.Now + SearchDelay;
@@ -387,7 +387,7 @@ namespace Server.Models
 
         private bool ReconsiderCloserMonsterTarget(bool force)
         {
-            if (Behaviour != HeroBehaviour.Attack && Behaviour != HeroBehaviour.Custom) return false;
+            if (!UsesActiveAttackBehaviour()) return false;
             if (!force && SEnvir.Now < ReconsiderTargetTime) return false;
 
             ReconsiderTargetTime = SEnvir.Now + ReconsiderTargetDelay;
@@ -1952,7 +1952,7 @@ namespace Server.Models
         public void OwnerEngagedTarget(MapObject target)
         {
             if (Node == null || Dead) return;
-            if (Behaviour != HeroBehaviour.Attack && Behaviour != HeroBehaviour.Custom) return;
+            if (!UsesActiveAttackBehaviour()) return;
             if (!CanAcceptOwnerTarget(target)) return;
 
             if (Behaviour == HeroBehaviour.Attack)
@@ -1966,6 +1966,28 @@ namespace Server.Models
 
             Target = target;
             SearchTime = DateTime.MinValue;
+        }
+
+        private bool CanSearchForBehaviour()
+        {
+            return Behaviour switch
+            {
+                HeroBehaviour.Follow => false,
+                HeroBehaviour.CounterAttack => Target != null,
+                HeroBehaviour.Custom => IsAttackCompatibleCustomBehaviour(),
+                _ => true
+            };
+        }
+
+        private bool UsesActiveAttackBehaviour()
+        {
+            return Behaviour == HeroBehaviour.Attack || IsAttackCompatibleCustomBehaviour();
+        }
+
+        private bool IsAttackCompatibleCustomBehaviour()
+        {
+            return Behaviour == HeroBehaviour.Custom &&
+                   Config.HeroCustomBehaviourProfile == HeroCustomBehaviourProfile.AttackCompatible;
         }
 
         protected virtual bool CanPursueTarget(MapObject target)

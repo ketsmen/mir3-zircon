@@ -4,11 +4,25 @@ using MirDB;
 using Server.DBModels;
 using Server.Envir;
 using System.Reflection;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 
-const string DefaultDatabaseRoot = @"D:\MirProject\Mir3\Debug\Server\Database\";
+const string DefaultDatabaseRootFallback = @"D:\MirProject\Mir3\Debug\Server\Database\";
 
 string repositoryRoot = GetRepositoryRoot();
-string mode = args.Length > 0 ? args[0] : "drops";
+CommandLineOptions options = ParseCommandLine(args);
+
+if (!options.Valid)
+{
+    Console.WriteLine(options.Error);
+    PrintUsage();
+    Environment.ExitCode = 1;
+    return;
+}
+
+string[] commandArgs = options.Arguments;
+string defaultDatabaseRoot = GetDefaultDatabaseRoot();
+string mode = commandArgs.Length > 0 ? commandArgs[0] : "drops";
 bool customAllMode = mode.Equals("custom-all", StringComparison.OrdinalIgnoreCase);
 bool customValidateMode = mode.Equals("custom-validate", StringComparison.OrdinalIgnoreCase);
 bool customMode = customAllMode || customValidateMode;
@@ -18,15 +32,23 @@ bool localValidateMode = mode.Equals("local-validate", StringComparison.OrdinalI
 bool dropsMode = mode.Equals("drops", StringComparison.OrdinalIgnoreCase);
 bool explicitMode = customMode || npcValidateMode || dropValidateMode || localValidateMode || dropsMode;
 
-if (args.Length > 0 && !explicitMode && !LooksLikeLegacyDatabaseArgument(mode))
+if (commandArgs.Length > 0 && !explicitMode && !LooksLikeLegacyDatabaseArgument(mode))
 {
     PrintUsage();
     Environment.ExitCode = 1;
     return;
 }
 
+if (!localValidateMode && (options.Json || !string.IsNullOrWhiteSpace(options.SummaryFile)))
+{
+    Console.WriteLine("--json 和 --summary-file 仅支持 local-validate。");
+    PrintUsage();
+    Environment.ExitCode = 1;
+    return;
+}
+
 int maximumArguments = localValidateMode ? 5 : explicitMode ? 3 : 2;
-if (args.Length > maximumArguments)
+if (commandArgs.Length > maximumArguments)
 {
     PrintUsage();
     Environment.ExitCode = 1;
@@ -34,22 +56,22 @@ if (args.Length > maximumArguments)
 }
 
 string databaseRoot = explicitMode
-    ? args.Length > 1 ? args[1] : DefaultDatabaseRoot
-    : args.Length > 0 ? args[0] : DefaultDatabaseRoot;
+    ? commandArgs.Length > 1 && !string.IsNullOrWhiteSpace(commandArgs[1]) ? commandArgs[1] : defaultDatabaseRoot
+    : commandArgs.Length > 0 && !string.IsNullOrWhiteSpace(commandArgs[0]) ? commandArgs[0] : defaultDatabaseRoot;
 
 string outputRoot = customMode
-    ? args.Length > 2 ? args[2] : @"D:\MirProject\Mir3\Debug\Server\Exports\CustomAllDatabase"
+    ? commandArgs.Length > 2 ? commandArgs[2] : @"D:\MirProject\Mir3\Debug\Server\Exports\CustomAllDatabase"
     : npcValidateMode
-        ? args.Length > 2 ? args[2] : @"D:\MirProject\Mir3\Debug\Server\Envir\NPCs"
+        ? commandArgs.Length > 2 ? commandArgs[2] : @"D:\MirProject\Mir3\Debug\Server\Envir\NPCs"
         : dropValidateMode
-            ? args.Length > 2 ? args[2] : Path.Combine(repositoryRoot, "Envir", "Drops")
+            ? commandArgs.Length > 2 ? commandArgs[2] : Path.Combine(repositoryRoot, "Envir", "Drops")
             : explicitMode
-                ? args.Length > 2 ? args[2] : Path.Combine(repositoryRoot, "generated", "Mir3MonsterDrops")
-                : args.Length > 1 ? args[1] : Path.Combine(repositoryRoot, "generated", "Mir3MonsterDrops");
+                ? commandArgs.Length > 2 ? commandArgs[2] : Path.Combine(repositoryRoot, "generated", "Mir3MonsterDrops")
+                : commandArgs.Length > 1 ? commandArgs[1] : Path.Combine(repositoryRoot, "generated", "Mir3MonsterDrops");
 
-string localCustomRoot = localValidateMode && args.Length > 2 ? args[2] : Path.Combine(repositoryRoot, "Envir", "Custom");
-string localNpcRoot = localValidateMode && args.Length > 3 ? args[3] : Path.Combine(repositoryRoot, "Envir", "NPCs");
-string localDropRoot = localValidateMode && args.Length > 4 ? args[4] : Path.Combine(repositoryRoot, "Envir", "Drops");
+string localCustomRoot = localValidateMode && commandArgs.Length > 2 ? commandArgs[2] : Path.Combine(repositoryRoot, "Envir", "Custom");
+string localNpcRoot = localValidateMode && commandArgs.Length > 3 ? commandArgs[3] : Path.Combine(repositoryRoot, "Envir", "NPCs");
+string localDropRoot = localValidateMode && commandArgs.Length > 4 ? commandArgs[4] : Path.Combine(repositoryRoot, "Envir", "Drops");
 
 databaseRoot = NormalizeDirectoryArgument(databaseRoot);
 outputRoot = NormalizeDirectoryArgument(outputRoot);
@@ -74,7 +96,7 @@ session.Initialize(
 
 if (localValidateMode)
 {
-    RunLocalValidation(session, localCustomRoot, localNpcRoot, localDropRoot);
+    RunLocalValidation(session, localCustomRoot, localNpcRoot, localDropRoot, options.Json, options.SummaryFile);
     return;
 }
 
@@ -178,7 +200,7 @@ if (dropValidateMode)
 
     Console.WriteLine($"数据库: {session.SystemPath}");
     Console.WriteLine($"验证目录: {outputRoot}");
-    PrintValidationResult("Mir2 掉落文本", result);
+    PrintValidationTupleResult("Mir2 掉落文本", result);
 
     if (!result.Success)
         Environment.ExitCode = 1;
@@ -212,6 +234,23 @@ static string NormalizeDirectoryArgument(string value)
     return string.IsNullOrWhiteSpace(value) ? value : Path.GetFullPath(value);
 }
 
+static string GetDefaultDatabaseRoot()
+{
+    return FirstNonEmptyEnvironmentVariable("MIR3_DATABASE_ROOT", "ZIRCON_DATABASE_ROOT") ?? DefaultDatabaseRootFallback;
+}
+
+static string? FirstNonEmptyEnvironmentVariable(params string[] names)
+{
+    foreach (string name in names)
+    {
+        string? value = Environment.GetEnvironmentVariable(name);
+        if (!string.IsNullOrWhiteSpace(value))
+            return value;
+    }
+
+    return null;
+}
+
 static string GetRepositoryRoot()
 {
     string root = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\..\.."));
@@ -221,37 +260,97 @@ static string GetRepositoryRoot()
         : Directory.GetCurrentDirectory();
 }
 
-static void RunLocalValidation(Session session, string customRoot, string npcRoot, string dropRoot)
+static void RunLocalValidation(Session session, string customRoot, string npcRoot, string dropRoot, bool jsonOutput, string summaryFile)
 {
-    var custom = ValidateCustomSystem(session, customRoot);
-    var npc = ValidateTextNpcs(session, npcRoot);
-    var drops = ValidateMir2Drops(session, dropRoot);
+    LocalValidationReport report = BuildLocalValidationReport(session, customRoot, npcRoot, dropRoot);
 
-    Console.WriteLine("本地文本校验");
-    Console.WriteLine($"数据库: {session.SystemPath}");
-    Console.WriteLine($"自定义系统: {customRoot}");
-    Console.WriteLine($"文本 NPC: {npcRoot}");
-    Console.WriteLine($"Mir2 掉落: {dropRoot}");
+    if (jsonOutput || !string.IsNullOrWhiteSpace(summaryFile))
+        WriteValidationJson(report, summaryFile, jsonOutput);
 
-    Console.WriteLine();
-    PrintValidationResult("自定义系统", custom);
+    if (!jsonOutput)
+        PrintLocalValidationReport(report, summaryFile);
 
-    Console.WriteLine();
-    PrintValidationResult("文本 NPC", npc);
-
-    Console.WriteLine();
-    PrintValidationResult("Mir2 掉落文本", drops);
-
-    int passed = 0;
-    if (custom.Success) passed++;
-    if (npc.Success) passed++;
-    if (drops.Success) passed++;
-
-    Console.WriteLine();
-    Console.WriteLine($"汇总: {passed}/3 通过");
-
-    if (passed != 3)
+    if (!report.Success)
         Environment.ExitCode = 1;
+}
+
+static LocalValidationReport BuildLocalValidationReport(Session session, string customRoot, string npcRoot, string dropRoot)
+{
+    ValidationCheckReport[] checks =
+    [
+        ToCheckReport("custom", "自定义系统", ValidateCustomSystem(session, customRoot)),
+        ToCheckReport("npc", "文本 NPC", ValidateTextNpcs(session, npcRoot)),
+        ToCheckReport("mir2Drops", "Mir2 掉落文本", ValidateMir2Drops(session, dropRoot)),
+    ];
+
+    return new LocalValidationReport
+    {
+        GeneratedAt = DateTimeOffset.Now,
+        Database = session.SystemPath,
+        CustomRoot = customRoot,
+        NpcRoot = npcRoot,
+        DropRoot = dropRoot,
+        Total = checks.Length,
+        Passed = checks.Count(x => x.Success),
+        Success = checks.All(x => x.Success),
+        Checks = checks.ToList()
+    };
+}
+
+static ValidationCheckReport ToCheckReport(string key, string name, (bool Success, string Summary, List<string> Errors, List<string> Warnings) result)
+{
+    return new ValidationCheckReport
+    {
+        Key = key,
+        Name = name,
+        Success = result.Success,
+        Summary = result.Summary,
+        Errors = result.Errors,
+        Warnings = result.Warnings
+    };
+}
+
+static void PrintLocalValidationReport(LocalValidationReport report, string summaryFile)
+{
+    Console.WriteLine("本地文本校验");
+    Console.WriteLine($"数据库: {report.Database}");
+    Console.WriteLine($"自定义系统: {report.CustomRoot}");
+    Console.WriteLine($"文本 NPC: {report.NpcRoot}");
+    Console.WriteLine($"Mir2 掉落: {report.DropRoot}");
+
+    if (!string.IsNullOrWhiteSpace(summaryFile))
+        Console.WriteLine($"摘要文件: {Path.GetFullPath(summaryFile)}");
+
+    foreach (ValidationCheckReport check in report.Checks)
+    {
+        Console.WriteLine();
+        PrintValidationCheckResult(check);
+    }
+
+    Console.WriteLine();
+    Console.WriteLine($"汇总: {report.Passed}/{report.Total} 通过");
+}
+
+static void WriteValidationJson(LocalValidationReport report, string summaryFile, bool writeStdout)
+{
+    string json = JsonSerializer.Serialize(report, new JsonSerializerOptions
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    });
+
+    if (!string.IsNullOrWhiteSpace(summaryFile))
+    {
+        string path = Path.GetFullPath(summaryFile);
+        string? directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+            Directory.CreateDirectory(directory);
+
+        File.WriteAllText(path, json);
+    }
+
+    if (writeStdout)
+        Console.WriteLine(json);
 }
 
 static (bool Success, string Summary, List<string> Errors, List<string> Warnings) ValidateCustomSystem(Session session, string customRoot)
@@ -337,21 +436,33 @@ static (bool Success, string Summary, List<string> Errors, List<string> Warnings
     }
 }
 
-static void PrintValidationResult(string name, (bool Success, string Summary, List<string> Errors, List<string> Warnings) result)
+static void PrintValidationTupleResult(string name, (bool Success, string Summary, List<string> Errors, List<string> Warnings) result)
 {
-    Console.WriteLine($"{(result.Success ? "[PASS]" : "[FAIL]")} {name}");
+    PrintValidationCheckResult(new ValidationCheckReport
+    {
+        Name = name,
+        Success = result.Success,
+        Summary = result.Summary,
+        Errors = result.Errors,
+        Warnings = result.Warnings
+    });
+}
+
+static void PrintValidationCheckResult(ValidationCheckReport result)
+{
+    Console.WriteLine($"{(result.Success ? "[PASS]" : "[FAIL]")} {result.Name}");
 
     foreach (string line in SplitLines(result.Summary))
         Console.WriteLine($"  {line}");
 
-    if (result.Errors.Count > 0)
+    if (result.Errors?.Count > 0)
     {
         Console.WriteLine("  错误示例:");
         foreach (string error in result.Errors.Take(80))
             Console.WriteLine($"    {error}");
     }
 
-    if (result.Warnings.Count > 0)
+    if (result.Warnings?.Count > 0)
     {
         Console.WriteLine("  警告:");
         foreach (string warning in result.Warnings.Take(40))
@@ -381,5 +492,86 @@ static void PrintUsage()
     Console.WriteLine("  DropExportRunner custom-validate [databaseRoot] [customRoot]");
     Console.WriteLine("  DropExportRunner npc-validate [databaseRoot] [npcTextRoot]");
     Console.WriteLine("  DropExportRunner drop-validate [databaseRoot] [dropTextRoot]");
-    Console.WriteLine("  DropExportRunner local-validate [databaseRoot] [customRoot] [npcTextRoot] [dropTextRoot]");
+    Console.WriteLine("  DropExportRunner local-validate [databaseRoot] [customRoot] [npcTextRoot] [dropTextRoot] [--json] [--summary-file path]");
+}
+
+static CommandLineOptions ParseCommandLine(string[] args)
+{
+    CommandLineOptions options = new();
+    List<string> arguments = [];
+
+    for (int i = 0; i < args.Length; i++)
+    {
+        string arg = args[i];
+
+        if (arg.Equals("--json", StringComparison.OrdinalIgnoreCase))
+        {
+            options.Json = true;
+            continue;
+        }
+
+        if (arg.Equals("--summary-file", StringComparison.OrdinalIgnoreCase))
+        {
+            if (i + 1 >= args.Length)
+                return CommandLineOptions.Invalid("--summary-file 需要路径参数。");
+
+            options.SummaryFile = args[++i];
+            continue;
+        }
+
+        if (arg.StartsWith("--summary-file=", StringComparison.OrdinalIgnoreCase))
+        {
+            options.SummaryFile = arg["--summary-file=".Length..];
+            if (string.IsNullOrWhiteSpace(options.SummaryFile))
+                return CommandLineOptions.Invalid("--summary-file 需要路径参数。");
+
+            continue;
+        }
+
+        arguments.Add(arg);
+    }
+
+    options.Arguments = arguments.ToArray();
+    return options;
+}
+
+public sealed class CommandLineOptions
+{
+    public string[] Arguments { get; set; } = [];
+    public bool Json { get; set; }
+    public string SummaryFile { get; set; } = string.Empty;
+    public bool Valid { get; set; } = true;
+    public string Error { get; set; } = string.Empty;
+
+    public static CommandLineOptions Invalid(string error)
+    {
+        return new CommandLineOptions
+        {
+            Valid = false,
+            Error = error
+        };
+    }
+}
+
+public sealed class LocalValidationReport
+{
+    public DateTimeOffset GeneratedAt { get; set; }
+    public string Database { get; set; } = string.Empty;
+    public string CustomRoot { get; set; } = string.Empty;
+    public string NpcRoot { get; set; } = string.Empty;
+    public string DropRoot { get; set; } = string.Empty;
+    public bool Success { get; set; }
+    public int Passed { get; set; }
+    public int Total { get; set; }
+    public List<ValidationCheckReport> Checks { get; set; } = [];
+}
+
+public sealed class ValidationCheckReport
+{
+    public string Key { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public bool Success { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public List<string> Errors { get; set; } = [];
+    public List<string> Warnings { get; set; } = [];
 }
