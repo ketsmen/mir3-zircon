@@ -279,6 +279,8 @@ namespace Client.Scenes
         public int MaximumHeroCount;
         public HeroSpawnState HeroSpawnState;
         public HeroBehaviour HeroBehaviour;
+        public HeroCustomBehaviourProfile HeroCustomBehaviourProfile;
+        public string HeroCustomBehaviourProfileName;
 
         public HashSet<string> GuildWars = new HashSet<string>();
         public HashSet<CastleInfo> ConquestWars = new HashSet<CastleInfo>();

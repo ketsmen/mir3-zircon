@@ -61,6 +61,13 @@ namespace Library
         Custom = 3,
     }
 
+    public enum HeroCustomBehaviourProfile : byte
+    {
+        AttackCompatible = 0,
+        GuardOwner = 1,
+        FocusOwnerTarget = 2,
+    }
+
     public enum MirDirection : byte
     {
         Up = 0,

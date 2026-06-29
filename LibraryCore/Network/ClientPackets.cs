@@ -525,6 +525,11 @@ namespace Library.Network.ClientPackets
         public HeroBehaviour Behaviour { get; set; }
     }
 
+    public sealed class SetHeroCustomBehaviourProfile : Packet
+    {
+        public HeroCustomBehaviourProfile Profile { get; set; }
+    }
+
     public sealed class SetHeroAutoPot : Packet
     {
         public bool AutoPot { get; set; }

@@ -42,6 +42,16 @@ namespace Server.WinForms
             "HeroDefaultGrade",
             "HeroMaxGrade",
             "HeroGradeStatBonusRate",
+            "HeroGradePromoteEnabled",
+            "HeroGradePromoteBaseGoldCost",
+            "HeroGradePromoteGoldCostMultiplier",
+            "HeroGradePromoteItemIndex",
+            "HeroGradePromoteBaseItemCount",
+            "HeroGradePromoteCurrencyIndex",
+            "HeroGradePromoteBaseCurrencyAmount",
+            "HeroGradePromoteSuccessRate",
+            "HeroGradePromoteProtectionItemIndex",
+            "HeroGradePromoteProtectionItemCount",
             "HeroExperienceRate"
         };
 
@@ -70,7 +80,7 @@ namespace Server.WinForms
 
         public void FocusHeroSettings()
         {
-            FocusSetting("AllowNewHero", "英雄配置：可设置创建开关、创建等级、数量上限、复活延迟、搜索/追击距离、自定义策略、品质成长和经验倍率。");
+            FocusSetting("AllowNewHero", "英雄配置：可设置创建开关、创建等级、数量上限、复活延迟、搜索/追击距离、自定义策略、品质成长/培养和经验倍率。");
         }
 
         public bool FocusSetting(string propertyName, string statusText = null)
@@ -542,6 +552,42 @@ namespace Server.WinForms
             if (TryGetConfigValue(values, "HeroGradeStatBonusRate", out int heroGradeStatBonusRate) &&
                 (heroGradeStatBonusRate < 0 || heroGradeStatBonusRate > 20))
                 errors.Add("HeroGradeStatBonusRate: 每级品质属性加成建议在 0 到 20 之间。");
+
+            if (TryGetConfigValue(values, "HeroGradePromoteBaseGoldCost", out long heroGradePromoteBaseGoldCost) &&
+                heroGradePromoteBaseGoldCost < 0)
+                errors.Add("HeroGradePromoteBaseGoldCost: 英雄品质提升基础金币消耗不能小于 0。");
+
+            if (TryGetConfigValue(values, "HeroGradePromoteGoldCostMultiplier", out int heroGradePromoteGoldCostMultiplier) &&
+                (heroGradePromoteGoldCostMultiplier < 0 || heroGradePromoteGoldCostMultiplier > 1000))
+                errors.Add("HeroGradePromoteGoldCostMultiplier: 英雄品质提升金币倍率建议在 0 到 1000 之间。");
+
+            if (TryGetConfigValue(values, "HeroGradePromoteItemIndex", out int heroGradePromoteItemIndex) &&
+                heroGradePromoteItemIndex < 0)
+                errors.Add("HeroGradePromoteItemIndex: 英雄品质提升材料物品索引不能小于 0。");
+
+            if (TryGetConfigValue(values, "HeroGradePromoteBaseItemCount", out long heroGradePromoteBaseItemCount) &&
+                heroGradePromoteBaseItemCount < 0)
+                errors.Add("HeroGradePromoteBaseItemCount: 英雄品质提升基础材料数量不能小于 0。");
+
+            if (TryGetConfigValue(values, "HeroGradePromoteCurrencyIndex", out int heroGradePromoteCurrencyIndex) &&
+                heroGradePromoteCurrencyIndex < 0)
+                errors.Add("HeroGradePromoteCurrencyIndex: 英雄品质提升货币索引不能小于 0。");
+
+            if (TryGetConfigValue(values, "HeroGradePromoteBaseCurrencyAmount", out long heroGradePromoteBaseCurrencyAmount) &&
+                heroGradePromoteBaseCurrencyAmount < 0)
+                errors.Add("HeroGradePromoteBaseCurrencyAmount: 英雄品质提升基础货币数量不能小于 0。");
+
+            if (TryGetConfigValue(values, "HeroGradePromoteSuccessRate", out int heroGradePromoteSuccessRate) &&
+                (heroGradePromoteSuccessRate < 0 || heroGradePromoteSuccessRate > 100))
+                errors.Add("HeroGradePromoteSuccessRate: 英雄品质培养成功率必须在 0 到 100 之间。");
+
+            if (TryGetConfigValue(values, "HeroGradePromoteProtectionItemIndex", out int heroGradePromoteProtectionItemIndex) &&
+                heroGradePromoteProtectionItemIndex < 0)
+                errors.Add("HeroGradePromoteProtectionItemIndex: 英雄品质保护材料物品索引不能小于 0。");
+
+            if (TryGetConfigValue(values, "HeroGradePromoteProtectionItemCount", out long heroGradePromoteProtectionItemCount) &&
+                heroGradePromoteProtectionItemCount < 0)
+                errors.Add("HeroGradePromoteProtectionItemCount: 英雄品质保护材料数量不能小于 0。");
         }
 
         private static bool TryGetConfigValue<T>(List<ConfigValue> values, string propertyName, out T value)

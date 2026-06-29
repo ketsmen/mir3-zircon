@@ -1368,6 +1368,8 @@ namespace Library.Network.ServerPackets
         public int MaximumCount { get; set; }
         public HeroSpawnState State { get; set; }
         public HeroBehaviour Behaviour { get; set; }
+        public HeroCustomBehaviourProfile CustomBehaviourProfile { get; set; }
+        public string CustomBehaviourProfileName { get; set; }
     }
 
     public sealed class HeroInformation : Packet
@@ -1421,6 +1423,8 @@ namespace Library.Network.ServerPackets
     public sealed class SetHeroBehaviour : Packet
     {
         public HeroBehaviour Behaviour { get; set; }
+        public HeroCustomBehaviourProfile CustomBehaviourProfile { get; set; }
+        public string CustomBehaviourProfileName { get; set; }
     }
 
     public sealed class SetHeroAutoPot : Packet

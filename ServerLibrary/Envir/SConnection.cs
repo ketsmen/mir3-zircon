@@ -1117,6 +1117,12 @@ namespace Server.Envir
 
             Player.SetHeroBehaviour(p);
         }
+        public void Process(C.SetHeroCustomBehaviourProfile p)
+        {
+            if (Stage != GameStage.Game) return;
+
+            Player.SetHeroCustomBehaviourProfile(p);
+        }
         public void Process(C.SetHeroAutoPot p)
         {
             if (Stage != GameStage.Game) return;

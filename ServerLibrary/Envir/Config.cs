@@ -5,11 +5,6 @@ using System.Security.Cryptography;
 
 namespace Server.Envir
 {
-    public enum HeroCustomBehaviourProfile
-    {
-        AttackCompatible = 0,
-    }
-
     [ConfigPath(@".\Server.ini")]
     public static class Config
     {
@@ -112,6 +107,16 @@ namespace Server.Envir
         public static int HeroDefaultGrade { get; set; } = 0;
         public static int HeroMaxGrade { get; set; } = 4;
         public static int HeroGradeStatBonusRate { get; set; } = 5;
+        public static bool HeroGradePromoteEnabled { get; set; } = true;
+        public static long HeroGradePromoteBaseGoldCost { get; set; } = 100000;
+        public static int HeroGradePromoteGoldCostMultiplier { get; set; } = 100;
+        public static int HeroGradePromoteItemIndex { get; set; } = 0;
+        public static long HeroGradePromoteBaseItemCount { get; set; } = 0;
+        public static int HeroGradePromoteCurrencyIndex { get; set; } = 0;
+        public static long HeroGradePromoteBaseCurrencyAmount { get; set; } = 0;
+        public static int HeroGradePromoteSuccessRate { get; set; } = 100;
+        public static int HeroGradePromoteProtectionItemIndex { get; set; } = 0;
+        public static long HeroGradePromoteProtectionItemCount { get; set; } = 0;
         public static int DayCycleCount { get; set; } = 3;
         public static int SkillExp { get; set; } = 3;
         public static bool AllowObservation { get; set; } = true;

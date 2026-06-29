@@ -143,9 +143,9 @@ namespace Client.Scenes.Views
             FollowButton = CreateButtonControl(CharacterTab, "跟随", 368, 103, 48);
             FollowButton.MouseClick += (o, e) => CEnvir.Enqueue(new C.SetHeroBehaviour { Behaviour = HeroBehaviour.Follow });
 
-            CustomButton = CreateButtonControl(CharacterTab, "自定=主动", 420, 103, 68);
-            CustomButton.Hint = "自定义模式当前按主动模式执行，尚未提供独立策略。";
-            CustomButton.MouseClick += (o, e) => CEnvir.Enqueue(new C.SetHeroBehaviour { Behaviour = HeroBehaviour.Custom });
+            CustomButton = CreateButtonControl(CharacterTab, "自定义", 420, 103, 68);
+            CustomButton.Hint = "点击切换到自定义模式；已在自定义模式时再次点击可轮换策略。";
+            CustomButton.MouseClick += (o, e) => SetOrCycleCustomBehaviour();
 
             CreateInfoLabel = CreateLabel(CharacterTab, "创建: 战士 男", 12, 132, 145);
 
@@ -311,7 +311,7 @@ namespace Client.Scenes.Views
                 CEnvir.Enqueue(new C.ItemSort { Grid = GridType.HeroInventory });
             };
 
-            AutoPotLabel = CreateLabel(InventoryTab, "HP药: 未设置\r\nMP药: 未设置", 278, 116, 210, true);
+            AutoPotLabel = CreateLabel(InventoryTab, "HP自动: 未设置\r\nMP自动: 未设置", 278, 116, 210, true);
             AutoPotLabel.Size = new Size(210, 40);
 
             HPItemCell = CreatePotionCell(GridType.HeroHPItem, 278, 166, "HP");
@@ -350,10 +350,10 @@ namespace Client.Scenes.Views
                 Value = 50
             };
 
-            SetHPButton = CreateButtonControl(InventoryTab, "设HP药", 278, 292, 70);
+            SetHPButton = CreateButtonControl(InventoryTab, "设HP", 278, 292, 70);
             SetHPButton.MouseClick += (o, e) => SetPotion(true);
 
-            SetMPButton = CreateButtonControl(InventoryTab, "设MP药", 356, 292, 70);
+            SetMPButton = CreateButtonControl(InventoryTab, "设MP", 356, 292, 70);
             SetMPButton.MouseClick += (o, e) => SetPotion(false);
 
             SaveAutoPotButton = CreateButtonControl(InventoryTab, "保存", 278, 328, 70);
@@ -548,6 +548,32 @@ namespace Client.Scenes.Views
             CEnvir.Enqueue(new C.ChangeHero { Index = summary.Index });
         }
 
+        private void SetOrCycleCustomBehaviour()
+        {
+            if (!IsViewingCurrentHero) return;
+
+            if ((GameScene.Game?.HeroBehaviour ?? HeroBehaviour.Attack) != HeroBehaviour.Custom)
+            {
+                CEnvir.Enqueue(new C.SetHeroBehaviour { Behaviour = HeroBehaviour.Custom });
+                return;
+            }
+
+            CEnvir.Enqueue(new C.SetHeroCustomBehaviourProfile
+            {
+                Profile = NextCustomProfile(GameScene.Game.HeroCustomBehaviourProfile)
+            });
+        }
+
+        private static HeroCustomBehaviourProfile NextCustomProfile(HeroCustomBehaviourProfile profile)
+        {
+            return profile switch
+            {
+                HeroCustomBehaviourProfile.AttackCompatible => HeroCustomBehaviourProfile.GuardOwner,
+                HeroCustomBehaviourProfile.GuardOwner => HeroCustomBehaviourProfile.FocusOwnerTarget,
+                _ => HeroCustomBehaviourProfile.AttackCompatible,
+            };
+        }
+
         private void SelectRelative(int direction)
         {
             if (GameScene.Game.Heroes == null || GameScene.Game.Heroes.Count == 0) return;
@@ -735,8 +761,8 @@ namespace Client.Scenes.Views
             HeroSpawnState spawnState = GameScene.Game?.HeroSpawnState ?? HeroSpawnState.None;
             StateLabel.Text = selectedIsCurrent ? $"状态: {StateName(spawnState)}" : "状态: 非当前";
             HeroBehaviour behaviour = GameScene.Game?.HeroBehaviour ?? HeroBehaviour.Attack;
-            BehaviourLabel.Text = selectedIsCurrent ? $"模式: {BehaviourName(behaviour)}" : "模式: -";
-            AutoPotLabel.Text = hero == null ? "HP药: 未设置\r\nMP药: 未设置" : $"HP药: {PotionText(hero, hero.HPItemIndex)}\r\nMP药: {PotionText(hero, hero.MPItemIndex)}";
+            BehaviourLabel.Text = selectedIsCurrent ? $"模式: {BehaviourName(behaviour, GameScene.Game?.HeroCustomBehaviourProfileName)}" : "模式: -";
+            AutoPotLabel.Text = hero == null ? "HP自动: 未设置\r\nMP自动: 未设置" : $"HP自动: {PotionText(hero, hero.HPItemIndex)}\r\nMP自动: {PotionText(hero, hero.MPItemIndex)}";
 
             int heroCount = GameScene.Game?.Heroes?.Count ?? 0;
             int maximumHeroCount = Math.Max(0, GameScene.Game?.MaximumHeroCount ?? 0);
@@ -1237,14 +1263,14 @@ namespace Client.Scenes.Views
             };
         }
 
-        private static string BehaviourName(HeroBehaviour value)
+        private static string BehaviourName(HeroBehaviour value, string customProfileName)
         {
             return value switch
             {
                 HeroBehaviour.Attack => "主动",
                 HeroBehaviour.CounterAttack => "反击",
                 HeroBehaviour.Follow => "跟随",
-                HeroBehaviour.Custom => "自定义(按主动执行)",
+                HeroBehaviour.Custom => string.IsNullOrWhiteSpace(customProfileName) ? "自定义" : $"自定义({customProfileName})",
                 _ => value.ToString()
             };
         }

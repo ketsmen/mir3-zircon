@@ -893,6 +893,8 @@ namespace Server.Models
                 MaximumHeroCount = GetMaximumHeroCount(),
                 HeroSpawnState = GetHeroSpawnState(),
                 HeroBehaviour = Character.HeroBehaviour,
+                HeroCustomBehaviourProfile = Character.HeroCustomBehaviourProfile,
+                HeroCustomBehaviourProfileName = HeroCustomBehaviourProfileName(Character.HeroCustomBehaviourProfile),
 
                 StorageSize = Character.Account.StorageSize,
 
@@ -3324,11 +3326,17 @@ namespace Server.Models
 
             if (Dead || CurrentMap?.Info?.NoHero == true)
             {
+                if (Character.HeroSpawned && CurrentMap?.Info?.NoHero == true)
+                    Connection.ReceiveChat("当前地图禁止召唤英雄，已保留召唤意图，离开后会尝试恢复。", MessageType.System);
+
                 Enqueue(new S.UpdateHeroSpawnState { State = HeroSpawnState.Unsummoned });
                 return;
             }
 
             HeroSpawn(true);
+
+            if (Hero?.Node != null)
+                Connection.ReceiveChat($"{Hero.Name}已随你重新召唤。", MessageType.System);
         }
 
         public HeroSpawnState GetHeroSpawnState()
@@ -3347,6 +3355,8 @@ namespace Server.Models
                 MaximumCount = GetMaximumHeroCount(),
                 State = GetHeroSpawnState(),
                 Behaviour = Character.HeroBehaviour,
+                CustomBehaviourProfile = Character.HeroCustomBehaviourProfile,
+                CustomBehaviourProfileName = HeroCustomBehaviourProfileName(Character.HeroCustomBehaviourProfile),
             });
         }
 
@@ -3480,6 +3490,7 @@ namespace Server.Models
 
             Enqueue(new S.ChangeHero { Hero = Hero?.ToClientHero() ?? info.ToClientHero(), State = GetHeroSpawnState() });
             SendHeroManage();
+            Connection.ReceiveChat($"当前英雄已切换为{info.Name}，需要出战时请重新召唤。", MessageType.System);
         }
 
         public void InspectHero(C.InspectHero p)
@@ -3623,7 +3634,9 @@ namespace Server.Models
 
             if (CurrentMap?.Info?.NoHero == true)
             {
-                Connection.ReceiveChat("当前地图禁止召唤英雄。", MessageType.System);
+                Character.HeroSpawned = true;
+                Enqueue(new S.UpdateHeroSpawnState { State = HeroSpawnState.Unsummoned });
+                Connection.ReceiveChat("当前地图禁止召唤英雄，已保留召唤意图，离开后会尝试恢复。", MessageType.System);
                 return;
             }
 
@@ -3663,31 +3676,329 @@ namespace Server.Models
                     Character.HeroBehaviour = p.Behaviour;
                     if (Hero != null && (p.Behaviour == HeroBehaviour.Follow || p.Behaviour == HeroBehaviour.CounterAttack))
                         Hero.Target = null;
-                    Enqueue(new S.SetHeroBehaviour { Behaviour = p.Behaviour });
+                    Enqueue(new S.SetHeroBehaviour
+                    {
+                        Behaviour = p.Behaviour,
+                        CustomBehaviourProfile = Character.HeroCustomBehaviourProfile,
+                        CustomBehaviourProfileName = HeroCustomBehaviourProfileName(Character.HeroCustomBehaviourProfile)
+                    });
                     Connection.ReceiveChat($"英雄模式已切换为{HeroBehaviourName(p.Behaviour)}。", MessageType.System);
                     break;
             }
         }
 
-        private static string HeroBehaviourName(HeroBehaviour behaviour)
+        public void SetHeroCustomBehaviourProfile(C.SetHeroCustomBehaviourProfile p)
+        {
+            switch (p.Profile)
+            {
+                case HeroCustomBehaviourProfile.AttackCompatible:
+                case HeroCustomBehaviourProfile.GuardOwner:
+                case HeroCustomBehaviourProfile.FocusOwnerTarget:
+                    Character.HeroCustomBehaviourProfile = p.Profile;
+
+                    if (Hero != null && Character.HeroBehaviour == HeroBehaviour.Custom && p.Profile != HeroCustomBehaviourProfile.AttackCompatible)
+                        Hero.Target = null;
+
+                    Enqueue(new S.SetHeroBehaviour
+                    {
+                        Behaviour = Character.HeroBehaviour,
+                        CustomBehaviourProfile = Character.HeroCustomBehaviourProfile,
+                        CustomBehaviourProfileName = HeroCustomBehaviourProfileName(Character.HeroCustomBehaviourProfile)
+                    });
+
+                    Connection.ReceiveChat($"英雄自定义策略已切换为{HeroCustomBehaviourProfileName(Character.HeroCustomBehaviourProfile)}。", MessageType.System);
+                    break;
+            }
+        }
+
+        private string HeroBehaviourName(HeroBehaviour behaviour)
         {
             return behaviour switch
             {
                 HeroBehaviour.Attack => "主动",
                 HeroBehaviour.CounterAttack => "反击",
                 HeroBehaviour.Follow => "跟随",
-                HeroBehaviour.Custom => "自定义(按主动执行)",
+                HeroBehaviour.Custom => $"自定义({HeroCustomBehaviourProfileName(Character.HeroCustomBehaviourProfile)})",
                 _ => behaviour.ToString()
             };
+        }
+
+        private static string HeroCustomBehaviourProfileName(HeroCustomBehaviourProfile profile)
+        {
+            return profile switch
+            {
+                HeroCustomBehaviourProfile.AttackCompatible => "主动兼容",
+                HeroCustomBehaviourProfile.GuardOwner => "护主",
+                HeroCustomBehaviourProfile.FocusOwnerTarget => "集火主人目标",
+                _ => profile.ToString()
+            };
+        }
+
+        private static string HeroGradeName(byte value)
+        {
+            return value switch
+            {
+                0 => "普通",
+                1 => "优秀",
+                2 => "精良",
+                3 => "卓越",
+                4 => "传说",
+                _ => $"品质{value}"
+            };
+        }
+
+        private static long GetHeroGradePromoteCost(byte currentGrade)
+        {
+            int nextGrade = currentGrade + 1;
+            decimal cost = Math.Max(0, Config.HeroGradePromoteBaseGoldCost);
+            cost *= nextGrade;
+            cost *= Math.Max(0, Config.HeroGradePromoteGoldCostMultiplier) / 100M;
+
+            if (cost >= long.MaxValue) return long.MaxValue;
+            return Math.Max(0, (long)Math.Ceiling(cost));
+        }
+
+        private static long GetHeroGradePromoteScaledCost(byte currentGrade, long baseCost)
+        {
+            if (baseCost <= 0) return 0;
+
+            decimal cost = baseCost;
+            cost *= currentGrade + 1;
+
+            if (cost >= long.MaxValue) return long.MaxValue;
+            return Math.Max(0, (long)Math.Ceiling(cost));
+        }
+
+        public void PreviewHeroGradePromote()
+        {
+            if (!Config.HeroGradePromoteEnabled)
+            {
+                Connection.ReceiveChat("英雄品质培养当前未开启。", MessageType.System);
+                return;
+            }
+
+            HeroInfo info = Character?.CurrentHero;
+            if (info == null || info.Deleted)
+            {
+                Connection.ReceiveChat("当前没有可培养的英雄。", MessageType.System);
+                return;
+            }
+
+            int maxGrade = Math.Max(0, Math.Min(4, Config.HeroMaxGrade));
+            if (info.Grade >= maxGrade)
+            {
+                Connection.ReceiveChat($"{info.Name}的品质已达到上限。", MessageType.System);
+                return;
+            }
+
+            long cost = GetHeroGradePromoteCost(info.Grade);
+
+            ItemInfo material = Config.HeroGradePromoteItemIndex > 0
+                ? SEnvir.ItemInfoList.Binding.FirstOrDefault(x => x.Index == Config.HeroGradePromoteItemIndex)
+                : null;
+            long materialCount = material == null ? 0 : GetHeroGradePromoteScaledCost(info.Grade, Config.HeroGradePromoteBaseItemCount);
+
+            if (Config.HeroGradePromoteItemIndex > 0 && material == null)
+            {
+                Connection.ReceiveChat($"英雄品质培养材料配置无效，找不到物品索引 {Config.HeroGradePromoteItemIndex}。", MessageType.System);
+                return;
+            }
+
+            CurrencyInfo currencyInfo = Config.HeroGradePromoteCurrencyIndex > 0
+                ? SEnvir.CurrencyInfoList.Binding.FirstOrDefault(x => x.Index == Config.HeroGradePromoteCurrencyIndex)
+                : null;
+            UserCurrency currency = currencyInfo == null ? null : GetCurrency(currencyInfo);
+            long currencyAmount = currencyInfo == null ? 0 : GetHeroGradePromoteScaledCost(info.Grade, Config.HeroGradePromoteBaseCurrencyAmount);
+
+            if (Config.HeroGradePromoteCurrencyIndex > 0 && currencyInfo == null)
+            {
+                Connection.ReceiveChat($"英雄品质培养货币配置无效，找不到货币索引 {Config.HeroGradePromoteCurrencyIndex}。", MessageType.System);
+                return;
+            }
+
+            ItemInfo protection = Config.HeroGradePromoteProtectionItemIndex > 0
+                ? SEnvir.ItemInfoList.Binding.FirstOrDefault(x => x.Index == Config.HeroGradePromoteProtectionItemIndex)
+                : null;
+            long protectionCount = protection == null ? 0 : Math.Max(0, Config.HeroGradePromoteProtectionItemCount);
+
+            if (Config.HeroGradePromoteProtectionItemIndex > 0 && protection == null)
+            {
+                Connection.ReceiveChat($"英雄品质保护材料配置无效，找不到物品索引 {Config.HeroGradePromoteProtectionItemIndex}。", MessageType.System);
+                return;
+            }
+
+            long protectionAvailable = protection == null ? 0 : GetItemCount(protection);
+            if (protection == material && materialCount > 0)
+                protectionAvailable = Math.Max(0, protectionAvailable - materialCount);
+
+            bool useProtection = protectionCount > 0 && protectionAvailable >= protectionCount;
+            int successRate = Math.Max(0, Math.Min(100, Config.HeroGradePromoteSuccessRate));
+
+            List<string> costs = new List<string>();
+            if (cost > 0)
+                costs.Add($"金币 {cost:#,##0}({(Gold.Amount >= cost ? "足够" : $"不足 {cost - Gold.Amount:#,##0}")})");
+            if (materialCount > 0)
+            {
+                long count = GetItemCount(material);
+                costs.Add($"{material.ItemName} x{materialCount:#,##0}({(count >= materialCount ? "足够" : $"不足 {materialCount - count:#,##0}")})");
+            }
+            if (currencyAmount > 0)
+                costs.Add($"{currencyInfo.Name} x{currencyAmount:#,##0}({(currency.Amount >= currencyAmount ? "足够" : $"不足 {currencyAmount - currency.Amount:#,##0}")})");
+
+            string costText = costs.Count == 0 ? "预计消耗: 无" : $"预计消耗: {string.Join("、", costs)}";
+            string protectionText = protectionCount <= 0 || protection == null
+                ? "保护: 未配置"
+                : $"保护: {protection.ItemName} x{protectionCount:#,##0}，可用 {protectionAvailable:#,##0}，{(useProtection ? "本次将自动使用并保底成功" : "不足，本次不启用保护")}";
+            string warning = successRate <= 0 && !useProtection ? "；当前成功率为 0 且无保护材料，无法培养" : string.Empty;
+
+            Connection.ReceiveChat($"{info.Name}品质培养预览：{HeroGradeName(info.Grade)} -> {HeroGradeName((byte)(info.Grade + 1))}；成功率 {successRate}%；{costText}；{protectionText}{warning}。", MessageType.System);
+        }
+
+        public void PromoteHeroGrade()
+        {
+            if (!Config.HeroGradePromoteEnabled)
+            {
+                Connection.ReceiveChat("英雄品质培养当前未开启。", MessageType.System);
+                return;
+            }
+
+            HeroInfo info = Character?.CurrentHero;
+            if (info == null || info.Deleted)
+            {
+                Connection.ReceiveChat("当前没有可培养的英雄。", MessageType.System);
+                return;
+            }
+
+            int maxGrade = Math.Max(0, Math.Min(4, Config.HeroMaxGrade));
+            if (info.Grade >= maxGrade)
+            {
+                Connection.ReceiveChat($"{info.Name}的品质已达到上限。", MessageType.System);
+                return;
+            }
+
+            long cost = GetHeroGradePromoteCost(info.Grade);
+            if (Gold.Amount < cost)
+            {
+                Connection.ReceiveChat($"金币不足，提升{info.Name}品质需要 {cost:#,##0} 金币。", MessageType.System);
+                return;
+            }
+
+            ItemInfo material = Config.HeroGradePromoteItemIndex > 0
+                ? SEnvir.ItemInfoList.Binding.FirstOrDefault(x => x.Index == Config.HeroGradePromoteItemIndex)
+                : null;
+            long materialCount = material == null ? 0 : GetHeroGradePromoteScaledCost(info.Grade, Config.HeroGradePromoteBaseItemCount);
+
+            if (Config.HeroGradePromoteItemIndex > 0 && material == null)
+            {
+                Connection.ReceiveChat($"英雄品质培养材料配置无效，找不到物品索引 {Config.HeroGradePromoteItemIndex}。", MessageType.System);
+                return;
+            }
+
+            if (materialCount > 0 && GetItemCount(material) < materialCount)
+            {
+                Connection.ReceiveChat($"材料不足，提升{info.Name}品质需要 {material.ItemName} x{materialCount:#,##0}。", MessageType.System);
+                return;
+            }
+
+            CurrencyInfo currencyInfo = Config.HeroGradePromoteCurrencyIndex > 0
+                ? SEnvir.CurrencyInfoList.Binding.FirstOrDefault(x => x.Index == Config.HeroGradePromoteCurrencyIndex)
+                : null;
+            UserCurrency currency = currencyInfo == null ? null : GetCurrency(currencyInfo);
+            long currencyAmount = currencyInfo == null ? 0 : GetHeroGradePromoteScaledCost(info.Grade, Config.HeroGradePromoteBaseCurrencyAmount);
+
+            if (Config.HeroGradePromoteCurrencyIndex > 0 && currencyInfo == null)
+            {
+                Connection.ReceiveChat($"英雄品质培养货币配置无效，找不到货币索引 {Config.HeroGradePromoteCurrencyIndex}。", MessageType.System);
+                return;
+            }
+
+            if (currencyAmount > 0 && currency.Amount < currencyAmount)
+            {
+                Connection.ReceiveChat($"货币不足，提升{info.Name}品质需要 {currencyInfo.Name} x{currencyAmount:#,##0}。", MessageType.System);
+                return;
+            }
+
+            ItemInfo protection = Config.HeroGradePromoteProtectionItemIndex > 0
+                ? SEnvir.ItemInfoList.Binding.FirstOrDefault(x => x.Index == Config.HeroGradePromoteProtectionItemIndex)
+                : null;
+            long protectionCount = protection == null ? 0 : Math.Max(0, Config.HeroGradePromoteProtectionItemCount);
+
+            if (Config.HeroGradePromoteProtectionItemIndex > 0 && protection == null)
+            {
+                Connection.ReceiveChat($"英雄品质保护材料配置无效，找不到物品索引 {Config.HeroGradePromoteProtectionItemIndex}。", MessageType.System);
+                return;
+            }
+
+            long protectionAvailable = protection == null ? 0 : GetItemCount(protection);
+            if (protection == material && materialCount > 0)
+                protectionAvailable = Math.Max(0, protectionAvailable - materialCount);
+
+            bool useProtection = protectionCount > 0 && protectionAvailable >= protectionCount;
+            int successRate = Math.Max(0, Math.Min(100, Config.HeroGradePromoteSuccessRate));
+
+            if (successRate <= 0 && !useProtection)
+            {
+                Connection.ReceiveChat("英雄品质培养成功率为 0，且没有足够的保护材料。", MessageType.System);
+                return;
+            }
+
+            List<string> costs = new List<string>();
+            if (cost > 0) costs.Add($"金币 {cost:#,##0}");
+            if (materialCount > 0) costs.Add($"{material.ItemName} x{materialCount:#,##0}");
+            if (currencyAmount > 0) costs.Add($"{currencyInfo.Name} x{currencyAmount:#,##0}");
+            if (useProtection) costs.Add($"{protection.ItemName} x{protectionCount:#,##0}");
+
+            if (cost > 0)
+            {
+                Gold.Amount -= cost;
+                GoldChanged();
+            }
+
+            if (materialCount > 0)
+                TakeItem(material, materialCount);
+
+            if (currencyAmount > 0)
+            {
+                currency.Amount -= currencyAmount;
+                CurrencyChanged(currency);
+            }
+
+            if (useProtection)
+                TakeItem(protection, protectionCount);
+
+            bool success = useProtection || successRate >= 100 || SEnvir.Random.Next(100) < successRate;
+            string costText = costs.Count == 0 ? "未消耗资源" : $"消耗{string.Join("、", costs)}";
+
+            if (!success)
+            {
+                SendHeroManage();
+                Connection.ReceiveChat($"{info.Name}的品质培养失败，品质未变化，{costText}。", MessageType.System);
+                return;
+            }
+
+            info.Grade++;
+            HeroSetup();
+
+            if (Hero != null)
+            {
+                Hero.RefreshStats();
+                Hero.SendInformation();
+            }
+
+            SendHeroManage();
+            Connection.ReceiveChat($"{info.Name}的品质提升为{HeroGradeName(info.Grade)}，{costText}。", MessageType.System);
         }
 
         public void SetHeroAutoPot(C.SetHeroAutoPot p)
         {
             if (Character.CurrentHero == null) return;
 
+            bool invalidHP = p.HPItemIndex > 0 && !IsValidHeroPotionIndex(p.HPItemIndex, true);
+            bool invalidMP = p.MPItemIndex > 0 && !IsValidHeroPotionIndex(p.MPItemIndex, false);
+
             Character.CurrentHero.AutoPot = p.AutoPot;
-            Character.CurrentHero.HPItemIndex = IsValidHeroPotionIndex(p.HPItemIndex, true) ? p.HPItemIndex : 0;
-            Character.CurrentHero.MPItemIndex = IsValidHeroPotionIndex(p.MPItemIndex, false) ? p.MPItemIndex : 0;
+            Character.CurrentHero.HPItemIndex = p.HPItemIndex <= 0 || invalidHP ? 0 : p.HPItemIndex;
+            Character.CurrentHero.MPItemIndex = p.MPItemIndex <= 0 || invalidMP ? 0 : p.MPItemIndex;
             Character.CurrentHero.AutoHPPercent = (byte)Math.Min(100, Math.Max(1, (int)p.AutoHPPercent));
             Character.CurrentHero.AutoMPPercent = (byte)Math.Min(100, Math.Max(1, (int)p.AutoMPPercent));
 
@@ -3701,6 +4012,16 @@ namespace Server.Models
             });
 
             Hero?.SendInformation();
+
+            if (invalidHP || invalidMP)
+            {
+                string potionType = invalidHP && invalidMP ? "HP/MP" : invalidHP ? "HP" : "MP";
+                Connection.ReceiveChat($"英雄{potionType}自动喝药设置无效：请选择当前英雄背包中可自动喝药且能恢复对应属性的药品。", MessageType.System);
+            }
+            else if (Character.CurrentHero.AutoPot && Character.CurrentHero.HPItemIndex <= 0 && Character.CurrentHero.MPItemIndex <= 0)
+            {
+                Connection.ReceiveChat("英雄自动喝药已开启，但尚未设置 HP 或 MP 药品。", MessageType.System);
+            }
         }
 
         #endregion
@@ -8052,7 +8373,12 @@ namespace Server.Models
 
             if (p.ToGrid == GridType.HeroEquipment)
             {
-                if (!Hero.CanWearItem(fromItem, (EquipmentSlot)p.ToSlot)) return;
+                string heroWearFailure = Hero.GetWearItemFailureMessage(fromItem, (EquipmentSlot)p.ToSlot);
+                if (heroWearFailure != null)
+                {
+                    Connection.ReceiveChatWithObservers(con => $"英雄不能装备{fromItem.Info.ItemName}：{heroWearFailure}", MessageType.System);
+                    return;
+                }
             }
 
             if (p.ToGrid == GridType.CompanionInventory && p.FromGrid != GridType.CompanionInventory)

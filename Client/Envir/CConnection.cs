@@ -96,6 +96,8 @@ namespace Client.Envir
             GameScene.Game.MaximumHeroCount = info.MaximumHeroCount;
             GameScene.Game.HeroSpawnState = info.HeroSpawnState;
             GameScene.Game.HeroBehaviour = info.HeroBehaviour;
+            GameScene.Game.HeroCustomBehaviourProfile = info.HeroCustomBehaviourProfile;
+            GameScene.Game.HeroCustomBehaviourProfileName = info.HeroCustomBehaviourProfileName;
             GameScene.Game.CurrentHero = info.CurrentHero;
 
             GameScene.Game.StorageSize = info.StorageSize;
@@ -3821,6 +3823,8 @@ namespace Client.Envir
                 GameScene.Game.CurrentHero = null;
             GameScene.Game.HeroSpawnState = p.State;
             GameScene.Game.HeroBehaviour = p.Behaviour;
+            GameScene.Game.HeroCustomBehaviourProfile = p.CustomBehaviourProfile;
+            GameScene.Game.HeroCustomBehaviourProfileName = p.CustomBehaviourProfileName;
             GameScene.Game.HeroBox.HeroChanged();
         }
 
@@ -3911,6 +3915,8 @@ namespace Client.Envir
         public void Process(S.SetHeroBehaviour p)
         {
             GameScene.Game.HeroBehaviour = p.Behaviour;
+            GameScene.Game.HeroCustomBehaviourProfile = p.CustomBehaviourProfile;
+            GameScene.Game.HeroCustomBehaviourProfileName = p.CustomBehaviourProfileName;
             GameScene.Game.HeroBox.UpdateLabels();
         }
 

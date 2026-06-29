@@ -171,6 +171,15 @@ namespace Server.Models
                                 }
                             }
                         }
+                        else if (Owner is HeroObject hero)
+                        {
+                            if (!hero.CanAttackTarget(ob)) return;
+
+                            int damage = hero.Attack(ob, Math.Max(hero.GetMC(), hero.GetDC()) + hero.Level + hero.Stats[Stat.FireAttack], Element.Fire);
+
+                            if (damage > 0 && Magic != null)
+                                hero.LevelMagic(Magic);
+                        }
                     }
                     break;
                 case SpellEffect.Tempest:

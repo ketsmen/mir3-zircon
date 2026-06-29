@@ -444,6 +444,8 @@ namespace Library
         public int MaximumHeroCount { get; set; }
         public HeroSpawnState HeroSpawnState { get; set; }
         public HeroBehaviour HeroBehaviour { get; set; }
+        public HeroCustomBehaviourProfile HeroCustomBehaviourProfile { get; set; }
+        public string HeroCustomBehaviourProfileName { get; set; }
 
         public int StorageSize { get; set; }
 

@@ -256,6 +256,12 @@ namespace Server.Models
                     }
                     return;
                 case ActionType.DelayMagic:
+                    if (action.Data.Length > 0 && action.Data[0] is HeroAreaMagicPayload areaPayload)
+                    {
+                        CompleteHeroAreaMagic(areaPayload);
+                        return;
+                    }
+
                     if (action.Data.Length > 4 && action.Data[1] is int && action.Data[2] is CustomSkillInfo customSkill && action.Data[4] is UserMagic userMagic)
                     {
                         int remainingTicks = action.Data.Length > 5 && action.Data[5] is int ticks ? ticks : 0;
@@ -569,6 +575,9 @@ namespace Server.Models
             if (TryCastCustomHeroSkill())
                 return;
 
+            if (TryCastClassSkill())
+                return;
+
             MagicType magic = GetAutoMagic();
             if (magic != MagicType.None)
             {
@@ -805,6 +814,136 @@ namespace Server.Models
                 0));
 
             return true;
+        }
+
+        protected void QueueHeroAreaMagic(UserMagic magic, MagicType magicType, Element element, Point location, int radius, int delay, bool spawnFireWall = false, int powerRate = 100, int slow = 0)
+        {
+            ActionList.Add(new DelayedAction(
+                SEnvir.Now.AddMilliseconds(Math.Max(0, delay)),
+                ActionType.DelayMagic,
+                new HeroAreaMagicPayload
+                {
+                    Magic = magic,
+                    MagicType = magicType,
+                    Element = element,
+                    Location = location,
+                    Radius = Math.Max(0, radius),
+                    SpawnFireWall = spawnFireWall,
+                    PowerRate = Math.Max(1, powerRate),
+                    Slow = Math.Max(0, slow),
+                }));
+        }
+
+        private void CompleteHeroAreaMagic(HeroAreaMagicPayload payload)
+        {
+            if (payload == null || CurrentMap == null) return;
+
+            if (payload.SpawnFireWall)
+            {
+                SpawnHeroFireWall(payload);
+                return;
+            }
+
+            bool hit = false;
+            foreach (Cell cell in CurrentMap.GetCells(payload.Location, 0, payload.Radius))
+            {
+                if (cell?.Objects == null) continue;
+
+                foreach (MapObject target in cell.Objects.ToArray())
+                {
+                    if (target?.Node == null || target.Dead || target.CurrentMap != CurrentMap || !CanAttackTarget(target)) continue;
+
+                    int damage = Attack(target, GetHeroAreaMagicPower(payload), payload.Element);
+                    if (damage <= 0) continue;
+
+                    hit = true;
+                    LevelAttackPassives(target, payload.MagicType, payload.Element);
+                    OnAttackLanded(target, payload.MagicType, damage);
+
+                    if (payload.Slow > 0)
+                    {
+                        target.ApplyPoison(new Poison
+                        {
+                            Owner = this,
+                            Type = PoisonType.Slow,
+                            Value = payload.Slow,
+                            TickFrequency = TimeSpan.FromSeconds(1),
+                            TickCount = 3,
+                            CanKill = false,
+                        });
+                    }
+                }
+            }
+
+            if (hit)
+                LevelAttackMagic(payload.MagicType);
+        }
+
+        private int GetHeroAreaMagicPower(HeroAreaMagicPayload payload)
+        {
+            int power = Math.Max(GetMC(), GetDC()) + Level + (payload.Magic?.GetPower() ?? 0);
+
+            power += payload.Element switch
+            {
+                Element.Fire => Stats[Stat.FireAttack],
+                Element.Ice => Stats[Stat.IceAttack],
+                Element.Lightning => Stats[Stat.LightningAttack],
+                Element.Wind => Stats[Stat.WindAttack],
+                Element.Holy => Stats[Stat.HolyAttack],
+                Element.Dark => Stats[Stat.DarkAttack],
+                Element.Phantom => Stats[Stat.PhantomAttack],
+                _ => 0,
+            };
+
+            return Math.Max(1, power * payload.PowerRate / 100);
+        }
+
+        private void SpawnHeroFireWall(HeroAreaMagicPayload payload)
+        {
+            bool spawned = false;
+            Point[] locations =
+            {
+                Functions.Move(payload.Location, MirDirection.Up),
+                Functions.Move(payload.Location, MirDirection.Down),
+                payload.Location,
+                Functions.Move(payload.Location, MirDirection.Left),
+                Functions.Move(payload.Location, MirDirection.Right),
+            };
+
+            foreach (Point location in locations)
+            {
+                Cell cell = CurrentMap.GetCell(location);
+                if (cell == null) continue;
+
+                if (cell.Objects != null)
+                {
+                    for (int i = cell.Objects.Count - 1; i >= 0; i--)
+                    {
+                        if (cell.Objects[i].Race != ObjectType.Spell) continue;
+
+                        SpellObject spell = (SpellObject)cell.Objects[i];
+                        if (spell.Effect != SpellEffect.FireWall && spell.Effect != SpellEffect.Tempest) continue;
+
+                        spell.Despawn();
+                    }
+                }
+
+                SpellObject ob = new SpellObject
+                {
+                    DisplayLocation = cell.Location,
+                    TickCount = ((payload.Magic?.Level ?? 0) + 2) * 5,
+                    TickFrequency = TimeSpan.FromSeconds(2),
+                    Owner = this,
+                    Effect = SpellEffect.FireWall,
+                    Magic = payload.Magic,
+                };
+
+                if (ob.Spawn(cell.Map, cell.Location))
+                    spawned = true;
+            }
+
+            if (spawned)
+                LevelAttackMagic(payload.MagicType);
         }
 
         private bool TryGetCustomAutoSkill(out UserMagic magic, out CustomSkillInfo skill, bool requireTargetInRange = false)
@@ -1956,10 +2095,10 @@ namespace Server.Models
         public void OwnerEngagedTarget(MapObject target)
         {
             if (Node == null || Dead) return;
-            if (!UsesActiveAttackBehaviour()) return;
+            if (!AcceptsOwnerEngagedTarget()) return;
             if (!CanAcceptOwnerTarget(target)) return;
 
-            if (Behaviour == HeroBehaviour.Attack)
+            if (Behaviour == HeroBehaviour.Attack || IsFocusOwnerTargetCustomBehaviour())
             {
                 Target = target;
                 SearchTime = DateTime.MinValue;
@@ -1983,6 +2122,13 @@ namespace Server.Models
             };
         }
 
+        private bool AcceptsOwnerEngagedTarget()
+        {
+            return Behaviour == HeroBehaviour.Attack ||
+                   IsAttackCompatibleCustomBehaviour() ||
+                   IsFocusOwnerTargetCustomBehaviour();
+        }
+
         private bool UsesActiveAttackBehaviour()
         {
             return Behaviour == HeroBehaviour.Attack || IsAttackCompatibleCustomBehaviour();
@@ -1991,7 +2137,13 @@ namespace Server.Models
         private bool IsAttackCompatibleCustomBehaviour()
         {
             return Behaviour == HeroBehaviour.Custom &&
-                   Config.HeroCustomBehaviourProfile == HeroCustomBehaviourProfile.AttackCompatible;
+                   Owner?.Character?.HeroCustomBehaviourProfile == HeroCustomBehaviourProfile.AttackCompatible;
+        }
+
+        private bool IsFocusOwnerTargetCustomBehaviour()
+        {
+            return Behaviour == HeroBehaviour.Custom &&
+                   Owner?.Character?.HeroCustomBehaviourProfile == HeroCustomBehaviourProfile.FocusOwnerTarget;
         }
 
         protected virtual bool CanPursueTarget(MapObject target)
@@ -2538,6 +2690,11 @@ namespace Server.Models
                    Functions.InRange(CurrentLocation, Target.CurrentLocation, DesiredAttackRange);
         }
 
+        protected virtual bool TryCastClassSkill()
+        {
+            return false;
+        }
+
         protected virtual MagicType GetAutoMagic()
         {
             if (AutoMagic == MagicType.None || CurrentMP < AutoMagicCost || !CanCast) return MagicType.None;
@@ -2975,20 +3132,25 @@ namespace Server.Models
 
         public bool CanUseItem(UserItem item)
         {
-            if (item?.Info == null) return false;
-            if ((item.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage) return false;
-            if ((item.Flags & UserItemFlags.GameMaster) == UserItemFlags.GameMaster && Owner?.Character?.Account?.TempAdmin != true) return false;
-            if (item.Info.Durability > 0 && item.CurrentDurability <= 0) return false;
+            return GetUseItemFailureMessage(item) == null;
+        }
+
+        public string GetUseItemFailureMessage(UserItem item)
+        {
+            if (item?.Info == null) return "物品无效。";
+            if ((item.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage) return "婚戒不能由英雄使用。";
+            if ((item.Flags & UserItemFlags.GameMaster) == UserItemFlags.GameMaster && Owner?.Character?.Account?.TempAdmin != true) return "GM 专属物品不能由英雄使用。";
+            if (item.Info.Durability > 0 && item.CurrentDurability <= 0) return "物品耐久不足。";
 
             switch (Gender)
             {
                 case MirGender.Male:
                     if ((item.Info.RequiredGender & RequiredGender.Male) != RequiredGender.Male)
-                        return false;
+                        return "英雄性别不符合。";
                     break;
                 case MirGender.Female:
                     if ((item.Info.RequiredGender & RequiredGender.Female) != RequiredGender.Female)
-                        return false;
+                        return "英雄性别不符合。";
                     break;
             }
 
@@ -2996,62 +3158,62 @@ namespace Server.Models
             {
                 case MirClass.Warrior:
                     if ((item.Info.RequiredClass & RequiredClass.Warrior) != RequiredClass.Warrior)
-                        return false;
+                        return "英雄职业不符合。";
                     break;
                 case MirClass.Wizard:
                     if ((item.Info.RequiredClass & RequiredClass.Wizard) != RequiredClass.Wizard)
-                        return false;
+                        return "英雄职业不符合。";
                     break;
                 case MirClass.Taoist:
                     if ((item.Info.RequiredClass & RequiredClass.Taoist) != RequiredClass.Taoist)
-                        return false;
+                        return "英雄职业不符合。";
                     break;
                 case MirClass.Assassin:
                     if ((item.Info.RequiredClass & RequiredClass.Assassin) != RequiredClass.Assassin)
-                        return false;
+                        return "英雄职业不符合。";
                     break;
             }
 
             switch (item.Info.RequiredType)
             {
                 case RequiredType.Level:
-                    if (Level < item.Info.RequiredAmount) return false;
+                    if (Level < item.Info.RequiredAmount) return $"英雄等级不足，需要 {item.Info.RequiredAmount} 级。";
                     break;
                 case RequiredType.MaxLevel:
-                    if (Level > item.Info.RequiredAmount) return false;
+                    if (Level > item.Info.RequiredAmount) return $"英雄等级过高，需要不高于 {item.Info.RequiredAmount} 级。";
                     break;
                 case RequiredType.AC:
-                    if (Stats[Stat.MaxAC] < item.Info.RequiredAmount) return false;
+                    if (Stats[Stat.MaxAC] < item.Info.RequiredAmount) return $"英雄防御不足，需要 {item.Info.RequiredAmount}。";
                     break;
                 case RequiredType.MR:
-                    if (Stats[Stat.MaxMR] < item.Info.RequiredAmount) return false;
+                    if (Stats[Stat.MaxMR] < item.Info.RequiredAmount) return $"英雄魔防不足，需要 {item.Info.RequiredAmount}。";
                     break;
                 case RequiredType.DC:
-                    if (Stats[Stat.MaxDC] < item.Info.RequiredAmount) return false;
+                    if (Stats[Stat.MaxDC] < item.Info.RequiredAmount) return $"英雄攻击不足，需要 {item.Info.RequiredAmount}。";
                     break;
                 case RequiredType.MC:
-                    if (Stats[Stat.MaxMC] < item.Info.RequiredAmount) return false;
+                    if (Stats[Stat.MaxMC] < item.Info.RequiredAmount) return $"英雄魔法不足，需要 {item.Info.RequiredAmount}。";
                     break;
                 case RequiredType.SC:
-                    if (Stats[Stat.MaxSC] < item.Info.RequiredAmount) return false;
+                    if (Stats[Stat.MaxSC] < item.Info.RequiredAmount) return $"英雄道术不足，需要 {item.Info.RequiredAmount}。";
                     break;
                 case RequiredType.Health:
-                    if (Stats[Stat.Health] < item.Info.RequiredAmount) return false;
+                    if (Stats[Stat.Health] < item.Info.RequiredAmount) return $"英雄生命不足，需要 {item.Info.RequiredAmount}。";
                     break;
                 case RequiredType.Mana:
-                    if (Stats[Stat.Mana] < item.Info.RequiredAmount) return false;
+                    if (Stats[Stat.Mana] < item.Info.RequiredAmount) return $"英雄魔法值不足，需要 {item.Info.RequiredAmount}。";
                     break;
                 case RequiredType.Accuracy:
-                    if (Stats[Stat.Accuracy] < item.Info.RequiredAmount) return false;
+                    if (Stats[Stat.Accuracy] < item.Info.RequiredAmount) return $"英雄命中不足，需要 {item.Info.RequiredAmount}。";
                     break;
                 case RequiredType.Agility:
-                    if (Stats[Stat.Agility] < item.Info.RequiredAmount) return false;
+                    if (Stats[Stat.Agility] < item.Info.RequiredAmount) return $"英雄敏捷不足，需要 {item.Info.RequiredAmount}。";
                     break;
                 case RequiredType.RebirthLevel:
                 case RequiredType.MaxRebirthLevel:
                 case RequiredType.CompanionLevel:
                 case RequiredType.MaxCompanionLevel:
-                    return false;
+                    return "英雄不支持该物品的使用条件。";
             }
 
             switch (item.Info.ItemEffect)
@@ -3059,19 +3221,21 @@ namespace Server.Models
                 case ItemEffect.PickAxe:
                 case ItemEffect.FishingRod:
                 case ItemEffect.MagicRing:
-                    return false;
+                    return "该工具不能由英雄使用。";
             }
 
             if (item.Info.ItemType == ItemType.Book)
             {
                 MagicInfo magic = SEnvir.GetMagicInfo(item.Info.Shape);
-                if (magic == null || magic.School == MagicSchool.None) return false;
-                if (TryGetMagic(magic.Magic, out UserMagic userMagic) && (userMagic.Level < 3 || (item.Flags & UserItemFlags.NonRefinable) == UserItemFlags.NonRefinable)) return false;
+                if (magic == null || magic.School == MagicSchool.None) return "英雄不能学习这本技能书。";
+                if (TryGetMagic(magic.Magic, out UserMagic userMagic) && userMagic.Level < 3) return "英雄已经学会该技能。";
+                if (userMagic != null && (item.Flags & UserItemFlags.NonRefinable) == UserItemFlags.NonRefinable) return "这本技能书不能用于英雄进阶。";
             }
 
-            if (item.Info.ItemType == ItemType.Consumable && !CanUseConsumableItem(item.Info)) return false;
+            if (item.Info.ItemType == ItemType.Consumable && !CanUseConsumableItem(item.Info))
+                return "英雄不能使用该消耗品。";
 
-            return true;
+            return null;
         }
 
         private bool CanUseConsumableItem(ItemInfo info)
@@ -3199,8 +3363,16 @@ namespace Server.Models
 
         public bool CanWearItem(UserItem item, EquipmentSlot slot)
         {
-            if (!Functions.CorrectSlot(item.Info.ItemType, slot) || !CanUseItem(item))
-                return false;
+            return GetWearItemFailureMessage(item, slot) == null;
+        }
+
+        public string GetWearItemFailureMessage(UserItem item, EquipmentSlot slot)
+        {
+            if (item?.Info == null) return "物品无效。";
+            if (!Functions.CorrectSlot(item.Info.ItemType, slot)) return "该物品不能装备到这个英雄装备位。";
+
+            string useFailure = GetUseItemFailureMessage(item);
+            if (useFailure != null) return useFailure;
 
             switch (slot)
             {
@@ -3210,7 +3382,7 @@ namespace Server.Models
                 case EquipmentSlot.Bait:
                 case EquipmentSlot.Finder:
                 case EquipmentSlot.Reel:
-                    return false;
+                    return "英雄暂不支持该装备位。";
             }
 
             switch (item.Info.ItemType)
@@ -3221,18 +3393,18 @@ namespace Server.Models
                 case ItemType.Bait:
                 case ItemType.Finder:
                 case ItemType.Reel:
-                    return false;
+                    return "英雄暂不支持该类装备。";
                 case ItemType.Weapon:
                 case ItemType.Torch:
                 case ItemType.Shield:
-                    if (HandWeight - (Equipment[(int)slot]?.Weight ?? 0) + item.Weight > Stats[Stat.HandWeight]) return false;
+                    if (HandWeight - (Equipment[(int)slot]?.Weight ?? 0) + item.Weight > Stats[Stat.HandWeight]) return "英雄腕力不足。";
                     break;
                 default:
-                    if (WearWeight - (Equipment[(int)slot]?.Weight ?? 0) + item.Weight > Stats[Stat.WearWeight]) return false;
+                    if (WearWeight - (Equipment[(int)slot]?.Weight ?? 0) + item.Weight > Stats[Stat.WearWeight]) return "英雄穿戴负重不足。";
                     break;
             }
 
-            return true;
+            return null;
         }
 
         public void SendShapeUpdate()
@@ -3302,7 +3474,13 @@ namespace Server.Models
             Owner?.Enqueue(result);
 
             if (Dead || Owner?.Node == null) return;
-            if (!CanUseItem(item)) return;
+
+            string failureMessage = GetUseItemFailureMessage(item);
+            if (failureMessage != null)
+            {
+                Owner.Connection?.ReceiveChat($"{Name}不能使用{item.Info.ItemName}：{failureMessage}", MessageType.System);
+                return;
+            }
 
             bool checkAutoPotion = false;
 
@@ -3645,6 +3823,18 @@ namespace Server.Models
             item.Flags &= ~UserItemFlags.Locked;
         }
 
+        private sealed class HeroAreaMagicPayload
+        {
+            public UserMagic Magic { get; init; }
+            public MagicType MagicType { get; init; }
+            public Element Element { get; init; }
+            public Point Location { get; init; }
+            public int Radius { get; init; }
+            public bool SpawnFireWall { get; init; }
+            public int PowerRate { get; init; }
+            public int Slow { get; init; }
+        }
+
         private sealed class SkillAreaPayload
         {
             public Map Map { get; init; }
@@ -3677,25 +3867,60 @@ namespace Server.Models
 
     public sealed class WarriorHero : HeroObject
     {
+        private DateTime FlamingSwordReadyTime;
+        private DateTime SlayingReadyTime;
+        private MagicType CurrentMeleeMagic;
+
         public WarriorHero(HeroInfo info, PlayerObject owner) : base(info, owner) { }
+
+        protected override int GetTargetScore(MapObject ob, int distance)
+        {
+            int score = base.GetTargetScore(ob, distance);
+
+            if (Owner != null && Functions.InRange(Owner.CurrentLocation, ob.CurrentLocation, PreferredOwnerRange + 1))
+                score += 1200;
+
+            if (distance <= 1)
+                score += 900;
+            else
+                score -= Math.Min(900, distance * 120);
+
+            return score;
+        }
 
         protected override MagicType GetMeleeAttackMagic()
         {
-            return Level >= 25 ? MagicType.FlamingSword : MagicType.None;
+            CurrentMeleeMagic = MagicType.None;
+
+            if (Level >= 25 && SEnvir.Now >= FlamingSwordReadyTime)
+            {
+                FlamingSwordReadyTime = SEnvir.Now.AddSeconds(TryGetUsableMagic(MagicType.FlamingSword, out UserMagic magic) ? Math.Max(5, 10 - magic.Level * 2) : 8);
+                CurrentMeleeMagic = MagicType.FlamingSword;
+                return CurrentMeleeMagic;
+            }
+
+            if (Level >= 15 && SEnvir.Now >= SlayingReadyTime)
+            {
+                SlayingReadyTime = SEnvir.Now.AddSeconds(TryGetUsableMagic(MagicType.Slaying, out UserMagic magic) ? Math.Max(3, 7 - magic.Level) : 6);
+                CurrentMeleeMagic = MagicType.Slaying;
+                return CurrentMeleeMagic;
+            }
+
+            return MagicType.None;
         }
 
         protected override Element GetMeleeAttackElement()
         {
-            return Level >= 25 ? Element.Fire : base.GetMeleeAttackElement();
+            return CurrentMeleeMagic == MagicType.FlamingSword ? Element.Fire : base.GetMeleeAttackElement();
         }
 
         protected override int GetMeleeAttackPower()
         {
             int power = base.GetMeleeAttackPower();
 
-            if (Level >= 25)
+            if (CurrentMeleeMagic == MagicType.FlamingSword)
                 power += Math.Max(1, Stats[Stat.MaxDC] / 2);
-            else if (Level >= 15)
+            else if (CurrentMeleeMagic == MagicType.Slaying)
                 power += Math.Max(1, Stats[Stat.MaxDC] / 5);
 
             return power;
@@ -3704,6 +3929,10 @@ namespace Server.Models
 
     public sealed class WizardHero : HeroObject
     {
+        private DateTime AreaMagicReadyTime;
+        private DateTime ShieldReadyTime;
+        private MagicType CurrentAutoMagic;
+
         public WizardHero(HeroInfo info, PlayerObject owner) : base(info, owner) { }
 
         protected override int AttackRange => 6;
@@ -3715,30 +3944,175 @@ namespace Server.Models
 
         protected override MagicType GetAutoMagic()
         {
+            CurrentAutoMagic = MagicType.None;
             if (CurrentMP < AutoMagicCost || !CanCast) return MagicType.None;
 
             if (Level >= 20 && TryGetUsableMagic(MagicType.ThunderBolt, out _))
-                return MagicType.ThunderBolt;
+            {
+                CurrentAutoMagic = MagicType.ThunderBolt;
+                return CurrentAutoMagic;
+            }
 
             if (TryGetUsableMagic(MagicType.FireBall, out _))
-                return MagicType.FireBall;
+            {
+                CurrentAutoMagic = MagicType.FireBall;
+                return CurrentAutoMagic;
+            }
 
-            return base.GetAutoMagic();
+            CurrentAutoMagic = base.GetAutoMagic();
+            return CurrentAutoMagic;
         }
 
         protected override Element GetAutoMagicElement()
         {
-            return GetAutoMagic() == MagicType.ThunderBolt ? Element.Lightning : Element.Fire;
+            return CurrentAutoMagic == MagicType.ThunderBolt ? Element.Lightning : Element.Fire;
         }
 
         protected override int GetAutoMagicPower()
         {
             return Math.Max(GetMC(), GetDC()) + Level + Stats[Stat.FireAttack] + Stats[Stat.LightningAttack];
         }
+
+        protected override bool TryCastClassSkill()
+        {
+            return TryCastMagicShield() || TryCastWizardAreaMagic();
+        }
+
+        private bool TryCastMagicShield()
+        {
+            if (Level < 25 || SEnvir.Now < ShieldReadyTime || !CanCast) return false;
+            if (Buffs.Any(x => x.Type == BuffType.MagicShield || x.Type == BuffType.SuperiorMagicShield)) return false;
+            if (!TryGetUsableMagic(MagicType.MagicShield, out UserMagic magic)) return false;
+            if (CurrentMP < magic.Cost || SEnvir.Now < magic.Cooldown) return false;
+
+            Broadcast(new S.ObjectMagic
+            {
+                ObjectID = ObjectID,
+                Direction = Direction,
+                CurrentLocation = CurrentLocation,
+                Cast = true,
+                Type = MagicType.MagicShield,
+                MagicInfoIndex = magic.Info.Index,
+                AttackElement = Element.None,
+                Locations = new List<Point> { CurrentLocation },
+            });
+
+            ChangeMP(-magic.Cost);
+            magic.Cooldown = SEnvir.Now.AddMilliseconds(Math.Max(0, magic.Info.Delay));
+            ShieldReadyTime = SEnvir.Now.AddSeconds(Math.Max(12, 28 - magic.Level * 4));
+            UpdateMagicAttackTime();
+
+            BuffAdd(BuffType.MagicShield, TimeSpan.FromSeconds(30 + magic.Level * 20 + GetMC() / 2 + Stats[Stat.PhantomAttack] * 2), new Stats
+            {
+                [Stat.MagicShield] = 50,
+            }, true, false, TimeSpan.Zero);
+
+            LevelMagic(magic);
+            return true;
+        }
+
+        private bool TryCastWizardAreaMagic()
+        {
+            if (Target?.Node == null || !CanAttackTarget(Target) || SEnvir.Now < AreaMagicReadyTime || !CanCast) return false;
+            if ((Poison & PoisonType.Silenced) == PoisonType.Silenced) return false;
+
+            var candidates = new[]
+            {
+                (Type: MagicType.IceStorm, Element: Element.Ice, Radius: 1, MinimumTargets: 2, Delay: 500, PowerRate: 100, Slow: 4, FireWall: false),
+                (Type: MagicType.FireStorm, Element: Element.Fire, Radius: 1, MinimumTargets: 2, Delay: 500, PowerRate: 115, Slow: 0, FireWall: false),
+                (Type: MagicType.FireWall, Element: Element.Fire, Radius: 1, MinimumTargets: 1, Delay: 500, PowerRate: 100, Slow: 0, FireWall: true),
+            };
+
+            foreach (var candidate in candidates)
+            {
+                if (!TryGetUsableMagic(candidate.Type, out UserMagic magic)) continue;
+                if (CurrentMP < magic.Cost || SEnvir.Now < magic.Cooldown) continue;
+                if (!TryGetBestWizardAreaLocation(candidate.Radius, candidate.MinimumTargets, out Point location, out _)) continue;
+
+                Direction = Functions.DirectionFromPoint(CurrentLocation, location);
+
+                Broadcast(new S.ObjectMagic
+                {
+                    ObjectID = ObjectID,
+                    Direction = Direction,
+                    CurrentLocation = CurrentLocation,
+                    Cast = true,
+                    Type = candidate.Type,
+                    MagicInfoIndex = magic.Info.Index,
+                    AttackElement = candidate.Element,
+                    Locations = new List<Point> { location },
+                });
+
+                ChangeMP(-magic.Cost);
+                magic.Cooldown = SEnvir.Now.AddMilliseconds(Math.Max(0, magic.Info.Delay));
+                AreaMagicReadyTime = SEnvir.Now + GetWizardAreaCooldown(candidate.Type, magic);
+                UpdateMagicAttackTime();
+                DamageItem((int)EquipmentSlot.Weapon);
+
+                QueueHeroAreaMagic(magic, candidate.Type, candidate.Element, location, candidate.Radius, candidate.Delay, candidate.FireWall, candidate.PowerRate, candidate.Slow);
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryGetBestWizardAreaLocation(int radius, int minimumTargets, out Point location, out int targetCount)
+        {
+            location = Point.Empty;
+            targetCount = 0;
+
+            if (Target?.Node == null || CurrentMap == null) return false;
+
+            IEnumerable<Point> candidates = CurrentMap.GetCells(Target.CurrentLocation, 0, Math.Max(1, radius + 2))
+                .Where(x => x?.Objects != null)
+                .SelectMany(x => x.Objects.ToArray())
+                .Where(x => x?.Node != null && !x.Dead && x.CurrentMap == CurrentMap && CanAttackTarget(x))
+                .Select(x => x.CurrentLocation)
+                .Append(Target.CurrentLocation)
+                .Distinct()
+                .Where(x => Functions.InRange(CurrentLocation, x, AttackRange));
+
+            foreach (Point candidate in candidates)
+            {
+                int count = CountWizardAreaTargets(candidate, radius);
+                if (count < minimumTargets || count <= targetCount) continue;
+
+                targetCount = count;
+                location = candidate;
+            }
+
+            return targetCount >= minimumTargets;
+        }
+
+        private int CountWizardAreaTargets(Point location, int radius)
+        {
+            if (CurrentMap == null) return 0;
+
+            return CurrentMap.GetCells(location, 0, radius)
+                .Where(x => x?.Objects != null)
+                .SelectMany(x => x.Objects.ToArray())
+                .Count(x => x?.Node != null && !x.Dead && x.CurrentMap == CurrentMap && CanAttackTarget(x));
+        }
+
+        private static TimeSpan GetWizardAreaCooldown(MagicType magicType, UserMagic magic)
+        {
+            int level = magic?.Level ?? 0;
+
+            return magicType switch
+            {
+                MagicType.IceStorm => TimeSpan.FromSeconds(Math.Max(6, 12 - level * 2)),
+                MagicType.FireStorm => TimeSpan.FromSeconds(Math.Max(5, 10 - level * 2)),
+                MagicType.FireWall => TimeSpan.FromSeconds(Math.Max(8, 14 - level * 2)),
+                _ => TimeSpan.FromSeconds(8),
+            };
+        }
     }
 
     public sealed class TaoistHero : HeroObject
     {
+        private DateTime SupportBuffReadyTime;
+        private int SupportBuffCursor;
+
         public TaoistHero(HeroInfo info, PlayerObject owner) : base(info, owner) { }
 
         protected override int AttackRange => 5;
@@ -3759,6 +4133,9 @@ namespace Server.Models
             SupportTime = SEnvir.Now + SupportDelay;
 
             if (TryCastCustomHeroSupportSkill())
+                return;
+
+            if (TryCastTaoistSupportBuff())
                 return;
 
             MapObject healTarget = GetHealTarget();
@@ -3817,6 +4194,132 @@ namespace Server.Models
 
             if (hasHealMagic)
                 LevelMagic(healMagic);
+        }
+
+        private bool TryCastTaoistSupportBuff()
+        {
+            if (SEnvir.Now < SupportBuffReadyTime || !CanCast || CurrentMP <= 0 || (Poison & PoisonType.Silenced) == PoisonType.Silenced) return false;
+
+            MagicType[] order =
+            {
+                MagicType.Resilience,
+                MagicType.MagicResistance,
+                MagicType.ElementalSuperiority,
+                MagicType.BloodLust,
+            };
+
+            for (int i = 0; i < order.Length; i++)
+            {
+                MagicType type = order[(SupportBuffCursor + i) % order.Length];
+                if (!TryGetUsableMagic(type, out UserMagic magic)) continue;
+                if (CurrentMP < magic.Cost || SEnvir.Now < magic.Cooldown) continue;
+                if (!TryGetTaoistSupportBuffTarget(type, out MapObject target, out BuffType buffType, out Stats buffStats)) continue;
+
+                if (!Functions.InRange(CurrentLocation, target.CurrentLocation, AttackRange))
+                {
+                    Target = null;
+                    MoveTo(target.CurrentLocation);
+                    return true;
+                }
+
+                Direction = target.CurrentLocation == CurrentLocation
+                    ? Direction
+                    : Functions.DirectionFromPoint(CurrentLocation, target.CurrentLocation);
+
+                Broadcast(new S.ObjectMagic
+                {
+                    ObjectID = ObjectID,
+                    Direction = Direction,
+                    CurrentLocation = CurrentLocation,
+                    Cast = true,
+                    Type = type,
+                    MagicInfoIndex = magic.Info.Index,
+                    AttackElement = Element.None,
+                    Targets = new List<uint> { target.ObjectID },
+                    Locations = new List<Point> { target.CurrentLocation },
+                });
+
+                ChangeMP(-magic.Cost);
+                magic.Cooldown = SEnvir.Now.AddMilliseconds(Math.Max(0, magic.Info.Delay));
+                SupportBuffReadyTime = SEnvir.Now.AddSeconds(Math.Max(4, 8 - magic.Level));
+                SupportBuffCursor = (SupportBuffCursor + i + 1) % order.Length;
+                UpdateMagicAttackTime();
+
+                target.BuffAdd(buffType, TimeSpan.FromSeconds(Math.Max(20, magic.GetPower() + GetSC() * 2)), buffStats, true, false, TimeSpan.Zero);
+                LevelMagic(magic);
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryGetTaoistSupportBuffTarget(MagicType type, out MapObject target, out BuffType buffType, out Stats buffStats)
+        {
+            buffType = GetTaoistSupportBuffType(type);
+            buffStats = null;
+            target = null;
+
+            if (buffType == BuffType.None) return false;
+
+            BuffType targetBuffType = buffType;
+            target = new MapObject[] { Owner, this }
+                .Where(x => x?.Node != null && x.CurrentMap == CurrentMap && !x.Dead && CanHelpTarget(x))
+                .Where(x => TaoistSupportBuffMatchesTarget(type, x))
+                .Where(x => x.Buffs.All(buff => buff.Type != targetBuffType))
+                .OrderBy(x => ReferenceEquals(x, Owner) ? 0 : 1)
+                .ThenBy(x => Functions.Distance(CurrentLocation, x.CurrentLocation))
+                .FirstOrDefault();
+
+            if (target == null) return false;
+
+            buffStats = GetTaoistSupportBuffStats(type);
+            return buffStats != null;
+        }
+
+        private static BuffType GetTaoistSupportBuffType(MagicType type)
+        {
+            return type switch
+            {
+                MagicType.MagicResistance => BuffType.MagicResistance,
+                MagicType.Resilience => BuffType.Resilience,
+                MagicType.ElementalSuperiority => BuffType.ElementalSuperiority,
+                MagicType.BloodLust => BuffType.BloodLust,
+                _ => BuffType.None,
+            };
+        }
+
+        private static bool TaoistSupportBuffMatchesTarget(MagicType type, MapObject target)
+        {
+            bool physical = target switch
+            {
+                PlayerObject player => player.Class is MirClass.Warrior or MirClass.Assassin,
+                HeroObject hero => hero.Class is MirClass.Warrior or MirClass.Assassin,
+                _ => false,
+            };
+
+            return type switch
+            {
+                MagicType.BloodLust => physical,
+                MagicType.ElementalSuperiority => !physical,
+                _ => true,
+            };
+        }
+
+        private Stats GetTaoistSupportBuffStats(MagicType type)
+        {
+            int value = 5;
+
+            if (TryGetUsableMagic(type, out UserMagic magic))
+                value += magic.Level;
+
+            return type switch
+            {
+                MagicType.MagicResistance => new Stats { [Stat.MaxMR] = value },
+                MagicType.Resilience => new Stats { [Stat.MaxAC] = value, [Stat.PhysicalResistance] = 1 },
+                MagicType.ElementalSuperiority => new Stats { [Stat.MaxMC] = value, [Stat.MaxSC] = value },
+                MagicType.BloodLust => new Stats { [Stat.MaxDC] = value },
+                _ => null,
+            };
         }
 
         private MapObject GetHealTarget()
@@ -3884,19 +4387,65 @@ namespace Server.Models
 
     public sealed class AssassinHero : HeroObject
     {
+        private DateTime HemorrhageReadyTime;
+        private DateTime DisciplineReadyTime;
+        private MagicType CurrentMeleeMagic;
+
         public AssassinHero(HeroInfo info, PlayerObject owner) : base(info, owner) { }
+
+        protected override int GetTargetScore(MapObject ob, int distance)
+        {
+            int score = base.GetTargetScore(ob, distance);
+
+            if (distance <= 1)
+                score += 1000;
+            else
+                score -= Math.Min(1000, distance * 150);
+
+            int maxHealth = ob?.Stats?[Stat.Health] ?? 0;
+            if (maxHealth > 0 && ob.CurrentHP > 0 && (long)ob.CurrentHP * 100 <= (long)maxHealth * 45)
+                score += 1400;
+
+            return score;
+        }
 
         protected override MagicType GetMeleeAttackMagic()
         {
-            return Level >= 20 ? MagicType.Hemorrhage : MagicType.None;
+            CurrentMeleeMagic = MagicType.None;
+            if (Target?.Node == null) return MagicType.None;
+
+            if (Level >= 20 && SEnvir.Now >= HemorrhageReadyTime)
+            {
+                int maxHealth = Math.Max(1, Target.Stats[Stat.Health]);
+                bool targetLowHealth = (long)Target.CurrentHP * 100 <= (long)maxHealth * 45;
+                bool targetBleeding = (Target.Poison & PoisonType.Hemorrhage) == PoisonType.Hemorrhage;
+
+                if (!targetBleeding || targetLowHealth)
+                {
+                    HemorrhageReadyTime = SEnvir.Now.AddSeconds(TryGetUsableMagic(MagicType.Hemorrhage, out UserMagic magic) ? Math.Max(4, 9 - magic.Level * 2) : 7);
+                    CurrentMeleeMagic = MagicType.Hemorrhage;
+                    return CurrentMeleeMagic;
+                }
+            }
+
+            if (Level >= 15 && SEnvir.Now >= DisciplineReadyTime)
+            {
+                DisciplineReadyTime = SEnvir.Now.AddSeconds(TryGetUsableMagic(MagicType.Discipline, out UserMagic magic) ? Math.Max(3, 8 - magic.Level) : 7);
+                CurrentMeleeMagic = MagicType.Discipline;
+                return CurrentMeleeMagic;
+            }
+
+            return MagicType.None;
         }
 
         protected override int GetMeleeAttackPower()
         {
             int power = base.GetMeleeAttackPower();
 
-            if (Level >= 20)
+            if (CurrentMeleeMagic == MagicType.Hemorrhage)
                 power += Math.Max(1, Stats[Stat.MaxDC] / 4);
+            else if (CurrentMeleeMagic == MagicType.Discipline)
+                power += Math.Max(1, Stats[Stat.MaxDC] / 6 + Stats[Stat.Accuracy] / 3);
 
             return power;
         }

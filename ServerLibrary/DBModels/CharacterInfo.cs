@@ -659,6 +659,21 @@ namespace Server.DBModels
         }
         private HeroBehaviour _HeroBehaviour = HeroBehaviour.Attack;
 
+        public HeroCustomBehaviourProfile HeroCustomBehaviourProfile
+        {
+            get { return _HeroCustomBehaviourProfile; }
+            set
+            {
+                if (_HeroCustomBehaviourProfile == value) return;
+
+                HeroCustomBehaviourProfile oldValue = _HeroCustomBehaviourProfile;
+                _HeroCustomBehaviourProfile = value;
+
+                OnChanged(oldValue, value, "HeroCustomBehaviourProfile");
+            }
+        }
+        private HeroCustomBehaviourProfile _HeroCustomBehaviourProfile = HeroCustomBehaviourProfile.AttackCompatible;
+
         [Association("Companion")]
         public UserCompanion Companion
         {
