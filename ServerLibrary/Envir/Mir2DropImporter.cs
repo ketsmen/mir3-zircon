@@ -16,16 +16,25 @@ namespace Server.Envir
         private static readonly Regex InsertRegex = new(@"^#INSERT\s+\[(.*?)\]\s*(?:(?:;|//).*)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private readonly Session _session;
         private readonly Dictionary<string, MonsterInfo> _monsters;
+        private readonly Dictionary<int, MonsterInfo> _monstersByIndex;
         private readonly Dictionary<string, ItemInfo> _items;
         private readonly ItemInfo _goldInfo;
 
         public Mir2DropImporter(Session session)
         {
             _session = session;
-            _monsters = session.GetCollection<MonsterInfo>().Binding
+            List<MonsterInfo> monsters = session.GetCollection<MonsterInfo>().Binding
+                .Where(x => x != null)
+                .ToList();
+
+            _monsters = monsters
                 .GroupBy(x => NormalizeName(x.MonsterName), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
+            _monstersByIndex = monsters
+                .GroupBy(x => x.Index)
+                .ToDictionary(x => x.Key, x => x.First());
             _items = session.GetCollection<ItemInfo>().Binding
+                .Where(x => x != null)
                 .GroupBy(x => NormalizeName(x.ItemName), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
             _goldInfo = session.GetCollection<CurrencyInfo>().Binding.FirstOrDefault(x => x.Type == CurrencyType.Gold)?.DropItem;
@@ -183,7 +192,7 @@ namespace Server.Envir
                 return;
             }
 
-            if (!_monsters.TryGetValue(NormalizeName(monsterName), out MonsterInfo monster))
+            if (!TryGetMonster(monsterName, out MonsterInfo monster))
             {
                 report.MissingMonsters.Add(monsterName);
                 return;
@@ -224,7 +233,7 @@ namespace Server.Envir
                 return;
             }
 
-            if (!_monsters.TryGetValue(NormalizeName(monsterName), out MonsterInfo monster))
+            if (!TryGetMonster(monsterName, out MonsterInfo monster))
             {
                 report.MissingMonsters.Add(monsterName);
                 return;
@@ -1005,6 +1014,51 @@ namespace Server.Envir
         private static string NormalizeName(string value)
         {
             return Regex.Replace(value ?? string.Empty, @"\s+", string.Empty);
+        }
+
+        private bool TryGetMonster(string monsterName, out MonsterInfo monster)
+        {
+            if (_monsters.TryGetValue(NormalizeName(monsterName), out monster))
+                return true;
+
+            return TryGetExportedIndexedMonster(monsterName, out monster);
+        }
+
+        private bool TryGetExportedIndexedMonster(string monsterName, out MonsterInfo monster)
+        {
+            monster = null;
+
+            if (string.IsNullOrWhiteSpace(monsterName)) return false;
+
+            int hashIndex = monsterName.LastIndexOf('#');
+            if (hashIndex <= 0 || hashIndex >= monsterName.Length - 1) return false;
+
+            string suffix = monsterName[(hashIndex + 1)..];
+            int duplicateSuffixIndex = suffix.IndexOf('-');
+            string indexText = duplicateSuffixIndex < 0 ? suffix : suffix[..duplicateSuffixIndex];
+
+            if (!int.TryParse(indexText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int monsterIndex)) return false;
+            if (!_monstersByIndex.TryGetValue(monsterIndex, out monster)) return false;
+
+            string baseName = monsterName[..hashIndex];
+            string monsterFileName = SafeFileName(monster.MonsterName);
+
+            if (NormalizeName(baseName).Equals(NormalizeName(monsterFileName), StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            monster = null;
+            return false;
+        }
+
+        private static string SafeFileName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+
+            foreach (char c in Path.GetInvalidFileNameChars())
+                value = value.Replace(c.ToString(), string.Empty);
+
+            return value.Trim();
         }
 
         private static List<string> TokenizeLine(string line)

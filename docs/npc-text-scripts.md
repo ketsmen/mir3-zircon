@@ -194,3 +194,13 @@ LOCALMESSAGE 已完成操作。
 ```
 
 该命令会导出到 `NpcTextPath` 目录，生成 `NPCInfo.txt` 和对应脚本。复杂条件和动作会用 `TODO` 注释保留，需要人工校对。
+
+## 本地一键校验
+
+本地开发时可在仓库根目录执行：
+
+```powershell
+.\Tools\LocalValidate.ps1
+```
+
+该脚本会使用本地调试数据库，统一校验 `Envir\Custom`、`Envir\NPCs` 和 `Envir\Drops`；任一项失败会返回非零退出码。

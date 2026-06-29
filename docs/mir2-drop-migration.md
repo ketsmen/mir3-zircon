@@ -22,6 +22,7 @@ Mir2 怪物掉落使用 `Envir\Drops` 下的文本文件，运行时解析后由
 ## 字段映射
 
 - Mir2 文件名匹配 Mir3 `MonsterInfo.MonsterName`，匹配时会忽略空格并忽略大小写。
+- 数据库中存在同名怪物时，导出器会把后续同名文件写成 `怪物名#MonsterInfoIndex.txt`；导入和本地校验会按 Index 定位对应怪物。
 - 如果怪物使用了 Mir2 的 `DropPath`，可在掉落目录放置 `DropPathMap.txt`，每行使用 `MonsterName=DropPath` 或 `MonsterName,DropPath`；支持行尾 `;`/`//` 注释，但映射路径必须留在掉落目录内。
 - Mir2 物品名匹配 Mir3 `ItemInfo.ItemName`，匹配时会忽略空格并忽略大小写。
 - Mir2 `1/N` 的 `N` 写入 `Chance`。
@@ -57,3 +58,13 @@ Mir2 怪物掉落使用 `Envir\Drops` 下的文本文件，运行时解析后由
 6. 保存数据库。
 
 本仓库已包含一份 `Envir\Drops` 文本数据；部署时需要将它放到服务端 exe 目录下，或通过 `DropTextOverridePath` 指向实际目录。
+
+## 本地一键校验
+
+本地开发时可在仓库根目录执行：
+
+```powershell
+.\Tools\LocalValidate.ps1
+```
+
+该脚本会使用本地调试数据库，统一校验 `Envir\Custom`、`Envir\NPCs` 和 `Envir\Drops`；任一项失败会返回非零退出码。
