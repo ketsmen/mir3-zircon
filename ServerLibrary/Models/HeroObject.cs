@@ -59,6 +59,7 @@ namespace Server.Models
         protected virtual TimeSpan SupportDelay => TimeSpan.FromSeconds(2);
         protected virtual TimeSpan AutoPotDelay => TimeSpan.FromSeconds(1);
         protected virtual TimeSpan AutoMagicDelay => TimeSpan.FromMilliseconds(1600);
+        protected virtual int RangedRetreatDistance => 0;
         protected virtual MagicType AutoMagic => MagicType.None;
         protected virtual Element AutoMagicElement => Element.None;
         protected virtual int AutoMagicCost => 0;
@@ -455,6 +456,9 @@ namespace Server.Models
             }
 
             ReconsiderCloserMonsterTarget(false);
+
+            if (ShouldRetreatFromTarget() && TryRetreatFromTarget())
+                return;
 
             if (!InAttackRange())
             {
@@ -2070,7 +2074,18 @@ namespace Server.Models
 
             foreach (BuffInfo buff in Buffs)
             {
-                if (buff.Pause || buff.Stats == null) continue;
+                if (buff.Pause) continue;
+
+                if (buff.Type == BuffType.ItemBuff)
+                {
+                    ItemInfo info = SEnvir.ItemInfoList.Binding.FirstOrDefault(x => x.Index == buff.ItemIndex);
+                    if (info == null) continue;
+
+                    Stats.Add(info.Stats);
+                    continue;
+                }
+
+                if (buff.Stats == null) continue;
 
                 Stats.Add(buff.Stats);
             }
@@ -2562,6 +2577,36 @@ namespace Server.Models
             }
         }
 
+        protected virtual bool ShouldRetreatFromTarget()
+        {
+            if (RangedRetreatDistance <= 0 || Target?.Node == null || Owner?.Node == null) return false;
+            if (!CanMove || !CanUseAutoMagicForRange) return false;
+            if (!Functions.InRange(CurrentLocation, Target.CurrentLocation, RangedRetreatDistance)) return false;
+
+            return Functions.Distance(CurrentLocation, Owner.CurrentLocation) <= MaxPursuitRange;
+        }
+
+        protected bool TryRetreatFromTarget()
+        {
+            if (Target?.CurrentMap != CurrentMap) return false;
+
+            MirDirection direction = Functions.DirectionFromPoint(Target.CurrentLocation, CurrentLocation);
+            if (Target.CurrentLocation == CurrentLocation && Owner != null)
+                direction = Functions.DirectionFromPoint(Owner.CurrentLocation, CurrentLocation);
+
+            int[] shifts = { 0, -1, 1, -2, 2 };
+            foreach (int shift in shifts)
+            {
+                MirDirection retreatDirection = Functions.ShiftDirection(direction, shift);
+                Point location = Functions.Move(CurrentLocation, retreatDirection);
+
+                if (Owner != null && Functions.Distance(location, Owner.CurrentLocation) > MaxPursuitRange) continue;
+                if (Walk(retreatDirection)) return true;
+            }
+
+            return false;
+        }
+
         public virtual bool Run(MirDirection direction)
         {
             if (!CanMove) return false;
@@ -2772,7 +2817,45 @@ namespace Server.Models
 
             if (CurrentCell == null) return;
 
+            bool oldSafeZone = InSafeZone;
             InSafeZone = CurrentCell.SafeZone != null;
+
+            if (oldSafeZone != InSafeZone)
+                PauseItemBuffs();
+        }
+
+        private void PauseItemBuffs()
+        {
+            bool changed = false;
+
+            foreach (BuffInfo buff in Buffs)
+            {
+                if (buff.Type != BuffType.ItemBuff) continue;
+
+                bool pause = buff.RemainingTime != TimeSpan.MaxValue && InSafeZone;
+                if (buff.Pause == pause) continue;
+
+                buff.Pause = pause;
+                changed = true;
+            }
+
+            if (!changed) return;
+
+            RefreshStats();
+            SendInformation();
+        }
+
+        public override void BuffRemove(BuffInfo info)
+        {
+            BuffType type = info.Type;
+
+            base.BuffRemove(info);
+
+            if (type != BuffType.ItemBuff) return;
+
+            RefreshStats();
+            RemoveAllObjects();
+            SendInformation();
         }
 
         public override void OnBeforeDespawned()
@@ -2952,7 +3035,35 @@ namespace Server.Models
                 if (TryGetMagic(magic.Magic, out UserMagic userMagic) && (userMagic.Level < 3 || (item.Flags & UserItemFlags.NonRefinable) == UserItemFlags.NonRefinable)) return false;
             }
 
+            if (item.Info.ItemType == ItemType.Consumable && !CanUseConsumableItem(item.Info)) return false;
+
             return true;
+        }
+
+        private bool CanUseConsumableItem(ItemInfo info)
+        {
+            switch (info.Shape)
+            {
+                case 0:
+                case 14:
+                case 15:
+                    return true;
+                case 1:
+                    switch (info.ItemEffect)
+                    {
+                        case ItemEffect.DestructionElixir:
+                        case ItemEffect.HasteElixir:
+                        case ItemEffect.LifeElixir:
+                        case ItemEffect.ManaElixir:
+                        case ItemEffect.NatureElixir:
+                        case ItemEffect.SpiritElixir:
+                            return !Buffs.Any(x => x.Type == BuffType.ItemBuff && x.ItemIndex == info.Index && x.RemainingTime == TimeSpan.MaxValue);
+                        default:
+                            return false;
+                    }
+                default:
+                    return false;
+            }
         }
 
         private bool TryGetMagic(MagicType magicType, out UserMagic magic)
@@ -3175,6 +3286,9 @@ namespace Server.Models
                             if (item.Info.Stats[Stat.Experience] > 0)
                                 GainExperience(item.Info.Stats[Stat.Experience]);
                             break;
+                        case 1:
+                            if (!ItemBuffAdd(item.Info)) return;
+                            break;
                         case 14:
                             if (!UsePurificationElixir()) return;
                             break;
@@ -3222,6 +3336,53 @@ namespace Server.Models
             if (checkAutoPotion)
                 CheckAutoPotionAfterUse(item.Info.Index, item.Info.ItemName);
             SendInformation();
+        }
+
+        private bool ItemBuffAdd(ItemInfo info)
+        {
+            if (!CanUseConsumableItem(info)) return false;
+
+            for (int i = Buffs.Count - 1; i >= 0; i--)
+            {
+                BuffInfo buff = Buffs[i];
+                if (buff.Type != BuffType.ItemBuff || info.Index == buff.ItemIndex) continue;
+
+                ItemInfo buffItemInfo = SEnvir.ItemInfoList.Binding.FirstOrDefault(x => x.Index == buff.ItemIndex);
+                if (buffItemInfo?.ItemEffect == info.ItemEffect)
+                    BuffRemove(buff);
+            }
+
+            BuffInfo currentBuff = Buffs.FirstOrDefault(x => x.Type == BuffType.ItemBuff && x.ItemIndex == info.Index);
+
+            if (currentBuff != null)
+            {
+                if (info.Stats[Stat.Duration] >= 0)
+                {
+                    TimeSpan duration = TimeSpan.FromSeconds(info.Stats[Stat.Duration]);
+                    long ticks = currentBuff.RemainingTime.Ticks - long.MaxValue + duration.Ticks;
+
+                    currentBuff.RemainingTime = ticks >= 0 ? TimeSpan.MaxValue : currentBuff.RemainingTime + duration;
+                }
+                else
+                    currentBuff.RemainingTime = TimeSpan.MaxValue;
+
+                return true;
+            }
+
+            currentBuff = SEnvir.BuffInfoList.CreateNewObject();
+
+            currentBuff.Type = BuffType.ItemBuff;
+            currentBuff.ItemIndex = info.Index;
+            currentBuff.RemainingTime = info.Stats[Stat.Duration] > 0 ? TimeSpan.FromSeconds(info.Stats[Stat.Duration]) : TimeSpan.MaxValue;
+            currentBuff.Pause = InSafeZone;
+            currentBuff.IsTemporary = true;
+
+            Buffs.Add(currentBuff);
+
+            RefreshStats();
+            AddAllObjects();
+
+            return true;
         }
 
         private bool UseBook(UserItem item)
@@ -3512,6 +3673,8 @@ namespace Server.Models
         public WizardHero(HeroInfo info, PlayerObject owner) : base(info, owner) { }
 
         protected override int AttackRange => 6;
+        protected override int PreferredOwnerRange => 3;
+        protected override int RangedRetreatDistance => 2;
         protected override MagicType AutoMagic => Level >= 20 ? MagicType.ThunderBolt : MagicType.FireBall;
         protected override Element AutoMagicElement => Level >= 20 ? Element.Lightning : Element.Fire;
         protected override int AutoMagicCost => Math.Max(3, Level / 6);
@@ -3624,15 +3787,36 @@ namespace Server.Models
 
         private MapObject GetHealTarget()
         {
+            int selfMaxHealth = Math.Max(1, Stats[Stat.Health]);
+            int ownerMaxHealth = Math.Max(1, Owner.Stats[Stat.Health]);
+            bool selfHasHeal = Buffs.Any(x => x.Type == BuffType.Heal);
+            bool ownerHasHeal = Owner.Buffs.Any(x => x.Type == BuffType.Heal);
+
             bool selfNeedsHeal = CurrentHP > 0 &&
-                                 (long)CurrentHP * 100 <= (long)Stats[Stat.Health] * 50 &&
-                                 !Buffs.Any(x => x.Type == BuffType.Heal);
+                                 (long)CurrentHP * 100 <= (long)selfMaxHealth * 50 &&
+                                 !selfHasHeal;
+
+            bool selfCritical = CurrentHP > 0 &&
+                                (long)CurrentHP * 100 <= (long)selfMaxHealth * 30 &&
+                                !selfHasHeal;
 
             bool ownerNeedsHeal = Owner.CurrentMap == CurrentMap &&
                 Owner.CurrentHP > 0 &&
-                (long)Owner.CurrentHP * 100 <= (long)Owner.Stats[Stat.Health] * 60 &&
-                !Owner.Buffs.Any(x => x.Type == BuffType.Heal) &&
+                (long)Owner.CurrentHP * 100 <= (long)ownerMaxHealth * 60 &&
+                !ownerHasHeal &&
                 CanHelpTarget(Owner);
+
+            bool ownerCritical = Owner.CurrentMap == CurrentMap &&
+                Owner.CurrentHP > 0 &&
+                (long)Owner.CurrentHP * 100 <= (long)ownerMaxHealth * 35 &&
+                !ownerHasHeal &&
+                CanHelpTarget(Owner);
+
+            if (ownerCritical)
+                return Owner;
+
+            if (selfCritical)
+                return this;
 
             if (ownerNeedsHeal && Functions.InRange(CurrentLocation, Owner.CurrentLocation, AttackRange))
                 return Owner;

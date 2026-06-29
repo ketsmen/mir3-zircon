@@ -25,9 +25,9 @@ namespace Client.Scenes.Views
         private DXTab CharacterTab, InventoryTab, DisciplineTab, SkillTab;
         private DXVScrollBar SkillScrollBar;
 
-        public DXLabel NameLabel, ClassLabel, LevelLabel, HealthLabel, ManaLabel, ExperienceLabel, WeightLabel, StateLabel, BehaviourLabel, CreateInfoLabel, CreateCountLabel, SkillLabel, AutoPotLabel, HPItemLabel, MPItemLabel;
-        private DXLabel WearWeightLabel, HandWeightLabel, DisciplineLevelLabel, DisciplineExperienceLabel, DisciplineMessageLabel, EmptySkillLabel;
-        public DXButton PreviousButton, NextButton, CreateButton, ClassButton, GenderButton, SpawnButton, AttackButton, CounterButton, FollowButton, CustomButton, SetHPButton, SetMPButton, SaveAutoPotButton;
+        public DXLabel NameLabel, ClassLabel, LevelLabel, GradeLabel, HealthLabel, ManaLabel, ExperienceLabel, WeightLabel, StateLabel, BehaviourLabel, CreateInfoLabel, CreateCountLabel, SkillLabel, AutoPotLabel, HPItemLabel, MPItemLabel;
+        private DXLabel WearWeightLabel, HandWeightLabel, ManageLabel, DisciplineLevelLabel, DisciplineExperienceLabel, DisciplineMessageLabel, EmptySkillLabel;
+        public DXButton PreviousButton, NextButton, CurrentButton, RenameButton, DeleteButton, MoveUpButton, MoveDownButton, CreateButton, ClassButton, GenderButton, SpawnButton, AttackButton, CounterButton, FollowButton, CustomButton, SetHPButton, SetMPButton, SaveAutoPotButton;
         private DXButton SortButton;
         public DXCheckBox AutoPotCheckBox;
         public DXNumberBox HPPercentBox, MPPercentBox;
@@ -44,8 +44,25 @@ namespace Client.Scenes.Views
         public MirClass CreateClass = MirClass.Warrior;
         public MirGender CreateGender = MirGender.Male;
         public bool Updating;
+        private ClientUserHero InspectedHero;
+        private int RequestedHeroIndex;
+
+        public bool IsViewingCurrentHero => SelectedHeroIndex > 0 && SelectedHeroIndex == (GameScene.Game?.CurrentHeroIndex ?? 0);
 
         private static readonly MirClass[] ClassCycle = { MirClass.Warrior, MirClass.Wizard, MirClass.Taoist, MirClass.Assassin };
+
+        private ClientUserHero DisplayedHero
+        {
+            get
+            {
+                if (IsViewingCurrentHero)
+                    return GameScene.Game?.CurrentHero;
+
+                return InspectedHero?.Index == SelectedHeroIndex ? InspectedHero : null;
+            }
+        }
+
+        private ClientHeroInformation SelectedSummary => GameScene.Game?.Heroes?.FirstOrDefault(x => x.Index == SelectedHeroIndex);
 
         public HeroDialog()
         {
@@ -95,7 +112,8 @@ namespace Client.Scenes.Views
         {
             NameLabel = CreateLabel(CharacterTab, "未选择英雄", 12, 8, 220, true);
             ClassLabel = CreateLabel(CharacterTab, "职业: -", 12, 30, 120);
-            LevelLabel = CreateLabel(CharacterTab, "等级: -", 140, 30, 120);
+            LevelLabel = CreateLabel(CharacterTab, "等级: -", 140, 30, 66);
+            GradeLabel = CreateLabel(CharacterTab, "品质: -", 210, 30, 70);
             StateLabel = CreateLabel(CharacterTab, "状态: -", 285, 8, 145);
             BehaviourLabel = CreateLabel(CharacterTab, "模式: -", 285, 30, 190);
 
@@ -107,22 +125,25 @@ namespace Client.Scenes.Views
             PreviousButton = CreateButtonControl(CharacterTab, "上一个", 12, 103, 64);
             PreviousButton.MouseClick += (o, e) => SelectRelative(-1);
 
-            NextButton = CreateButtonControl(CharacterTab, "下一个", 82, 103, 64);
+            NextButton = CreateButtonControl(CharacterTab, "下一个", 78, 103, 64);
             NextButton.MouseClick += (o, e) => SelectRelative(1);
 
-            SpawnButton = CreateButtonControl(CharacterTab, "召唤", 152, 103, 70);
+            CurrentButton = CreateButtonControl(CharacterTab, "设为当前", 144, 103, 56);
+            CurrentButton.MouseClick += (o, e) => SetSelectedCurrent();
+
+            SpawnButton = CreateButtonControl(CharacterTab, "召唤", 202, 103, 56);
             SpawnButton.MouseClick += (o, e) => CEnvir.Enqueue(new C.ToggleHeroSpawn());
 
-            AttackButton = CreateButtonControl(CharacterTab, "主动", 228, 103, 52);
+            AttackButton = CreateButtonControl(CharacterTab, "主动", 264, 103, 48);
             AttackButton.MouseClick += (o, e) => CEnvir.Enqueue(new C.SetHeroBehaviour { Behaviour = HeroBehaviour.Attack });
 
-            CounterButton = CreateButtonControl(CharacterTab, "反击", 286, 103, 52);
+            CounterButton = CreateButtonControl(CharacterTab, "反击", 316, 103, 48);
             CounterButton.MouseClick += (o, e) => CEnvir.Enqueue(new C.SetHeroBehaviour { Behaviour = HeroBehaviour.CounterAttack });
 
-            FollowButton = CreateButtonControl(CharacterTab, "跟随", 344, 103, 52);
+            FollowButton = CreateButtonControl(CharacterTab, "跟随", 368, 103, 48);
             FollowButton.MouseClick += (o, e) => CEnvir.Enqueue(new C.SetHeroBehaviour { Behaviour = HeroBehaviour.Follow });
 
-            CustomButton = CreateButtonControl(CharacterTab, "自定=主动", 402, 103, 86);
+            CustomButton = CreateButtonControl(CharacterTab, "自定=主动", 420, 103, 68);
             CustomButton.Hint = "自定义模式当前按主动模式执行，尚未提供独立策略。";
             CustomButton.MouseClick += (o, e) => CEnvir.Enqueue(new C.SetHeroBehaviour { Behaviour = HeroBehaviour.Custom });
 
@@ -147,6 +168,19 @@ namespace Client.Scenes.Views
             CreateButton.MouseClick += (o, e) => OpenCreateWindow();
 
             CreateCountLabel = CreateLabel(CharacterTab, "数量: 0/0", 374, 132, 120);
+            ManageLabel = CreateLabel(CharacterTab, "管理: -", 12, 424, 160, true);
+
+            RenameButton = CreateButtonControl(CharacterTab, "改名", 12, 448, 52);
+            RenameButton.MouseClick += (o, e) => OpenRenameWindow();
+
+            DeleteButton = CreateButtonControl(CharacterTab, "删除", 70, 448, 52);
+            DeleteButton.MouseClick += (o, e) => ConfirmDeleteHero();
+
+            MoveUpButton = CreateButtonControl(CharacterTab, "上移", 128, 448, 52);
+            MoveUpButton.MouseClick += (o, e) => MoveSelectedHero(-1);
+
+            MoveDownButton = CreateButtonControl(CharacterTab, "下移", 186, 448, 52);
+            MoveDownButton.MouseClick += (o, e) => MoveSelectedHero(1);
 
             CharacterTab.BeforeChildrenDraw += CharacterTab_BeforeChildrenDraw;
 
@@ -457,6 +491,63 @@ namespace Client.Scenes.Views
             };
         }
 
+        private void OpenRenameWindow()
+        {
+            ClientHeroInformation summary = SelectedSummary;
+            if (summary == null) return;
+
+            DXInputWindow window = new DXInputWindow("请输入新的英雄名字", "重命名英雄");
+            window.ValueTextBox.TextBox.Text = summary.Name ?? string.Empty;
+            window.ConfirmButton.Enabled = Globals.CharacterReg.IsMatch(window.ValueTextBox.TextBox.Text.Trim());
+            window.ValueTextBox.TextBox.TextChanged += (o, e) =>
+            {
+                string name = window.ValueTextBox.TextBox.Text.Trim();
+                bool valid = Globals.CharacterReg.IsMatch(name);
+
+                window.ConfirmButton.Enabled = valid;
+                window.ValueTextBox.BorderColour = string.IsNullOrEmpty(name) ? Color.FromArgb(198, 166, 99) : valid ? Color.Green : Color.Red;
+            };
+
+            window.ConfirmButton.MouseClick += (o, e) =>
+            {
+                string name = window.Value?.Trim();
+                if (string.IsNullOrEmpty(name) || !Globals.CharacterReg.IsMatch(name)) return;
+
+                CEnvir.Enqueue(new C.RenameHero { Index = summary.Index, Name = name });
+            };
+        }
+
+        private void ConfirmDeleteHero()
+        {
+            ClientHeroInformation summary = SelectedSummary;
+            if (summary == null) return;
+
+            DXMessageBox box = new DXMessageBox($"确定删除英雄 {summary.Name}？\r\n请先清空英雄背包和装备。", "删除英雄", DXMessageBoxButtons.YesNo);
+            box.YesButton.MouseClick += (o, e) => CEnvir.Enqueue(new C.DeleteHero { Index = summary.Index });
+        }
+
+        private void MoveSelectedHero(int direction)
+        {
+            List<ClientHeroInformation> heroes = GameScene.Game?.Heroes;
+            if (heroes == null || heroes.Count <= 1) return;
+
+            int index = heroes.FindIndex(x => x.Index == SelectedHeroIndex);
+            if (index < 0) return;
+
+            int target = Math.Max(0, Math.Min(heroes.Count - 1, index + direction));
+            if (target == index) return;
+
+            CEnvir.Enqueue(new C.MoveHeroSlot { Index = SelectedHeroIndex, Slot = target });
+        }
+
+        private void SetSelectedCurrent()
+        {
+            ClientHeroInformation summary = SelectedSummary;
+            if (summary == null || summary.Index == GameScene.Game?.CurrentHeroIndex) return;
+
+            CEnvir.Enqueue(new C.ChangeHero { Index = summary.Index });
+        }
+
         private void SelectRelative(int direction)
         {
             if (GameScene.Game.Heroes == null || GameScene.Game.Heroes.Count == 0) return;
@@ -465,37 +556,105 @@ namespace Client.Scenes.Views
             current = (current + direction + GameScene.Game.Heroes.Count) % GameScene.Game.Heroes.Count;
 
             ClientHeroInformation hero = GameScene.Game.Heroes[current];
-            SelectedHeroIndex = hero.Index;
-            CEnvir.Enqueue(new C.ChangeHero { Index = hero.Index });
-            UpdateLabels();
+            SelectHero(hero.Index);
+        }
+
+        public void SelectHero(int index, bool requestDetails = true)
+        {
+            if (SelectedHeroIndex == index && (!requestDetails || DisplayedHero != null))
+            {
+                UpdateLabels();
+                return;
+            }
+
+            SelectedHeroIndex = index;
+
+            if (InspectedHero?.Index != SelectedHeroIndex)
+                InspectedHero = null;
+
+            if (requestDetails)
+                RequestSelectedHeroDetails();
+
+            HeroChanged();
+        }
+
+        public void SetInspectedHero(ClientUserHero hero)
+        {
+            if (hero == null || hero.Index != SelectedHeroIndex) return;
+
+            InspectedHero = hero;
+            RequestedHeroIndex = 0;
+            HeroChanged();
+        }
+
+        private void RequestSelectedHeroDetails()
+        {
+            if (SelectedHeroIndex <= 0) return;
+            if (DisplayedHero != null) return;
+            if (RequestedHeroIndex == SelectedHeroIndex) return;
+
+            RequestedHeroIndex = SelectedHeroIndex;
+            CEnvir.Enqueue(new C.InspectHero { Index = SelectedHeroIndex });
         }
 
         public void HeroChanged()
         {
-            ClientUserHero hero = GameScene.Game?.CurrentHero;
+            ClientUserHero currentHero = GameScene.Game?.CurrentHero;
             var heroes = GameScene.Game?.Heroes;
 
-            if (hero != null)
-                SelectedHeroIndex = hero.Index;
-            else if (heroes != null && heroes.Count > 0)
+            if (heroes != null && heroes.Count > 0)
             {
                 int currentHeroIndex = GameScene.Game?.CurrentHeroIndex ?? 0;
 
-                if (currentHeroIndex > 0 && heroes.Any(x => x.Index == currentHeroIndex))
-                    SelectedHeroIndex = currentHeroIndex;
-                else if (SelectedHeroIndex == 0 || heroes.All(x => x.Index != SelectedHeroIndex))
-                    SelectedHeroIndex = heroes[0].Index;
+                if (SelectedHeroIndex == 0 || heroes.All(x => x.Index != SelectedHeroIndex))
+                {
+                    InspectedHero = null;
+
+                    if (currentHeroIndex > 0 && heroes.Any(x => x.Index == currentHeroIndex))
+                        SelectedHeroIndex = currentHeroIndex;
+                    else
+                        SelectedHeroIndex = heroes[0].Index;
+                }
+                else if (currentHero != null && SelectedHeroIndex == currentHero.Index)
+                    InspectedHero = null;
             }
             else
+            {
                 SelectedHeroIndex = 0;
+                InspectedHero = null;
+            }
+
+            if (InspectedHero != null)
+            {
+                ClientHeroInformation summary = SelectedSummary;
+
+                if (summary != null)
+                {
+                    InspectedHero.Name = summary.Name;
+                    InspectedHero.Class = summary.Class;
+                    InspectedHero.Gender = summary.Gender;
+                    InspectedHero.Level = summary.Level;
+                }
+            }
+
+            ClientUserHero hero = DisplayedHero;
+            RequestSelectedHeroDetails();
+
+            if (IsViewingCurrentHero && currentHero != null)
+                SelectedHeroIndex = currentHero.Index;
+            else if (SelectedHeroIndex == 0 && currentHero != null)
+                SelectedHeroIndex = currentHero.Index;
 
             if (DXItemCell.SelectedCell?.GridType == GridType.HeroInventory || DXItemCell.SelectedCell?.GridType == GridType.HeroEquipment)
                 DXItemCell.SelectedCell = null;
 
             InventoryGrid.ItemGrid = hero?.InventoryArray;
+            bool canEdit = hero != null && IsViewingCurrentHero;
+
             foreach (DXItemCell cell in InventoryGrid.Grid)
             {
                 cell.Locked = false;
+                cell.ReadOnly = !canEdit;
                 cell.Selected = false;
             }
 
@@ -505,6 +664,7 @@ namespace Client.Scenes.Views
 
                 EquipmentGrid[i].ItemGrid = hero?.EquipmentArray;
                 EquipmentGrid[i].Locked = false;
+                EquipmentGrid[i].ReadOnly = !canEdit;
                 EquipmentGrid[i].Selected = false;
             }
 
@@ -522,9 +682,9 @@ namespace Client.Scenes.Views
 
         public void UpdateMagic(MagicInfo info)
         {
-            if (info == null) return;
+            if (info == null || !IsViewingCurrentHero) return;
 
-            ClientUserHero hero = GameScene.Game?.CurrentHero;
+            ClientUserHero hero = DisplayedHero;
             ClientUserMagic magic = hero?.Magics.FirstOrDefault(x => x.Info == info);
 
             foreach (HeroMagicCell cell in SkillCells)
@@ -539,17 +699,21 @@ namespace Client.Scenes.Views
 
         public void UpdateLabels()
         {
-            ClientUserHero hero = GameScene.Game?.CurrentHero;
-            ClientHeroInformation summary = null;
+            ClientUserHero hero = DisplayedHero;
+            ClientHeroInformation summary = SelectedSummary;
 
-            if (hero == null && SelectedHeroIndex > 0)
-                summary = GameScene.Game?.Heroes?.FirstOrDefault(x => x.Index == SelectedHeroIndex);
+            bool selectedIsCurrent = IsViewingCurrentHero;
+            string name = hero?.Name ?? summary?.Name ?? "未选择英雄";
+            if (summary != null)
+                name += selectedIsCurrent ? " (当前)" : " (查看)";
 
-            NameLabel.Text = hero?.Name ?? summary?.Name ?? "未选择英雄";
+            NameLabel.Text = name;
             ClassLabel.Text = hero != null ? $"职业: {ClassName(hero.Class)} {GenderName(hero.Gender)}" :
                               summary != null ? $"职业: {ClassName(summary.Class)} {GenderName(summary.Gender)}" : "职业: -";
             LevelLabel.Text = hero != null ? $"等级: {hero.Level}" :
                               summary != null ? $"等级: {summary.Level}" : "等级: -";
+            GradeLabel.Text = hero == null ? "品质: -" : $"品质: {HeroGradeName(hero.Grade)}";
+            GradeLabel.ForeColour = hero == null ? Color.White : HeroGradeColour(hero.Grade);
             HealthLabel.Text = hero == null ? "生命: -" : $"生命: {hero.CurrentHP:#,##0}/{hero.MaxHP:#,##0}";
             ManaLabel.Text = hero == null ? "魔法: -" : $"魔法: {hero.CurrentMP:#,##0}/{hero.MaxMP:#,##0}";
             ExperienceLabel.Text = hero == null || hero.MaxExperience <= 0 ? "经验: -" : $"经验: {hero.Experience:#,##0}/{hero.MaxExperience:#,##0}";
@@ -569,39 +733,48 @@ namespace Client.Scenes.Views
             HandWeightLabel.ForeColour = hero != null && handWeight > maxHandWeight ? Color.Red : Color.White;
 
             HeroSpawnState spawnState = GameScene.Game?.HeroSpawnState ?? HeroSpawnState.None;
-            StateLabel.Text = $"状态: {StateName(spawnState)}";
+            StateLabel.Text = selectedIsCurrent ? $"状态: {StateName(spawnState)}" : "状态: 非当前";
             HeroBehaviour behaviour = GameScene.Game?.HeroBehaviour ?? HeroBehaviour.Attack;
-            BehaviourLabel.Text = $"模式: {BehaviourName(behaviour)}";
+            BehaviourLabel.Text = selectedIsCurrent ? $"模式: {BehaviourName(behaviour)}" : "模式: -";
             AutoPotLabel.Text = hero == null ? "HP药: 未设置\r\nMP药: 未设置" : $"HP药: {PotionText(hero, hero.HPItemIndex)}\r\nMP药: {PotionText(hero, hero.MPItemIndex)}";
 
             int heroCount = GameScene.Game?.Heroes?.Count ?? 0;
             int maximumHeroCount = Math.Max(0, GameScene.Game?.MaximumHeroCount ?? 0);
             CreateCountLabel.Text = maximumHeroCount <= 0 ? $"数量: {heroCount}/关闭" : $"数量: {heroCount}/{maximumHeroCount}";
 
-            bool hasHero = hero != null;
+            bool hasSelectedHero = summary != null || hero != null;
+            bool hasFullHero = hero != null;
+            bool canEditHero = hasFullHero && selectedIsCurrent;
             bool canCreateHero = maximumHeroCount > 0 && heroCount < maximumHeroCount;
-            bool canSelectHero = heroCount > 1 || heroCount == 1 && !hasHero;
+            bool canSelectHero = heroCount > 1 || heroCount == 1 && !hasSelectedHero;
+            int selectedPosition = GameScene.Game?.Heroes?.FindIndex(x => x.Index == SelectedHeroIndex) ?? -1;
+            ManageLabel.Text = selectedPosition < 0 ? "管理: -" : $"管理: 第 {selectedPosition + 1}/{heroCount} 位";
             PreviousButton.Enabled = canSelectHero;
             NextButton.Enabled = canSelectHero;
+            CurrentButton.Enabled = hasSelectedHero && !selectedIsCurrent && !GameScene.Game.Observer;
+            RenameButton.Enabled = hasSelectedHero && !GameScene.Game.Observer;
+            DeleteButton.Enabled = hasSelectedHero && !GameScene.Game.Observer;
+            MoveUpButton.Enabled = hasSelectedHero && selectedPosition > 0 && !GameScene.Game.Observer;
+            MoveDownButton.Enabled = hasSelectedHero && selectedPosition >= 0 && selectedPosition < heroCount - 1 && !GameScene.Game.Observer;
             ClassButton.Enabled = canCreateHero;
             GenderButton.Enabled = canCreateHero;
             CreateButton.Enabled = canCreateHero;
-            SpawnButton.Label.Text = SpawnButtonText(spawnState);
-            SpawnButton.Enabled = hasHero;
-            AttackButton.Enabled = hasHero;
-            CounterButton.Enabled = hasHero;
-            FollowButton.Enabled = hasHero;
-            CustomButton.Enabled = hasHero;
-            SortButton.Enabled = hasHero;
-            HPItemCell.Enabled = hasHero;
-            MPItemCell.Enabled = hasHero;
-            AutoPotCheckBox.Enabled = hasHero;
-            HPPercentBox.Enabled = hasHero;
-            MPPercentBox.Enabled = hasHero;
-            SetHPButton.Enabled = hasHero;
-            SetMPButton.Enabled = hasHero;
-            SaveAutoPotButton.Enabled = hasHero;
-            UpdateBehaviourButtonColours(behaviour);
+            SpawnButton.Label.Text = selectedIsCurrent ? SpawnButtonText(spawnState) : "召唤";
+            SpawnButton.Enabled = canEditHero;
+            AttackButton.Enabled = canEditHero;
+            CounterButton.Enabled = canEditHero;
+            FollowButton.Enabled = canEditHero;
+            CustomButton.Enabled = canEditHero;
+            SortButton.Enabled = canEditHero;
+            HPItemCell.Enabled = canEditHero;
+            MPItemCell.Enabled = canEditHero;
+            AutoPotCheckBox.Enabled = canEditHero;
+            HPPercentBox.Enabled = canEditHero;
+            MPPercentBox.Enabled = canEditHero;
+            SetHPButton.Enabled = canEditHero;
+            SetMPButton.Enabled = canEditHero;
+            SaveAutoPotButton.Enabled = canEditHero;
+            UpdateBehaviourButtonColours(selectedIsCurrent ? behaviour : (HeroBehaviour?)null);
             UpdateStats(hero);
             UpdateDiscipline(hero);
         }
@@ -611,7 +784,7 @@ namespace Client.Scenes.Views
             CreateInfoLabel.Text = $"创建: {ClassName(CreateClass)} {GenderName(CreateGender)}";
         }
 
-        private void UpdateBehaviourButtonColours(HeroBehaviour behaviour)
+        private void UpdateBehaviourButtonColours(HeroBehaviour? behaviour)
         {
             SetBehaviourButtonColour(AttackButton, behaviour == HeroBehaviour.Attack);
             SetBehaviourButtonColour(CounterButton, behaviour == HeroBehaviour.CounterAttack);
@@ -678,7 +851,7 @@ namespace Client.Scenes.Views
             SkillCells.Clear();
             SkillScrollControls.Clear();
 
-            ClientUserHero hero = GameScene.Game?.CurrentHero;
+            ClientUserHero hero = DisplayedHero;
             List<MagicInfo> magicInfos = new();
 
             if (hero != null)
@@ -735,6 +908,8 @@ namespace Client.Scenes.Views
 
         private void SetPotion(bool hp)
         {
+            if (!IsViewingCurrentHero) return;
+
             ClientUserItem item = InventoryGrid.Grid.FirstOrDefault(x => x.Selected)?.Item;
 
             if (item == null || item.Info.ItemType != ItemType.Consumable || item.Info.Shape != 0 || !item.Info.CanAutoPot)
@@ -768,7 +943,9 @@ namespace Client.Scenes.Views
 
         public void SendAutoPot()
         {
-            ClientUserHero hero = GameScene.Game?.CurrentHero;
+            if (!IsViewingCurrentHero) return;
+
+            ClientUserHero hero = DisplayedHero;
             if (hero == null) return;
 
             hero.AutoPot = AutoPotCheckBox.Checked;
@@ -818,7 +995,7 @@ namespace Client.Scenes.Views
 
         private void CharacterTab_BeforeChildrenDraw(object sender, EventArgs e)
         {
-            ClientUserHero hero = GameScene.Game?.CurrentHero;
+            ClientUserHero hero = DisplayedHero;
             if (hero == null) return;
 
             int x = 130;
@@ -1012,6 +1189,31 @@ namespace Client.Scenes.Views
             return value == MirGender.Female ? "女" : "男";
         }
 
+        private static string HeroGradeName(byte value)
+        {
+            return value switch
+            {
+                0 => "普通",
+                1 => "优秀",
+                2 => "精良",
+                3 => "卓越",
+                4 => "传说",
+                _ => $"品质{value}"
+            };
+        }
+
+        private static Color HeroGradeColour(byte value)
+        {
+            return value switch
+            {
+                1 => Color.LightGreen,
+                2 => Color.DeepSkyBlue,
+                3 => Color.Violet,
+                4 => Color.Gold,
+                _ => Color.White
+            };
+        }
+
         private static string StateName(HeroSpawnState value)
         {
             return value switch
@@ -1108,6 +1310,7 @@ namespace Client.Scenes.Views
             NameLabel = null;
             ClassLabel = null;
             LevelLabel = null;
+            GradeLabel = null;
             HealthLabel = null;
             ManaLabel = null;
             ExperienceLabel = null;
@@ -1122,6 +1325,7 @@ namespace Client.Scenes.Views
             MPItemLabel = null;
             WearWeightLabel = null;
             HandWeightLabel = null;
+            ManageLabel = null;
             DisciplineLevelLabel = null;
             DisciplineExperienceLabel = null;
             DisciplineMessageLabel = null;
@@ -1129,6 +1333,11 @@ namespace Client.Scenes.Views
 
             PreviousButton = null;
             NextButton = null;
+            CurrentButton = null;
+            RenameButton = null;
+            DeleteButton = null;
+            MoveUpButton = null;
+            MoveDownButton = null;
             CreateButton = null;
             ClassButton = null;
             GenderButton = null;
@@ -1148,6 +1357,7 @@ namespace Client.Scenes.Views
             HPItemCell = null;
             MPItemCell = null;
             EquipmentGrid = null;
+            InspectedHero = null;
             SkillCells.Clear();
             SkillScrollControls.Clear();
             DisciplineMagicCells.Clear();
@@ -1402,14 +1612,14 @@ namespace Client.Scenes.Views
                 else if (Magic.Level < Globals.MagicMaxLevel)
                 {
                     decimal required = MagicExperienceRequirement(Magic);
-                    ExperienceLabel.Text = required <= 0 ? "Experience: -" : $"Experience: {Magic.Experience}/{required}";
+                    ExperienceLabel.Text = required <= 0 ? "经验: -" : $"经验: {Magic.Experience}/{required}";
                     ExperienceLabel.ForeColour = Color.FromArgb(198, 166, 99);
-                    LevelLabel.Text = $"Level: {Magic.Level}";
+                    LevelLabel.Text = $"等级: {Magic.Level}";
                 }
                 else
                 {
-                    LevelLabel.Text = $"Level: {Magic.Level}";
-                    ExperienceLabel.Text = "Experience: Max Level";
+                    LevelLabel.Text = $"等级: {Magic.Level}";
+                    ExperienceLabel.Text = "经验: 已满级";
                     ExperienceLabel.ForeColour = Color.FromArgb(198, 166, 99);
                 }
 

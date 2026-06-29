@@ -3025,6 +3025,68 @@ namespace Server.Models
             return Math.Min(Globals.HeroMaximumCount, Math.Max(0, Config.HeroMaxCount));
         }
 
+        private List<HeroInfo> GetActiveHeroesBySlot()
+        {
+            return Character.Heroes
+                .Where(x => !x.Deleted)
+                .OrderBy(x => x.Slot)
+                .ThenBy(x => x.Index)
+                .ToList();
+        }
+
+        private HeroInfo GetActiveHero(int index)
+        {
+            return Character.Heroes.FirstOrDefault(x => !x.Deleted && x.Index == index);
+        }
+
+        private void NormalizeHeroSlots(List<HeroInfo> heroes = null)
+        {
+            heroes ??= GetActiveHeroesBySlot();
+
+            for (int i = 0; i < heroes.Count; i++)
+                heroes[i].Slot = i;
+        }
+
+        private bool HeroNameExists(string name, int ignoreHeroIndex = 0)
+        {
+            for (int i = 0; i < SEnvir.HeroInfoList.Count; i++)
+            {
+                HeroInfo info = SEnvir.HeroInfoList[i];
+
+                if (info.Index == ignoreHeroIndex) continue;
+                if (info.Deleted) continue;
+                if (string.Compare(info.Name, name, StringComparison.OrdinalIgnoreCase) != 0) continue;
+
+                return true;
+            }
+
+            for (int i = 0; i < SEnvir.CharacterInfoList.Count; i++)
+            {
+                CharacterInfo info = SEnvir.CharacterInfoList[i];
+
+                if (info.Deleted) continue;
+                if (string.Compare(info.CharacterName, name, StringComparison.OrdinalIgnoreCase) != 0) continue;
+
+                return true;
+            }
+
+            return false;
+        }
+
+        private ClientUserHero CreateHeroPreview(HeroInfo info)
+        {
+            if (info == null) return null;
+
+            if (info == Character.CurrentHero)
+            {
+                HeroSetup();
+                return Hero?.ToClientHero() ?? info.ToClientHero();
+            }
+
+            HeroObject hero = HeroObject.Create(info, this);
+            return hero.ToClientHero();
+        }
+
         private bool TryGetHeroItemArray(GridType grid, out UserItem[] array)
         {
             array = null;
@@ -3280,7 +3342,7 @@ namespace Server.Models
         {
             Enqueue(new S.ManageHeroes
             {
-                Heroes = Character.Heroes.Where(x => !x.Deleted).OrderBy(x => x.Slot).Select(x => x.ToClientInformation()).ToList(),
+                Heroes = GetActiveHeroesBySlot().Select(x => x.ToClientInformation()).ToList(),
                 CurrentHero = Character.CurrentHero?.ToClientInformation(),
                 MaximumCount = GetMaximumHeroCount(),
                 State = GetHeroSpawnState(),
@@ -3402,7 +3464,7 @@ namespace Server.Models
 
         public void ChangeHero(C.ChangeHero p)
         {
-            HeroInfo info = Character.Heroes.FirstOrDefault(x => !x.Deleted && x.Index == p.Index);
+            HeroInfo info = GetActiveHero(p.Index);
 
             if (info == null) return;
 
@@ -3415,6 +3477,120 @@ namespace Server.Models
             HeroSetup();
 
             Enqueue(new S.ChangeHero { Hero = Hero?.ToClientHero() ?? info.ToClientHero(), State = GetHeroSpawnState() });
+            SendHeroManage();
+        }
+
+        public void InspectHero(C.InspectHero p)
+        {
+            HeroInfo info = GetActiveHero(p.Index);
+
+            if (info == null) return;
+
+            bool current = info == Character.CurrentHero;
+            Enqueue(new S.HeroInformation { Hero = CreateHeroPreview(info), Inspect = !current });
+        }
+
+        public void RenameHero(C.RenameHero p)
+        {
+            HeroInfo info = GetActiveHero(p.Index);
+
+            if (info == null) return;
+
+            string name = p.Name?.Trim();
+
+            if (string.IsNullOrWhiteSpace(name) || !Globals.CharacterReg.IsMatch(name))
+            {
+                Connection.ReceiveChat("英雄名字不符合规则。", MessageType.System);
+                return;
+            }
+
+            if (string.Compare(info.Name, name, StringComparison.OrdinalIgnoreCase) == 0)
+            {
+                SendHeroManage();
+                return;
+            }
+
+            if (HeroNameExists(name, info.Index))
+            {
+                Connection.ReceiveChat("这个名字已经被使用。", MessageType.System);
+                return;
+            }
+
+            string oldName = info.Name;
+            info.Name = name;
+
+            if (Hero?.Info == info)
+            {
+                if (Hero.Node != null)
+                {
+                    Hero.RemoveAllObjects();
+                    Hero.AddAllObjects();
+                }
+
+                Enqueue(new S.HeroInformation { Hero = Hero.ToClientHero() });
+            }
+
+            SendHeroManage();
+            Connection.ReceiveChat($"英雄{oldName}已重命名为{name}。", MessageType.System);
+        }
+
+        public void DeleteHero(C.DeleteHero p)
+        {
+            HeroInfo info = GetActiveHero(p.Index);
+
+            if (info == null) return;
+
+            if (info.Items.Any())
+            {
+                Connection.ReceiveChat("请先清空英雄背包和装备，再删除英雄。", MessageType.System);
+                return;
+            }
+
+            bool current = info == Character.CurrentHero;
+            string name = info.Name;
+
+            if (current)
+                HeroDespawn();
+
+            info.Deleted = true;
+
+            List<HeroInfo> heroes = GetActiveHeroesBySlot();
+            NormalizeHeroSlots(heroes);
+
+            if (current)
+            {
+                Character.CurrentHero = heroes.FirstOrDefault();
+                Character.HeroSpawned = false;
+                HeroSetup();
+
+                Enqueue(new S.ChangeHero
+                {
+                    Hero = Character.CurrentHero == null ? null : Hero?.ToClientHero() ?? Character.CurrentHero.ToClientHero(),
+                    State = GetHeroSpawnState()
+                });
+            }
+
+            SendHeroManage();
+            Connection.ReceiveChat($"英雄{name}已删除。", MessageType.System);
+        }
+
+        public void MoveHeroSlot(C.MoveHeroSlot p)
+        {
+            HeroInfo info = GetActiveHero(p.Index);
+
+            if (info == null) return;
+
+            List<HeroInfo> heroes = GetActiveHeroesBySlot();
+            int oldIndex = heroes.IndexOf(info);
+
+            if (oldIndex < 0) return;
+
+            int newIndex = Math.Max(0, Math.Min(heroes.Count - 1, p.Slot));
+
+            heroes.RemoveAt(oldIndex);
+            heroes.Insert(newIndex, info);
+            NormalizeHeroSlots(heroes);
+
             SendHeroManage();
         }
 

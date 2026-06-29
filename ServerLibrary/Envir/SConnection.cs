@@ -1081,6 +1081,30 @@ namespace Server.Envir
 
             Player.ChangeHero(p);
         }
+        public void Process(C.InspectHero p)
+        {
+            if (Stage != GameStage.Game) return;
+
+            Player.InspectHero(p);
+        }
+        public void Process(C.RenameHero p)
+        {
+            if (Stage != GameStage.Game) return;
+
+            Player.RenameHero(p);
+        }
+        public void Process(C.DeleteHero p)
+        {
+            if (Stage != GameStage.Game) return;
+
+            Player.DeleteHero(p);
+        }
+        public void Process(C.MoveHeroSlot p)
+        {
+            if (Stage != GameStage.Game) return;
+
+            Player.MoveHeroSlot(p);
+        }
         public void Process(C.ToggleHeroSpawn p)
         {
             if (Stage != GameStage.Game) return;

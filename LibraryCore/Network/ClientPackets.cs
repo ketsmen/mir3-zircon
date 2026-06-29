@@ -494,6 +494,28 @@ namespace Library.Network.ClientPackets
         public int Index { get; set; }
     }
 
+    public sealed class InspectHero : Packet
+    {
+        public int Index { get; set; }
+    }
+
+    public sealed class RenameHero : Packet
+    {
+        public int Index { get; set; }
+        public string Name { get; set; }
+    }
+
+    public sealed class DeleteHero : Packet
+    {
+        public int Index { get; set; }
+    }
+
+    public sealed class MoveHeroSlot : Packet
+    {
+        public int Index { get; set; }
+        public int Slot { get; set; }
+    }
+
     public sealed class ToggleHeroSpawn : Packet
     {
     }

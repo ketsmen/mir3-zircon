@@ -1373,6 +1373,7 @@ namespace Library.Network.ServerPackets
     public sealed class HeroInformation : Packet
     {
         public ClientUserHero Hero { get; set; }
+        public bool Inspect { get; set; }
     }
 
     public sealed class HeroMagicLeveled : Packet

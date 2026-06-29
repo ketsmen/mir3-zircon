@@ -91,12 +91,12 @@ namespace Client.Envir
 
             GameScene.Game.Companion = GameScene.Game.NPCCompanionStorageBox.Companions.FirstOrDefault(x => x.Index == info.Companion);
 
-            GameScene.Game.Heroes = info.Heroes ?? new List<ClientHeroInformation>();
-            GameScene.Game.CurrentHero = info.CurrentHero;
+            GameScene.Game.Heroes = (info.Heroes ?? new List<ClientHeroInformation>()).OrderBy(x => x.Slot).ToList();
             GameScene.Game.CurrentHeroIndex = info.CurrentHeroIndex;
             GameScene.Game.MaximumHeroCount = info.MaximumHeroCount;
             GameScene.Game.HeroSpawnState = info.HeroSpawnState;
             GameScene.Game.HeroBehaviour = info.HeroBehaviour;
+            GameScene.Game.CurrentHero = info.CurrentHero;
 
             GameScene.Game.StorageSize = info.StorageSize;
             GameScene.Game.HeroBox.HeroChanged();
@@ -1910,6 +1910,60 @@ namespace Client.Envir
 
             GameScene.Game.AddItems(p.Items);
         }
+        private static bool IsHeroGrid(GridType grid)
+        {
+            return grid == GridType.HeroInventory || grid == GridType.HeroEquipment;
+        }
+
+        private static ClientUserItem[] GetCurrentHeroGrid(GridType grid)
+        {
+            ClientUserHero hero = GameScene.Game?.CurrentHero;
+            if (hero == null) return null;
+
+            return grid switch
+            {
+                GridType.HeroInventory => hero.InventoryArray,
+                GridType.HeroEquipment => hero.EquipmentArray,
+                _ => null
+            };
+        }
+
+        private static bool ApplyCurrentHeroItemChange(CellLinkInfo link, bool success)
+        {
+            if (!success || !IsHeroGrid(link.GridType)) return false;
+
+            ClientUserItem[] grid = GetCurrentHeroGrid(link.GridType);
+            if (grid == null || link.Slot < 0 || link.Slot >= grid.Length) return true;
+
+            ClientUserItem item = grid[link.Slot];
+            if (item == null) return true;
+
+            if (link.Count == 0)
+                grid[link.Slot] = null;
+            else
+                item.Count = link.Count;
+
+            return true;
+        }
+
+        private static bool ApplyCurrentHeroItemReduction(CellLinkInfo link, bool success)
+        {
+            if (!success || !IsHeroGrid(link.GridType)) return false;
+
+            ClientUserItem[] grid = GetCurrentHeroGrid(link.GridType);
+            if (grid == null || link.Slot < 0 || link.Slot >= grid.Length) return true;
+
+            ClientUserItem item = grid[link.Slot];
+            if (item == null) return true;
+
+            if (link.Count == item.Count)
+                grid[link.Slot] = null;
+            else
+                item.Count -= link.Count;
+
+            return true;
+        }
+
         public void Process(S.ItemMove p)
         {
             DXItemCell fromCell, toCell;
@@ -2088,6 +2142,13 @@ namespace Client.Envir
 
         public void Process(S.ItemChanged p)
         {
+            if (IsHeroGrid(p.Link.GridType) && !GameScene.Game.HeroBox.IsViewingCurrentHero)
+            {
+                ApplyCurrentHeroItemChange(p.Link, p.Success);
+                GameScene.Game.HeroBox.UpdateLabels();
+                return;
+            }
+
             DXItemCell[] grid;
 
             switch (p.Link.GridType)
@@ -2193,10 +2254,24 @@ namespace Client.Envir
                         grid = GameScene.Game.CompanionBox.EquipmentGrid;
                         break;
                     case GridType.HeroInventory:
+                        if (!GameScene.Game.HeroBox.IsViewingCurrentHero)
+                        {
+                            ApplyCurrentHeroItemReduction(cellLinkInfo, p.Success);
+                            heroInvolved = true;
+                            continue;
+                        }
+
                         grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
                         heroInvolved = true;
                         break;
                     case GridType.HeroEquipment:
+                        if (!GameScene.Game.HeroBox.IsViewingCurrentHero)
+                        {
+                            ApplyCurrentHeroItemReduction(cellLinkInfo, p.Success);
+                            heroInvolved = true;
+                            continue;
+                        }
+
                         grid = GameScene.Game.HeroBox.EquipmentGrid;
                         heroInvolved = true;
                         break;
@@ -2529,6 +2604,26 @@ namespace Client.Envir
         }
         public void Process(S.ItemSort p)
         {
+            if (p.Grid == GridType.HeroInventory && !GameScene.Game.HeroBox.IsViewingCurrentHero)
+            {
+                ClientUserItem[] currentHeroInventory = GetCurrentHeroGrid(GridType.HeroInventory);
+
+                if (p.Success && currentHeroInventory != null)
+                {
+                    Array.Clear(currentHeroInventory, 0, currentHeroInventory.Length);
+
+                    foreach (ClientUserItem item in p.Items)
+                    {
+                        if (item.Slot < 0 || item.Slot >= currentHeroInventory.Length) continue;
+
+                        currentHeroInventory[item.Slot] = item;
+                    }
+                }
+
+                GameScene.Game.HeroBox.UpdateLabels();
+                return;
+            }
+
             DXItemCell[] grid;
 
             switch (p.Grid)
@@ -3709,15 +3804,15 @@ namespace Client.Envir
 
         public void Process(S.ChangeHero p)
         {
-            GameScene.Game.CurrentHero = p.Hero;
             GameScene.Game.CurrentHeroIndex = p.Hero?.Index ?? 0;
             GameScene.Game.HeroSpawnState = p.State;
-            GameScene.Game.HeroBox.HeroChanged();
+            GameScene.Game.CurrentHero = p.Hero;
+            GameScene.Game.HeroBox.SelectHero(GameScene.Game.CurrentHeroIndex, false);
         }
 
         public void Process(S.ManageHeroes p)
         {
-            GameScene.Game.Heroes = p.Heroes ?? new List<ClientHeroInformation>();
+            GameScene.Game.Heroes = (p.Heroes ?? new List<ClientHeroInformation>()).OrderBy(x => x.Slot).ToList();
             GameScene.Game.MaximumHeroCount = p.MaximumCount;
             GameScene.Game.CurrentHeroIndex = p.CurrentHero?.Index ?? 0;
             if (GameScene.Game.CurrentHeroIndex == 0 ||
@@ -3731,8 +3826,14 @@ namespace Client.Envir
 
         public void Process(S.HeroInformation p)
         {
-            GameScene.Game.CurrentHero = p.Hero;
+            if (p.Inspect)
+            {
+                GameScene.Game.HeroBox.SetInspectedHero(p.Hero);
+                return;
+            }
+
             GameScene.Game.CurrentHeroIndex = p.Hero?.Index ?? 0;
+            GameScene.Game.CurrentHero = p.Hero;
 
             if (p.Hero != null)
             {
@@ -3746,7 +3847,7 @@ namespace Client.Envir
                 }
             }
 
-            GameScene.Game.HeroBox.HeroChanged();
+            GameScene.Game.HeroBox.SelectHero(GameScene.Game.CurrentHeroIndex, false);
         }
 
         public void Process(S.HeroMagicLeveled p)

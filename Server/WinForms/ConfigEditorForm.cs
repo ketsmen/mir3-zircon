@@ -36,6 +36,9 @@ namespace Server.WinForms
             "HeroRequiredLevel",
             "HeroMaxCount",
             "HeroReviveDelay",
+            "HeroSearchRange",
+            "HeroPursuitRange",
+            "HeroCustomBehaviourProfile",
             "HeroExperienceRate"
         };
 
@@ -64,7 +67,7 @@ namespace Server.WinForms
 
         public void FocusHeroSettings()
         {
-            FocusSetting("AllowNewHero", "英雄配置：可设置英雄创建开关、创建等级、数量上限、复活延迟和经验倍率。");
+            FocusSetting("AllowNewHero", "英雄配置：可设置创建开关、创建等级、数量上限、复活延迟、搜索/追击距离、自定义策略和经验倍率。");
         }
 
         public bool FocusSetting(string propertyName, string statusText = null)
@@ -493,6 +496,27 @@ namespace Server.WinForms
 
             if (TryGetConfigValue(values, "HeroReviveDelay", out TimeSpan heroReviveDelay) && heroReviveDelay < TimeSpan.Zero)
                 errors.Add("HeroReviveDelay: 英雄复活延迟不能为负数。");
+
+            if (TryGetConfigValue(values, "HeroSearchRange", out int heroSearchRange))
+            {
+                if (heroSearchRange < 1)
+                    errors.Add("HeroSearchRange: 英雄搜索距离不能小于 1。");
+
+                if (TryGetConfigValue(values, "MaxViewRange", out int maxViewRangeForSearch) && maxViewRangeForSearch > 0 && heroSearchRange > maxViewRangeForSearch)
+                    errors.Add($"HeroSearchRange: 不能大于 MaxViewRange ({maxViewRangeForSearch})。");
+            }
+
+            if (TryGetConfigValue(values, "HeroPursuitRange", out int heroPursuitRange))
+            {
+                if (heroPursuitRange < 1)
+                    errors.Add("HeroPursuitRange: 英雄追击距离不能小于 1。");
+
+                if (TryGetConfigValue(values, "MaxViewRange", out int maxViewRangeForPursuit) && maxViewRangeForPursuit > 0 && heroPursuitRange > maxViewRangeForPursuit)
+                    errors.Add($"HeroPursuitRange: 不能大于 MaxViewRange ({maxViewRangeForPursuit})。");
+
+                if (TryGetConfigValue(values, "HeroSearchRange", out int configuredHeroSearchRange) && heroPursuitRange < configuredHeroSearchRange)
+                    errors.Add("HeroPursuitRange: 英雄追击距离不能小于 HeroSearchRange。");
+            }
 
             if (TryGetConfigValue(values, "HeroExperienceRate", out int heroExperienceRate) && heroExperienceRate < -100)
                 errors.Add("HeroExperienceRate: 英雄经验倍率不能小于 -100。");

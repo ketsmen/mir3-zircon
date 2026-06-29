@@ -1721,6 +1721,32 @@ namespace Client.Controls
             return true;
         }
 
+        private static bool CanUseHeroConsumable(ItemInfo info)
+        {
+            switch (info.Shape)
+            {
+                case 0:
+                case 14:
+                case 15:
+                    return true;
+                case 1:
+                    switch (info.ItemEffect)
+                    {
+                        case ItemEffect.DestructionElixir:
+                        case ItemEffect.HasteElixir:
+                        case ItemEffect.LifeElixir:
+                        case ItemEffect.ManaElixir:
+                        case ItemEffect.NatureElixir:
+                        case ItemEffect.SpiritElixir:
+                            return true;
+                        default:
+                            return false;
+                    }
+                default:
+                    return false;
+            }
+        }
+
         public bool UseHeroItem()
         {
             switch (Item.Info.ItemType)
@@ -1769,7 +1795,7 @@ namespace Client.Controls
                 case ItemType.Reel:
                     return MoveHeroItemToEquipment(EquipmentSlot.Reel);
                 case ItemType.Consumable:
-                    if (Item.Info.Shape != 0 && Item.Info.Shape != 14 && Item.Info.Shape != 15) return false;
+                    if (!CanUseHeroConsumable(Item.Info)) return false;
                     if (CEnvir.Now < GameScene.Game.UseItemTime && Item.Info.ItemEffect != ItemEffect.ElixirOfPurification) return false;
 
                     GameScene.Game.UseItemTime = CEnvir.Now.AddMilliseconds(Math.Max(250, Item.Info.Durability));
