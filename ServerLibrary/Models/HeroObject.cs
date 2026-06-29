@@ -2225,8 +2225,42 @@ namespace Server.Models
             Stats[Stat.PickUpRadius] = 1;
             Stats[Stat.SkillRate] = 1;
             Stats[Stat.CriticalChance] = 1;
+            ApplyGradeGrowthStats();
             Stats[Stat.BaseHealth] = Stats[Stat.Health];
             Stats[Stat.BaseMana] = Stats[Stat.Mana];
+        }
+
+        private void ApplyGradeGrowthStats()
+        {
+            int maxGrade = Math.Max(0, Math.Min(4, Config.HeroMaxGrade));
+            int grade = Math.Min(Grade, maxGrade);
+            int bonusRate = Math.Max(0, Math.Min(20, Config.HeroGradeStatBonusRate));
+            int rate = grade * bonusRate;
+
+            if (rate <= 0) return;
+
+            ApplyGradeStatBonus(Stat.Health, rate);
+            ApplyGradeStatBonus(Stat.Mana, rate);
+            ApplyGradeStatBonus(Stat.Accuracy, rate);
+            ApplyGradeStatBonus(Stat.Agility, rate);
+            ApplyGradeStatBonus(Stat.MinAC, rate);
+            ApplyGradeStatBonus(Stat.MaxAC, rate);
+            ApplyGradeStatBonus(Stat.MinMR, rate);
+            ApplyGradeStatBonus(Stat.MaxMR, rate);
+            ApplyGradeStatBonus(Stat.MinDC, rate);
+            ApplyGradeStatBonus(Stat.MaxDC, rate);
+            ApplyGradeStatBonus(Stat.MinMC, rate);
+            ApplyGradeStatBonus(Stat.MaxMC, rate);
+            ApplyGradeStatBonus(Stat.MinSC, rate);
+            ApplyGradeStatBonus(Stat.MaxSC, rate);
+        }
+
+        private void ApplyGradeStatBonus(Stat stat, int rate)
+        {
+            int value = Stats[stat];
+            if (value <= 0) return;
+
+            Stats[stat] = value + value * rate / 100;
         }
 
         private void ApplyPassiveMagicStats()

@@ -3445,6 +3445,8 @@ namespace Server.Models
             hero.Level = 1;
             hero.CreationDate = SEnvir.Now;
             hero.Slot = slot;
+            int maxHeroGrade = Math.Max(0, Math.Min(4, Config.HeroMaxGrade));
+            hero.Grade = (byte)Math.Max(0, Math.Min(maxHeroGrade, Config.HeroDefaultGrade));
             hero.AutoHPPercent = 50;
             hero.AutoMPPercent = 50;
 

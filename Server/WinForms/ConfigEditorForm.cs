@@ -39,6 +39,9 @@ namespace Server.WinForms
             "HeroSearchRange",
             "HeroPursuitRange",
             "HeroCustomBehaviourProfile",
+            "HeroDefaultGrade",
+            "HeroMaxGrade",
+            "HeroGradeStatBonusRate",
             "HeroExperienceRate"
         };
 
@@ -67,7 +70,7 @@ namespace Server.WinForms
 
         public void FocusHeroSettings()
         {
-            FocusSetting("AllowNewHero", "英雄配置：可设置创建开关、创建等级、数量上限、复活延迟、搜索/追击距离、自定义策略和经验倍率。");
+            FocusSetting("AllowNewHero", "英雄配置：可设置创建开关、创建等级、数量上限、复活延迟、搜索/追击距离、自定义策略、品质成长和经验倍率。");
         }
 
         public bool FocusSetting(string propertyName, string statusText = null)
@@ -520,6 +523,25 @@ namespace Server.WinForms
 
             if (TryGetConfigValue(values, "HeroExperienceRate", out int heroExperienceRate) && heroExperienceRate < -100)
                 errors.Add("HeroExperienceRate: 英雄经验倍率不能小于 -100。");
+
+            if (TryGetConfigValue(values, "HeroMaxGrade", out int heroMaxGrade) &&
+                (heroMaxGrade < 0 || heroMaxGrade > 4))
+                errors.Add("HeroMaxGrade: 英雄最高品质必须在 0 到 4 之间。");
+
+            if (TryGetConfigValue(values, "HeroDefaultGrade", out int heroDefaultGrade))
+            {
+                int configuredHeroMaxGrade = TryGetConfigValue(values, "HeroMaxGrade", out int validatedHeroMaxGrade) ? validatedHeroMaxGrade : 4;
+
+                if (heroDefaultGrade < 0)
+                    errors.Add("HeroDefaultGrade: 英雄默认品质不能小于 0。");
+
+                if (heroDefaultGrade > configuredHeroMaxGrade)
+                    errors.Add($"HeroDefaultGrade: 默认品质不能大于 HeroMaxGrade ({configuredHeroMaxGrade})。");
+            }
+
+            if (TryGetConfigValue(values, "HeroGradeStatBonusRate", out int heroGradeStatBonusRate) &&
+                (heroGradeStatBonusRate < 0 || heroGradeStatBonusRate > 20))
+                errors.Add("HeroGradeStatBonusRate: 每级品质属性加成建议在 0 到 20 之间。");
         }
 
         private static bool TryGetConfigValue<T>(List<ConfigValue> values, string propertyName, out T value)

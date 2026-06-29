@@ -109,6 +109,9 @@ namespace Server.Envir
         public static int HeroSearchRange { get; set; } = 8;
         public static int HeroPursuitRange { get; set; } = 10;
         public static HeroCustomBehaviourProfile HeroCustomBehaviourProfile { get; set; } = HeroCustomBehaviourProfile.AttackCompatible;
+        public static int HeroDefaultGrade { get; set; } = 0;
+        public static int HeroMaxGrade { get; set; } = 4;
+        public static int HeroGradeStatBonusRate { get; set; } = 5;
         public static int DayCycleCount { get; set; } = 3;
         public static int SkillExp { get; set; } = 3;
         public static bool AllowObservation { get; set; } = true;
