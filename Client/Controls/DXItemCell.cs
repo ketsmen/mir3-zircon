@@ -26,6 +26,28 @@ namespace Client.Controls
         public const int CellWidth = 36;
         public const int CellHeight = 36;
 
+        private static bool CanEditHeroItems()
+        {
+            return GameScene.Game?.HeroBox?.IsHeroItemPanelWritable == true;
+        }
+
+        private static int GetHeroIndex(GridType grid, GridType otherGrid = GridType.None)
+        {
+            if (!Functions.IsHeroGrid(grid) && !Functions.IsHeroGrid(otherGrid)) return 0;
+
+            return GameScene.Game?.CurrentHeroIndex ?? GameScene.Game?.CurrentHero?.Index ?? 0;
+        }
+
+        private bool RejectUnsupportedHeroItemTarget(GridType targetGrid)
+        {
+            if (!Functions.IsHeroGrid(GridType)) return false;
+            if (!Functions.IsUnsupportedHeroItemFeatureGrid(targetGrid)) return false;
+
+            GameScene.Game.ReceiveChat(CEnvir.Language.HeroItemUnsupportedFeature, MessageType.System);
+            if (Selected) SelectedCell = null;
+            return true;
+        }
+
         #endregion
 
         #region Properties
@@ -908,7 +930,7 @@ namespace Client.Controls
                 case GridType.Equipment:
                     if (SelectedCell.GridType == GridType.HeroInventory || SelectedCell.GridType == GridType.HeroEquipment)
                     {
-                        GameScene.Game.ReceiveChat("英雄物品不能直接装备到人物身上。", MessageType.System);
+                        GameScene.Game.ReceiveChat(CEnvir.Language.HeroItemCannotEquipToPlayer, MessageType.System);
                         SelectedCell = null;
                         return;
                     }
@@ -925,7 +947,7 @@ namespace Client.Controls
                 case GridType.HeroEquipment:
                     if (SelectedCell.GridType != GridType.HeroInventory)
                     {
-                        GameScene.Game.ReceiveChat("只有英雄包裹中的物品可以装备到英雄身上。", MessageType.System);
+                        GameScene.Game.ReceiveChat(CEnvir.Language.HeroItemOnlyInventoryCanEquip, MessageType.System);
                         SelectedCell = null;
                         return;
                     }
@@ -952,7 +974,7 @@ namespace Client.Controls
 
             if (fromCell.GridType == GridType.HeroInventory || fromCell.GridType == GridType.HeroEquipment)
             {
-                GameScene.Game.ReceiveChat("英雄物品不能直接装备到人物身上。", MessageType.System);
+                GameScene.Game.ReceiveChat(CEnvir.Language.HeroItemCannotEquipToPlayer, MessageType.System);
                 return;
             }
 
@@ -963,7 +985,8 @@ namespace Client.Controls
                 FromGrid = fromCell.GridType,
                 ToGrid = GridType,
                 FromSlot = fromCell.Slot,
-                ToSlot = Slot
+                ToSlot = Slot,
+                HeroIndex = GetHeroIndex(fromCell.GridType, GridType),
             };
 
             if (Item != null && Item.Info == fromCell.Item.Info && Item.Count < Item.Info.StackSize &&
@@ -992,7 +1015,8 @@ namespace Client.Controls
                 FromGrid = fromCell.GridType,
                 ToGrid = GridType,
                 FromSlot = fromCell.Slot,
-                ToSlot = Slot
+                ToSlot = Slot,
+                HeroIndex = GetHeroIndex(fromCell.GridType, GridType),
             };
 
             if (Item != null && Item.Info == fromCell.Item.Info && Item.Count < Item.Info.StackSize &&
@@ -1011,6 +1035,7 @@ namespace Client.Controls
         public void ToHeroEquipment(DXItemCell fromCell)
         {
             if (Locked || ReadOnly) return;
+            if (!CanEditHeroItems()) return;
 
             if (Item != null && (Item.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage) return;
 
@@ -1018,7 +1043,7 @@ namespace Client.Controls
 
             if (fromCell.GridType != GridType.HeroInventory)
             {
-                GameScene.Game.ReceiveChat("只有英雄包裹中的物品可以装备到英雄身上。", MessageType.System);
+                GameScene.Game.ReceiveChat(CEnvir.Language.HeroItemOnlyInventoryCanEquip, MessageType.System);
                 return;
             }
 
@@ -1030,7 +1055,8 @@ namespace Client.Controls
                 FromGrid = fromCell.GridType,
                 ToGrid = GridType,
                 FromSlot = fromCell.Slot,
-                ToSlot = Slot
+                ToSlot = Slot,
+                HeroIndex = GetHeroIndex(fromCell.GridType, GridType),
             };
 
             if (Item != null && Item.Info == fromCell.Item.Info && Item.Count < Item.Info.StackSize &&
@@ -1051,6 +1077,7 @@ namespace Client.Controls
         {
             if (Item == null || Locked || ReadOnly) return false;
             if (GridType != GridType.HeroInventory) return false;
+            if (!CanEditHeroItems()) return false;
             if (GameScene.Game?.CurrentHero?.EquipmentArray == null || GameScene.Game.HeroBox?.EquipmentGrid == null) return false;
             if (!Functions.CorrectSlot(Item.Info.ItemType, slot)) return false;
             if (!GameScene.Game.CanHeroWearItem(Item, slot)) return false;
@@ -1069,7 +1096,8 @@ namespace Client.Controls
                 FromGrid = GridType,
                 ToGrid = GridType.HeroEquipment,
                 FromSlot = Slot,
-                ToSlot = toSlot
+                ToSlot = toSlot,
+                HeroIndex = GetHeroIndex(GridType, GridType.HeroEquipment),
             };
 
             if (toItem != null && toItem.Info == Item.Info && toItem.Count < toItem.Info.StackSize &&
@@ -1092,6 +1120,9 @@ namespace Client.Controls
         public void MoveItem(DXItemCell toCell)
         {
             ClientBeltLink link;
+
+            if ((Functions.IsHeroManagedGrid(GridType) || Functions.IsHeroManagedGrid(toCell.GridType)) && !CanEditHeroItems()) return;
+            if (RejectUnsupportedHeroItemTarget(toCell.GridType)) return;
 
             #region Belt
 
@@ -1161,7 +1192,7 @@ namespace Client.Controls
                 Stat stat = toCell.GridType == GridType.HeroHPItem ? Stat.Health : Stat.Mana;
                 if (Item.Info.Stats[stat] <= 0)
                 {
-                    GameScene.Game.ReceiveChat(toCell.GridType == GridType.HeroHPItem ? "请选择可以恢复生命的药品。" : "请选择可以恢复魔法的药品。", MessageType.System);
+                    GameScene.Game.ReceiveChat(toCell.GridType == GridType.HeroHPItem ? CEnvir.Language.HeroAutoPotionNeedHealth : CEnvir.Language.HeroAutoPotionNeedMana, MessageType.System);
                     return;
                 }
 
@@ -1235,28 +1266,28 @@ namespace Client.Controls
 
             if (toCell.GridType == GridType.HeroEquipment && GridType != GridType.HeroInventory)
             {
-                GameScene.Game.ReceiveChat("只有英雄包裹中的物品可以装备到英雄身上。", MessageType.System);
+                GameScene.Game.ReceiveChat(CEnvir.Language.HeroItemOnlyInventoryCanEquip, MessageType.System);
                 if (Selected) SelectedCell = null;
                 return;
             }
 
             if (toCell.GridType == GridType.Equipment && (GridType == GridType.HeroInventory || GridType == GridType.HeroEquipment))
             {
-                GameScene.Game.ReceiveChat("英雄物品不能直接装备到人物身上。", MessageType.System);
+                GameScene.Game.ReceiveChat(CEnvir.Language.HeroItemCannotEquipToPlayer, MessageType.System);
                 if (Selected) SelectedCell = null;
                 return;
             }
 
             if (GridType == GridType.Equipment && toCell.GridType == GridType.HeroInventory)
             {
-                GameScene.Game.ReceiveChat("人物装备不能直接放入英雄包裹。", MessageType.System);
+                GameScene.Game.ReceiveChat(CEnvir.Language.PlayerEquipmentCannotMoveToHeroInventory, MessageType.System);
                 if (Selected) SelectedCell = null;
                 return;
             }
 
             if (GridType == GridType.HeroEquipment && toCell.GridType == GridType.Inventory)
             {
-                GameScene.Game.ReceiveChat("英雄装备不能直接放入人物包裹。", MessageType.System);
+                GameScene.Game.ReceiveChat(CEnvir.Language.HeroEquipmentCannotMoveToPlayerInventory, MessageType.System);
                 if (Selected) SelectedCell = null;
                 return;
             }
@@ -1266,7 +1297,8 @@ namespace Client.Controls
                 FromGrid = GridType,
                 ToGrid = toCell.GridType,
                 FromSlot = Slot,
-                ToSlot = toCell.Slot
+                ToSlot = toCell.Slot,
+                HeroIndex = GetHeroIndex(GridType, toCell.GridType),
             };
 
             if (toCell.Item != null && toCell.Item.Info == Item.Info && toCell.Item.Count < toCell.Item.Info.StackSize &&
@@ -1288,11 +1320,14 @@ namespace Client.Controls
         public bool MoveItem(DXItemGrid toGrid, bool skipCount = false)
         {
             if (toGrid.GridType == GridType.Belt || toGrid.GridType == GridType.AutoPotion) return false;
+            if ((Functions.IsHeroManagedGrid(GridType) || Functions.IsHeroManagedGrid(toGrid.GridType)) && !CanEditHeroItems()) return false;
+            if (RejectUnsupportedHeroItemTarget(toGrid.GridType)) return false;
 
             C.ItemMove packet = new C.ItemMove
             {
                 FromGrid = GridType,
                 FromSlot = Slot,
+                HeroIndex = GetHeroIndex(GridType, toGrid.GridType),
             };
 
             DXItemCell toCell = null;
@@ -1391,14 +1426,14 @@ namespace Client.Controls
 
             if (GridType == GridType.Equipment && toGrid.GridType == GridType.HeroInventory)
             {
-                GameScene.Game.ReceiveChat("人物装备不能直接放入英雄包裹。", MessageType.System);
+                GameScene.Game.ReceiveChat(CEnvir.Language.PlayerEquipmentCannotMoveToHeroInventory, MessageType.System);
                 if (Selected) SelectedCell = null;
                 return false;
             }
 
             if (GridType == GridType.HeroEquipment && toGrid.GridType == GridType.Inventory)
             {
-                GameScene.Game.ReceiveChat("英雄装备不能直接放入人物包裹。", MessageType.System);
+                GameScene.Game.ReceiveChat(CEnvir.Language.HeroEquipmentCannotMoveToPlayerInventory, MessageType.System);
                 if (Selected) SelectedCell = null;
                 return false;
             }
@@ -1418,6 +1453,7 @@ namespace Client.Controls
         public bool CheckLink(DXItemGrid grid)
         {
             if (!AllowLink || Item == null || (!Linked && Link != null) || grid == null) return false;
+            if (RejectUnsupportedHeroItemTarget(grid.GridType)) return false;
 
             switch (grid.GridType)
             {
@@ -1801,7 +1837,7 @@ namespace Client.Controls
                     GameScene.Game.UseItemTime = CEnvir.Now.AddMilliseconds(Math.Max(250, Item.Info.Durability));
                     Locked = true;
 
-                    CEnvir.Enqueue(new C.ItemUse { Link = new CellLinkInfo { GridType = GridType, Slot = Slot, Count = 1 } });
+                    CEnvir.Enqueue(new C.ItemUse { Link = new CellLinkInfo { GridType = GridType, Slot = Slot, Count = 1 }, HeroIndex = GetHeroIndex(GridType) });
                     PlayItemSound();
                     break;
                 case ItemType.Book:
@@ -1810,7 +1846,7 @@ namespace Client.Controls
                     GameScene.Game.UseItemTime = CEnvir.Now.AddMilliseconds(250);
                     Locked = true;
 
-                    CEnvir.Enqueue(new C.ItemUse { Link = new CellLinkInfo { GridType = GridType, Slot = Slot, Count = 1 } });
+                    CEnvir.Enqueue(new C.ItemUse { Link = new CellLinkInfo { GridType = GridType, Slot = Slot, Count = 1 }, HeroIndex = GetHeroIndex(GridType) });
                     PlayItemSound();
                     break;
                 default:
@@ -1825,6 +1861,7 @@ namespace Client.Controls
             if (SelectedCell == this) SelectedCell = null;
 
             if (Item == null || Locked || ReadOnly || (!Linked && Link != null) || GameScene.Game.Observer || GameScene.Game.MapControl.FishingState != FishingState.None) return false;
+            if (Functions.IsHeroGrid(GridType) && !CanEditHeroItems()) return false;
             if (GridType != GridType.HeroInventory && GridType != GridType.HeroEquipment && !GameScene.Game.CanUseItem(Item)) return false;
 
             if (GridType == GridType.Belt || GridType == GridType.Belt)
@@ -1848,7 +1885,7 @@ namespace Client.Controls
             if (GridType == GridType.HeroEquipment)
             {
                 if (!MoveItem(GameScene.Game.HeroBox.InventoryGrid))
-                    GameScene.Game.ReceiveChat("英雄背包没有空位。", MessageType.System);
+                    GameScene.Game.ReceiveChat(CEnvir.Language.NoFreeSpaceInHeroInventory, MessageType.System);
 
                 return true;
             }
@@ -1950,7 +1987,7 @@ namespace Client.Controls
 
                     Locked = true;
 
-                    CEnvir.Enqueue(new C.ItemUse { Link = new CellLinkInfo { GridType = GridType, Slot = Slot, Count = 1 } });
+                    CEnvir.Enqueue(new C.ItemUse { Link = new CellLinkInfo { GridType = GridType, Slot = Slot, Count = 1 }, HeroIndex = GetHeroIndex(GridType) });
                     PlayItemSound();
                     break;
                 case ItemType.Bundle:
@@ -1987,7 +2024,7 @@ namespace Client.Controls
                     GameScene.Game.UseItemTime = CEnvir.Now.AddMilliseconds(250);
                     Locked = true;
 
-                    CEnvir.Enqueue(new C.ItemUse { Link = new CellLinkInfo { GridType = GridType, Slot = Slot, Count = 1 } });
+                    CEnvir.Enqueue(new C.ItemUse { Link = new CellLinkInfo { GridType = GridType, Slot = Slot, Count = 1 }, HeroIndex = GetHeroIndex(GridType) });
                     PlayItemSound();
                     break;
                 case ItemType.System:
@@ -2167,7 +2204,7 @@ namespace Client.Controls
                         window.ConfirmButton.MouseClick += (o, e1) =>
                         {
                             Locked = true;
-                            CEnvir.Enqueue(new C.ItemSplit { Grid = GridType, Slot = Slot, Count = window.Amount });
+                            CEnvir.Enqueue(new C.ItemSplit { Grid = GridType, Slot = Slot, Count = window.Amount, HeroIndex = GetHeroIndex(GridType) });
                         };
 
                         return;
@@ -2186,7 +2223,7 @@ namespace Client.Controls
                             GameScene.Game.ChatTextBox.LinkItem(Item);
                             break;
                         }
-                        CEnvir.Enqueue(new C.ItemLock { GridType = GridType, SlotIndex = Slot, Locked = (Item.Flags & UserItemFlags.Locked) != UserItemFlags.Locked });
+                        CEnvir.Enqueue(new C.ItemLock { GridType = GridType, SlotIndex = Slot, Locked = (Item.Flags & UserItemFlags.Locked) != UserItemFlags.Locked, HeroIndex = GetHeroIndex(GridType) });
                     }
                     break;
                 case MouseButtons.Right:
@@ -2465,7 +2502,7 @@ namespace Client.Controls
                             if (GameScene.Game.HeroBox.IsVisible)
                             {
                                 if (!MoveItem(GameScene.Game.HeroBox.InventoryGrid))
-                                    GameScene.Game.ReceiveChat("英雄背包没有空位。", MessageType.System);
+                                    GameScene.Game.ReceiveChat(CEnvir.Language.NoFreeSpaceInHeroInventory, MessageType.System);
                                 return;
                             }
 
@@ -2829,7 +2866,7 @@ namespace Client.Controls
                             }
 
                             if (!MoveItem(GameScene.Game.HeroBox.InventoryGrid))
-                                GameScene.Game.ReceiveChat("英雄背包没有空位。", MessageType.System);
+                                GameScene.Game.ReceiveChat(CEnvir.Language.NoFreeSpaceInHeroInventory, MessageType.System);
 
                             break;
                         default:
@@ -2894,7 +2931,7 @@ namespace Client.Controls
 
                         if (Item != null)
                         {
-                            CEnvir.Enqueue(new C.ItemLock { GridType = GridType, SlotIndex = Slot, Locked = (Item.Flags & UserItemFlags.Locked) != UserItemFlags.Locked });
+                            CEnvir.Enqueue(new C.ItemLock { GridType = GridType, SlotIndex = Slot, Locked = (Item.Flags & UserItemFlags.Locked) != UserItemFlags.Locked, HeroIndex = GetHeroIndex(GridType) });
                             e.Handled = true;
                         }
                         break;

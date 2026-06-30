@@ -78,6 +78,9 @@ namespace Client.Envir
 
         private static void ApplyStartInformation(GameScene scene, StartInformation info)
         {
+            scene.ServerProtocolVersion = info.ProtocolVersion;
+            scene.ServerCapabilities = info.ServerCapabilities;
+
             scene.MapControl.MapInfo = Globals.MapInfoList.Binding.FirstOrDefault(x => x.Index == info.MapIndex);
             scene.MapControl.InstanceInfo = Globals.InstanceInfoList.Binding.FirstOrDefault(x => x.Index == info.InstanceIndex);
 
@@ -1912,127 +1915,188 @@ namespace Client.Envir
 
             GameScene.Game.AddItems(p.Items);
         }
-        private static bool IsHeroGrid(GridType grid)
+        private static void UpdateBeltLinkItem(ClientUserItem item, ClientUserItem replacementItem = null)
         {
-            return grid == GridType.HeroInventory || grid == GridType.HeroEquipment;
-        }
+            if (item == null || item.Info.ShouldLinkInfo) return;
 
-        private static ClientUserItem[] GetCurrentHeroGrid(GridType grid)
-        {
-            ClientUserHero hero = GameScene.Game?.CurrentHero;
-            if (hero == null) return null;
-
-            return grid switch
+            for (int i = 0; i < GameScene.Game.BeltBox.Links.Length; i++)
             {
-                GridType.HeroInventory => hero.InventoryArray,
-                GridType.HeroEquipment => hero.EquipmentArray,
-                _ => null
-            };
+                ClientBeltLink link = GameScene.Game.BeltBox.Links[i];
+                if (link.LinkItemIndex != item.Index) continue;
+
+                link.LinkItemIndex = replacementItem?.Index ?? -1;
+
+                if (i < GameScene.Game.BeltBox.Grid.Grid.Length)
+                    GameScene.Game.BeltBox.Grid.Grid[i].QuickItem = replacementItem;
+
+                if (!GameScene.Game.Observer)
+                    CEnvir.Enqueue(new C.BeltLinkChanged { Slot = link.Slot, LinkIndex = link.LinkInfoIndex, LinkItemIndex = link.LinkItemIndex });
+            }
         }
 
-        private static bool ApplyCurrentHeroItemChange(CellLinkInfo link, bool success)
+        private static void ApplyHeroItemMove(S.ItemMove p)
         {
-            if (!success || !IsHeroGrid(link.GridType)) return false;
+            bool fromResolved = ItemSync.TryGetTarget(p.FromGrid, p.FromSlot, p.HeroIndex, out ItemSyncTarget from);
+            bool toResolved = ItemSync.TryGetTarget(p.ToGrid, p.ToSlot, p.HeroIndex, out ItemSyncTarget to);
 
-            ClientUserItem[] grid = GetCurrentHeroGrid(link.GridType);
-            if (grid == null || link.Slot < 0 || link.Slot >= grid.Length) return true;
+            from?.Unlock();
+            to?.Unlock();
 
-            ClientUserItem item = grid[link.Slot];
-            if (item == null) return true;
+            if (!fromResolved || !toResolved) return;
+            if (!p.Success) return;
+
+            ClientUserItem fromItem = from.Item;
+            ClientUserItem toItem = to.Item;
+
+            if (fromItem == null) return;
+
+            if (p.FromGrid != p.ToGrid)
+            {
+                if (p.FromGrid == GridType.Inventory)
+                    UpdateBeltLinkItem(fromItem, p.ToGrid == GridType.Equipment ? toItem : null);
+                else if (p.ToGrid == GridType.Inventory && toItem != null)
+                    UpdateBeltLinkItem(toItem);
+            }
+
+            if (p.MergeItem)
+            {
+                if (toItem == null) return;
+
+                if (toItem.Count + fromItem.Count <= toItem.Info.StackSize)
+                {
+                    toItem.Count += fromItem.Count;
+                    from.Item = null;
+                    to.Refresh();
+
+                    ItemSync.RefreshHeroItems(p.HeroIndex, false);
+                    return;
+                }
+
+                fromItem.Count -= fromItem.Info.StackSize - toItem.Count;
+                toItem.Count = toItem.Info.StackSize;
+                from.Refresh();
+                to.Refresh();
+
+                ItemSync.RefreshHeroItems(p.HeroIndex, false);
+                return;
+            }
+
+            to.Item = fromItem;
+            from.Item = toItem;
+
+            ItemSync.RefreshHeroItems(p.HeroIndex, false);
+        }
+
+        private static void ApplyItemChange(CellLinkInfo link, int heroIndex, bool success)
+        {
+            if (!ItemSync.TryGetTarget(link.GridType, link.Slot, heroIndex, out ItemSyncTarget target)) return;
+
+            target.Unlock();
+
+            if (!success) return;
+
+            ClientUserItem item = target.Item;
+            if (item == null)
+            {
+                target.Refresh();
+                return;
+            }
+
+            UpdateBeltLinkItem(item);
 
             if (link.Count == 0)
-                grid[link.Slot] = null;
+                target.Item = null;
             else
                 item.Count = link.Count;
 
-            return true;
+            target.Refresh();
+            if (ItemSync.IsHeroGrid(link.GridType))
+                ItemSync.RefreshHeroItems(heroIndex, false);
         }
 
-        private static bool ApplyCurrentHeroItemReduction(CellLinkInfo link, bool success)
+        private static bool ApplyItemReduction(CellLinkInfo link, int heroIndex, bool success, out bool heroInvolved)
         {
-            if (!success || !IsHeroGrid(link.GridType)) return false;
+            heroInvolved = ItemSync.IsHeroGrid(link.GridType);
 
-            ClientUserItem[] grid = GetCurrentHeroGrid(link.GridType);
-            if (grid == null || link.Slot < 0 || link.Slot >= grid.Length) return true;
+            if (!ItemSync.TryGetTarget(link.GridType, link.Slot, heroIndex, out ItemSyncTarget target)) return false;
 
-            ClientUserItem item = grid[link.Slot];
-            if (item == null) return true;
+            target.Unlock();
+            target.ClearSelection();
+
+            if (!success) return true;
+
+            ClientUserItem item = target.Item;
+            if (item == null)
+            {
+                target.Refresh();
+                return true;
+            }
+
+            UpdateBeltLinkItem(item);
 
             if (link.Count == item.Count)
-                grid[link.Slot] = null;
+                target.Item = null;
             else
                 item.Count -= link.Count;
 
+            target.Refresh();
             return true;
+        }
+
+        private static bool TryGetLinkedItemCell(CellLinkInfo link, out DXItemCell cell)
+        {
+            cell = null;
+
+            if (link == null) return false;
+
+            return ItemSync.TryGetCell(link.GridType, link.Slot, out cell);
+        }
+
+        private static void UnlockLinkedItem(CellLinkInfo link)
+        {
+            if (!TryGetLinkedItemCell(link, out DXItemCell cell)) return;
+
+            cell.Locked = false;
+        }
+
+        private static void ApplyLinkedItemReduction(CellLinkInfo link, bool success)
+        {
+            if (!TryGetLinkedItemCell(link, out DXItemCell cell)) return;
+
+            cell.Locked = false;
+
+            if (!success) return;
+
+            ClientUserItem item = cell.Item;
+            if (item == null) return;
+
+            UpdateBeltLinkItem(item);
+
+            if (link.Count == item.Count)
+                cell.Item = null;
+            else
+                item.Count -= link.Count;
+
+            cell.RefreshItem();
         }
 
         public void Process(S.ItemMove p)
         {
-            DXItemCell fromCell, toCell;
+            bool heroInvolved = ItemSync.IsHeroGrid(p.FromGrid) || ItemSync.IsHeroGrid(p.ToGrid);
 
-            switch (p.FromGrid)
+            if (heroInvolved)
             {
-                case GridType.Inventory:
-                    fromCell = GameScene.Game.InventoryBox.Grid.Grid[p.FromSlot];
-                    break;
-                case GridType.Equipment:
-                    fromCell = GameScene.Game.CharacterBox.Grid[p.FromSlot];
-                    break;
-                case GridType.Storage:
-                    fromCell = GameScene.Game.StorageBox.Grid.Grid[p.FromSlot];
-                    break;
-                case GridType.PartsStorage:
-                    fromCell = GameScene.Game.StorageBox.PartGrid.Grid[p.FromSlot];
-                    break;
-                case GridType.GuildStorage:
-                    fromCell = GameScene.Game.GuildBox.StorageGrid.Grid[p.FromSlot];
-                    break;
-                case GridType.CompanionInventory:
-                    fromCell = GameScene.Game.CompanionBox.InventoryGrid.Grid[p.FromSlot];
-                    break;
-                case GridType.CompanionEquipment:
-                    fromCell = GameScene.Game.CompanionBox.EquipmentGrid[p.FromSlot];
-                    break;
-                case GridType.HeroInventory:
-                    fromCell = GameScene.Game.HeroBox.InventoryGrid.Grid[p.FromSlot];
-                    break;
-                case GridType.HeroEquipment:
-                    fromCell = GameScene.Game.HeroBox.EquipmentGrid[p.FromSlot];
-                    break;
-                default: return;
+                ApplyHeroItemMove(p);
+                return;
             }
 
-            switch (p.ToGrid)
+            DXItemCell fromCell, toCell;
+
+            if (!ItemSync.TryGetCell(p.FromGrid, p.FromSlot, out fromCell)) return;
+            if (!ItemSync.TryGetCell(p.ToGrid, p.ToSlot, out toCell))
             {
-                case GridType.Inventory:
-                    toCell = GameScene.Game.InventoryBox.Grid.Grid[p.ToSlot];
-                    break;
-                case GridType.Equipment:
-                    toCell = GameScene.Game.CharacterBox.Grid[p.ToSlot];
-                    break;
-                case GridType.Storage:
-                    toCell = GameScene.Game.StorageBox.Grid.Grid[p.ToSlot];
-                    break;
-                case GridType.PartsStorage:
-                    toCell = GameScene.Game.StorageBox.PartGrid.Grid[p.ToSlot];
-                    break;
-                case GridType.GuildStorage:
-                    toCell = GameScene.Game.GuildBox.StorageGrid.Grid[p.ToSlot];
-                    break;
-                case GridType.CompanionInventory:
-                    toCell = GameScene.Game.CompanionBox.InventoryGrid.Grid[p.ToSlot];
-                    break;
-                case GridType.CompanionEquipment:
-                    toCell = GameScene.Game.CompanionBox.EquipmentGrid[p.ToSlot];
-                    break;
-                case GridType.HeroInventory:
-                    toCell = GameScene.Game.HeroBox.InventoryGrid.Grid[p.ToSlot];
-                    break;
-                case GridType.HeroEquipment:
-                    toCell = GameScene.Game.HeroBox.EquipmentGrid[p.ToSlot];
-                    break;
-                default:
-                    return;
+                fromCell.Locked = false;
+                return;
             }
 
             toCell.Locked = false;
@@ -2040,56 +2104,15 @@ namespace Client.Envir
 
             if (!p.Success) return;
 
-            bool heroInvolved = p.FromGrid == GridType.HeroInventory || p.FromGrid == GridType.HeroEquipment ||
-                                p.ToGrid == GridType.HeroInventory || p.ToGrid == GridType.HeroEquipment;
-
             if (p.FromGrid != p.ToGrid)
             {
                 if (p.FromGrid == GridType.Inventory) //Moving FROM bag
                 {
-                    if (!fromCell.Item.Info.ShouldLinkInfo)
-                    {
-                        for (int i = 0; i < GameScene.Game.BeltBox.Links.Length; i++)
-                        {
-                            ClientBeltLink link = GameScene.Game.BeltBox.Links[i];
-                            if (link.LinkItemIndex != fromCell.Item.Index) continue;
-
-                            link.LinkItemIndex = -1;
-
-                            if (i < GameScene.Game.BeltBox.Grid.Grid.Length)
-                                GameScene.Game.BeltBox.Grid.Grid[i].QuickItem = null; //set belt to null
-
-                            if (p.ToGrid == GridType.Equipment && toCell.Item != null) //Replace item with other item (if equipment)
-                            {
-                                link.LinkItemIndex = toCell.Item.Index;
-
-                                if (i < GameScene.Game.BeltBox.Grid.Grid.Length)
-                                    GameScene.Game.BeltBox.Grid.Grid[i].QuickItem = toCell.Item; //set belt to item
-                            }
-
-                            if (!GameScene.Game.Observer)
-                                CEnvir.Enqueue(new C.BeltLinkChanged { Slot = link.Slot, LinkIndex = link.LinkInfoIndex, LinkItemIndex = link.LinkItemIndex }); //Update server
-                        }
-                    }
+                    UpdateBeltLinkItem(fromCell.Item, p.ToGrid == GridType.Equipment ? toCell.Item : null);
                 }
                 else if (p.ToGrid == GridType.Inventory && toCell.Item != null) //Moving TO bag
                 {
-                    if (!toCell.Item.Info.ShouldLinkInfo)
-                    {
-                        for (int i = 0; i < GameScene.Game.BeltBox.Links.Length; i++)
-                        {
-                            ClientBeltLink link = GameScene.Game.BeltBox.Links[i];
-                            if (link.LinkItemIndex != toCell.Item.Index) continue;
-
-                            link.LinkItemIndex = -1;
-
-                            if (i < GameScene.Game.BeltBox.Grid.Grid.Length)
-                                GameScene.Game.BeltBox.Grid.Grid[i].QuickItem = null; //set belt to null
-
-                            if (!GameScene.Game.Observer)
-                                CEnvir.Enqueue(new C.BeltLinkChanged { Slot = link.Slot, LinkIndex = link.LinkInfoIndex, LinkItemIndex = link.LinkItemIndex }); //Update server
-                        }
-                    }
+                    UpdateBeltLinkItem(toCell.Item);
                 }
             }
 
@@ -2101,9 +2124,6 @@ namespace Client.Envir
                     fromCell.Item = null;
                     toCell.RefreshItem();
 
-                    if (heroInvolved)
-                        GameScene.Game.HeroBox.UpdateLabels();
-
                     return;
                 }
 
@@ -2112,9 +2132,6 @@ namespace Client.Envir
                 fromCell.RefreshItem();
                 toCell.RefreshItem();
 
-                if (heroInvolved)
-                    GameScene.Game.HeroBox.UpdateLabels();
-
                 return;
             }
 
@@ -2122,9 +2139,6 @@ namespace Client.Envir
 
             toCell.Item = fromCell.Item;
             fromCell.Item = temp;
-
-            if (heroInvolved)
-                GameScene.Game.HeroBox.UpdateLabels();
 
             //if (p.ToGrid == GridType.GuildStorage || p.FromGrid == GridType.GuildStorage)
             //    GameScene.Game.GuildPanel.StorageControl.ItemCount = GameScene.Game.GuildStorage.Count(x => x != null);
@@ -2144,88 +2158,7 @@ namespace Client.Envir
 
         public void Process(S.ItemChanged p)
         {
-            if (IsHeroGrid(p.Link.GridType) && !GameScene.Game.HeroBox.IsViewingCurrentHero)
-            {
-                ApplyCurrentHeroItemChange(p.Link, p.Success);
-                GameScene.Game.HeroBox.UpdateLabels();
-                return;
-            }
-
-            DXItemCell[] grid;
-
-            switch (p.Link.GridType)
-            {
-                case GridType.Inventory:
-                    grid = GameScene.Game.InventoryBox.Grid.Grid;
-                    break;
-                case GridType.Equipment:
-                    grid = GameScene.Game.CharacterBox.Grid;
-                    break;
-                case GridType.Storage:
-                    grid = GameScene.Game.StorageBox.Grid.Grid;
-                    break;
-                case GridType.PartsStorage:
-                    grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                    break;
-                case GridType.GuildStorage:
-                    grid = GameScene.Game.GuildBox.StorageGrid.Grid;
-                    break;
-                case GridType.CompanionInventory:
-                    grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                    break;
-                case GridType.CompanionEquipment:
-                    grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                    break;
-                case GridType.HeroInventory:
-                    grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
-                    break;
-                case GridType.HeroEquipment:
-                    grid = GameScene.Game.HeroBox.EquipmentGrid;
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException();
-            }
-
-
-            DXItemCell fromCell = grid[p.Link.Slot];
-
-            fromCell.Locked = false;
-
-            if (!p.Success) return;
-
-            if (fromCell.Item == null)
-            {
-                fromCell.RefreshItem();
-                return;
-            }
-
-            if (!fromCell.Item.Info.ShouldLinkInfo)
-            {
-                for (int i = 0; i < GameScene.Game.BeltBox.Links.Length; i++)
-                {
-                    ClientBeltLink link = GameScene.Game.BeltBox.Links[i];
-                    if (link.LinkItemIndex != fromCell.Item.Index) continue;
-
-                    link.LinkItemIndex = -1;
-
-                    if (i < GameScene.Game.BeltBox.Grid.Grid.Length)
-                        GameScene.Game.BeltBox.Grid.Grid[i].QuickItem = null; //set belt to null
-
-                    if (!GameScene.Game.Observer)
-                        CEnvir.Enqueue(new C.BeltLinkChanged { Slot = link.Slot, LinkIndex = link.LinkInfoIndex, LinkItemIndex = link.LinkItemIndex }); //Update server
-                }
-            }
-
-
-            if (p.Link.Count == 0)
-                fromCell.Item = null;
-            else
-                fromCell.Item.Count = p.Link.Count;
-
-            fromCell.RefreshItem();
-
-            if (p.Link.GridType == GridType.HeroInventory || p.Link.GridType == GridType.HeroEquipment)
-                GameScene.Game.HeroBox.UpdateLabels();
+            ApplyItemChange(p.Link, p.HeroIndex, p.Success);
         }
         public void Process(S.ItemsChanged p)
         {
@@ -2233,137 +2166,28 @@ namespace Client.Envir
 
             foreach (CellLinkInfo cellLinkInfo in p.Links)
             {
-                DXItemCell[] grid;
-
-                switch (cellLinkInfo.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    case GridType.HeroInventory:
-                        if (!GameScene.Game.HeroBox.IsViewingCurrentHero)
-                        {
-                            ApplyCurrentHeroItemReduction(cellLinkInfo, p.Success);
-                            heroInvolved = true;
-                            continue;
-                        }
-
-                        grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
-                        heroInvolved = true;
-                        break;
-                    case GridType.HeroEquipment:
-                        if (!GameScene.Game.HeroBox.IsViewingCurrentHero)
-                        {
-                            ApplyCurrentHeroItemReduction(cellLinkInfo, p.Success);
-                            heroInvolved = true;
-                            continue;
-                        }
-
-                        grid = GameScene.Game.HeroBox.EquipmentGrid;
-                        heroInvolved = true;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-                DXItemCell fromCell = grid[cellLinkInfo.Slot];
-                fromCell.Locked = false;
-                fromCell.Selected = false;
-
-                if (!p.Success) continue;
-
-                if (fromCell.Item == null)
-                {
-                    fromCell.RefreshItem();
-                    continue;
-                }
-
-                if (!fromCell.Item.Info.ShouldLinkInfo)
-                {
-                    for (int i = 0; i < GameScene.Game.BeltBox.Links.Length; i++)
-                    {
-                        ClientBeltLink link = GameScene.Game.BeltBox.Links[i];
-                        if (link.LinkItemIndex != fromCell.Item.Index) continue;
-
-                        link.LinkItemIndex = -1;
-
-                        if (i < GameScene.Game.BeltBox.Grid.Grid.Length)
-                            GameScene.Game.BeltBox.Grid.Grid[i].QuickItem = null; //set belt to null
-
-                        if (!GameScene.Game.Observer)
-                            CEnvir.Enqueue(new C.BeltLinkChanged { Slot = link.Slot, LinkIndex = link.LinkInfoIndex, LinkItemIndex = link.LinkItemIndex }); //Update server
-                    }
-                }
-
-                if (cellLinkInfo.Count == fromCell.Item.Count)
-                    fromCell.Item = null;
-                else
-                    fromCell.Item.Count -= cellLinkInfo.Count;
-
-                fromCell.RefreshItem();
+                if (ApplyItemReduction(cellLinkInfo, p.HeroIndex, p.Success, out bool linkHeroInvolved))
+                    heroInvolved |= linkHeroInvolved;
             }
 
             DXItemCell.SelectedCell = null;
 
             if (heroInvolved)
-                GameScene.Game.HeroBox.UpdateLabels();
+                ItemSync.RefreshHeroItems(p.HeroIndex, false);
         }
 
         public void Process(S.ItemStatsChanged p)
         {
-            DXItemCell[] grid;
+            if (!ItemSync.TryGetTarget(p.GridType, p.Slot, p.HeroIndex, out ItemSyncTarget target)) return;
 
-            switch (p.GridType)
-            {
-                case GridType.Inventory:
-                    grid = GameScene.Game.InventoryBox.Grid.Grid;
-                    break;
-                case GridType.Equipment:
-                    grid = GameScene.Game.CharacterBox.Grid;
-                    break;
-                case GridType.Storage:
-                    grid = GameScene.Game.StorageBox.Grid.Grid;
-                    break;
-                case GridType.PartsStorage:
-                    grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                    break;
-                case GridType.CompanionInventory:
-                    grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                    break;
-                case GridType.CompanionEquipment:
-                    grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                    break;
-                case GridType.HeroInventory:
-                    grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
-                    break;
-                case GridType.HeroEquipment:
-                    grid = GameScene.Game.HeroBox.EquipmentGrid;
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException();
-            }
-            DXItemCell fromCell = grid[p.Slot];
+            ClientUserItem item = target.Item;
+            if (item == null) return;
 
-            fromCell.Item.AddedStats.Add(p.NewStats);
+            item.AddedStats.Add(p.NewStats);
 
             if (p.NewStats.Count == 0)
             {
-                GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.NothingHappen, fromCell.Item.Info.ItemName), MessageType.Hint);
+                GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.NothingHappen, item.Info.ItemName), MessageType.Hint);
                 return;
             }
 
@@ -2371,7 +2195,7 @@ namespace Client.Envir
             {
                 if (pair.Key == Stat.WeaponElement)
                 {
-                    GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.ItemStatsNewElement, fromCell.Item.Info.ItemName, (Element)fromCell.Item.AddedStats[Stat.WeaponElement]), MessageType.Hint);
+                    GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.ItemStatsNewElement, item.Info.ItemName, (Element)item.AddedStats[Stat.WeaponElement]), MessageType.Hint);
                     continue;
                 }
 
@@ -2379,94 +2203,44 @@ namespace Client.Envir
 
                 if (string.IsNullOrEmpty(msg)) continue;
 
-                GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.ItemStatsEffected, fromCell.Item.Info.ItemName, msg), MessageType.Hint);
+                GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.ItemStatsEffected, item.Info.ItemName, msg), MessageType.Hint);
             }
 
-            fromCell.RefreshItem();
+            target.Refresh();
+
+            if (ItemSync.IsHeroGrid(p.GridType))
+                ItemSync.RefreshHeroItems(p.HeroIndex, false);
         }
         public void Process(S.ItemStatsRefreshed p)
         {
-            DXItemCell[] grid;
+            if (!ItemSync.TryGetTarget(p.GridType, p.Slot, p.HeroIndex, out ItemSyncTarget target)) return;
 
-            switch (p.GridType)
-            {
-                case GridType.Inventory:
-                    grid = GameScene.Game.InventoryBox.Grid.Grid;
-                    break;
-                case GridType.Equipment:
-                    grid = GameScene.Game.CharacterBox.Grid;
-                    break;
-                case GridType.Storage:
-                    grid = GameScene.Game.StorageBox.Grid.Grid;
-                    break;
-                case GridType.PartsStorage:
-                    grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                    break;
-                case GridType.CompanionInventory:
-                    grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                    break;
-                case GridType.CompanionEquipment:
-                    grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                    break;
-                case GridType.HeroInventory:
-                    grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
-                    break;
-                case GridType.HeroEquipment:
-                    grid = GameScene.Game.HeroBox.EquipmentGrid;
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException();
-            }
-            DXItemCell fromCell = grid[p.Slot];
+            ClientUserItem item = target.Item;
+            if (item == null) return;
 
-            fromCell.Item.AddedStats = p.NewStats;
+            item.AddedStats = p.NewStats;
 
-            fromCell.RefreshItem();
+            target.Refresh();
+
+            if (ItemSync.IsHeroGrid(p.GridType))
+                ItemSync.RefreshHeroItems(p.HeroIndex, false);
         }
         public void Process(S.ItemDurability p)
         {
-            DXItemCell[] grid;
+            if (!ItemSync.TryGetTarget(p.GridType, p.Slot, p.HeroIndex, out ItemSyncTarget target)) return;
 
-            switch (p.GridType)
-            {
-                case GridType.Inventory:
-                    grid = GameScene.Game.InventoryBox.Grid.Grid;
-                    break;
-                case GridType.Equipment:
-                    grid = GameScene.Game.CharacterBox.Grid;
-                    break;
-                case GridType.Storage:
-                    grid = GameScene.Game.StorageBox.Grid.Grid;
-                    break;
-                case GridType.PartsStorage:
-                    grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                    break;
-                case GridType.CompanionInventory:
-                    grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                    break;
-                case GridType.CompanionEquipment:
-                    grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                    break;
-                case GridType.HeroInventory:
-                    grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
-                    break;
-                case GridType.HeroEquipment:
-                    grid = GameScene.Game.HeroBox.EquipmentGrid;
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException();
-            }
+            ClientUserItem item = target.Item;
+            if (item == null) return;
 
-
-            DXItemCell fromCell = grid[p.Slot];
-
-            fromCell.Item.CurrentDurability = p.CurrentDurability;
-
+            item.CurrentDurability = p.CurrentDurability;
 
             if (p.CurrentDurability == 0)
-                GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.ItemDurabilityDrop, fromCell.Item.Info.ItemName), MessageType.System);
+                GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.ItemDurabilityDrop, item.Info.ItemName), MessageType.System);
 
-            fromCell.RefreshItem();
+            target.Refresh();
+
+            if (ItemSync.IsHeroGrid(p.GridType))
+                ItemSync.RefreshHeroItems(p.HeroIndex, false);
         }
         public void Process(S.StatsUpdate p)
         {
@@ -2480,149 +2254,84 @@ namespace Client.Envir
         }
         public void Process(S.ItemSplit p)
         {
-            DXItemCell fromCell;
+            if (!ItemSync.TryGetTarget(p.Grid, p.Slot, p.HeroIndex, out ItemSyncTarget from)) return;
 
-            switch (p.Grid)
-            {
-                case GridType.Inventory:
-                    fromCell = GameScene.Game.InventoryBox.Grid.Grid[p.Slot];
-                    break;
-                case GridType.Storage:
-                    fromCell = GameScene.Game.StorageBox.Grid.Grid[p.Slot];
-                    break;
-                case GridType.PartsStorage:
-                    fromCell = GameScene.Game.StorageBox.PartGrid.Grid[p.Slot];
-                    break;
-                case GridType.GuildStorage:
-                    fromCell = GameScene.Game.GuildBox.StorageGrid.Grid[p.Slot];
-                    break;
-                case GridType.CompanionInventory:
-                    fromCell = GameScene.Game.CompanionBox.InventoryGrid.Grid[p.Slot];
-                    break;
-                case GridType.CompanionEquipment:
-                    fromCell = GameScene.Game.CompanionBox.EquipmentGrid[p.Slot];
-                    break;
-                case GridType.HeroInventory:
-                    fromCell = GameScene.Game.HeroBox.InventoryGrid.Grid[p.Slot];
-                    break;
-                case GridType.HeroEquipment:
-                    fromCell = GameScene.Game.HeroBox.EquipmentGrid[p.Slot];
-                    break;
-                default: return;
-            }
-
-            fromCell.Locked = false;
+            from.Unlock();
 
             if (!p.Success) return;
 
-            DXItemCell toCell;
-            switch (p.Grid)
-            {
-                case GridType.Inventory:
-                    toCell = GameScene.Game.InventoryBox.Grid.Grid[p.NewSlot];
-                    break;
-                case GridType.Storage:
-                    toCell = GameScene.Game.StorageBox.Grid.Grid[p.NewSlot];
-                    break;
-                case GridType.PartsStorage:
-                    toCell = GameScene.Game.StorageBox.PartGrid.Grid[p.NewSlot];
-                    break;
-                case GridType.GuildStorage:
-                    toCell = GameScene.Game.GuildBox.StorageGrid.Grid[p.NewSlot];
-                    break;
-                case GridType.CompanionInventory:
-                    toCell = GameScene.Game.CompanionBox.InventoryGrid.Grid[p.NewSlot];
-                    break;
-                case GridType.CompanionEquipment:
-                    toCell = GameScene.Game.CompanionBox.EquipmentGrid[p.NewSlot];
-                    break;
-                case GridType.HeroInventory:
-                    toCell = GameScene.Game.HeroBox.InventoryGrid.Grid[p.NewSlot];
-                    break;
-                case GridType.HeroEquipment:
-                    toCell = GameScene.Game.HeroBox.EquipmentGrid[p.NewSlot];
-                    break;
-                default: return;
-            }
+            if (!ItemSync.TryGetTarget(p.Grid, p.NewSlot, p.HeroIndex, out ItemSyncTarget to)) return;
 
+            ClientUserItem fromItem = from.Item;
+            if (fromItem == null) return;
 
-            ClientUserItem item = new ClientUserItem(fromCell.Item, p.Count) { Slot = p.NewSlot };// { Count = p.Count, Info = cell.Item.Info, GridSlot = p.NewSlot, AddedStats = new Stats(), };
+            ClientUserItem item = new ClientUserItem(fromItem, p.Count) { Slot = p.NewSlot };
 
-            toCell.Item = item;
-            toCell.RefreshItem();
+            to.Item = item;
+            to.Refresh();
 
-            if (p.Count == fromCell.Item.Count)
-                fromCell.Item = null;
+            if (p.Count == fromItem.Count)
+                from.Item = null;
             else
-                fromCell.Item.Count -= p.Count;
+                fromItem.Count -= p.Count;
 
-            fromCell.RefreshItem();
+            from.Refresh();
+
+            if (ItemSync.IsHeroGrid(p.Grid))
+                ItemSync.RefreshHeroItems(p.HeroIndex, false);
         }
 
         public void Process(S.ItemLock p)
         {
-            DXItemCell cell;
+            if (!ItemSync.TryGetTarget(p.Grid, p.Slot, p.HeroIndex, out ItemSyncTarget target)) return;
 
-            switch (p.Grid)
-            {
-                case GridType.Inventory:
-                    cell = GameScene.Game.InventoryBox.Grid.Grid[p.Slot];
-                    break;
-                case GridType.Equipment:
-                    cell = GameScene.Game.CharacterBox.Grid[p.Slot];
-                    break;
-                case GridType.Storage:
-                    cell = GameScene.Game.StorageBox.Grid.Grid[p.Slot];
-                    break;
-                case GridType.PartsStorage:
-                    cell = GameScene.Game.StorageBox.PartGrid.Grid[p.Slot];
-                    break;
-                /*    case GridType.GuildStorage:
-                      fromCell = GameScene.Game.GuildPanel.StorageControl.Grid[p.FromSlot];
-                      break;*/
-                case GridType.CompanionInventory:
-                    cell = GameScene.Game.CompanionBox.InventoryGrid.Grid[p.Slot];
-                    break;
-                case GridType.CompanionEquipment:
-                    cell = GameScene.Game.CompanionBox.EquipmentGrid[p.Slot];
-                    break;
-                case GridType.HeroInventory:
-                    cell = GameScene.Game.HeroBox.InventoryGrid.Grid[p.Slot];
-                    break;
-                case GridType.HeroEquipment:
-                    cell = GameScene.Game.HeroBox.EquipmentGrid[p.Slot];
-                    break;
-                default: return;
-            }
-
-            if (cell.Item == null) return;
+            ClientUserItem item = target.Item;
+            if (item == null) return;
 
             if (p.Locked)
-                cell.Item.Flags |= UserItemFlags.Locked;
+                item.Flags |= UserItemFlags.Locked;
             else
-                cell.Item.Flags &= ~UserItemFlags.Locked;
+                item.Flags &= ~UserItemFlags.Locked;
 
-            cell.RefreshItem();
+            target.Refresh();
+
+            if (ItemSync.IsHeroGrid(p.Grid))
+                ItemSync.RefreshHeroItems(p.HeroIndex, false);
         }
         public void Process(S.ItemSort p)
         {
-            if (p.Grid == GridType.HeroInventory && !GameScene.Game.HeroBox.IsViewingCurrentHero)
+            if (ItemSync.IsHeroGrid(p.Grid))
             {
-                ClientUserItem[] currentHeroInventory = GetCurrentHeroGrid(GridType.HeroInventory);
+                if (!ItemSync.TryGetHeroItemArray(p.Grid, p.HeroIndex, out ClientUserItem[] heroGrid, out bool visible)) return;
 
-                if (p.Success && currentHeroInventory != null)
+                if (visible)
                 {
-                    Array.Clear(currentHeroInventory, 0, currentHeroInventory.Length);
+                    DXItemCell[] cells = p.Grid == GridType.HeroInventory
+                        ? GameScene.Game.HeroBox.InventoryGrid.Grid
+                        : GameScene.Game.HeroBox.EquipmentGrid;
 
-                    foreach (ClientUserItem item in p.Items)
+                    foreach (DXItemCell cell in cells)
                     {
-                        if (item.Slot < 0 || item.Slot >= currentHeroInventory.Length) continue;
+                        if (cell == null) continue;
 
-                        currentHeroInventory[item.Slot] = item;
+                        cell.Locked = false;
+                        cell.Selected = false;
                     }
                 }
 
-                GameScene.Game.HeroBox.UpdateLabels();
+                if (p.Success)
+                {
+                    Array.Clear(heroGrid, 0, heroGrid.Length);
+
+                    foreach (ClientUserItem item in p.Items)
+                    {
+                        if (item.Slot < 0 || item.Slot >= heroGrid.Length) continue;
+
+                        heroGrid[item.Slot] = item;
+                    }
+                }
+
+                ItemSync.RefreshHeroItems(p.HeroIndex, true);
                 return;
             }
 
@@ -2638,9 +2347,6 @@ namespace Client.Envir
                     break;
                 case GridType.PartsStorage:
                     grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                    break;
-                case GridType.HeroInventory:
-                    grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
                     break;
                 default:
                     return;
@@ -2666,14 +2372,8 @@ namespace Client.Envir
                     case GridType.PartsStorage:
                         grid[item.Slot - Globals.PartsStorageOffset].Item = item;
                         break;
-                    case GridType.HeroInventory:
-                        grid[item.Slot].Item = item;
-                        break;
                 }
             }
-
-            if (p.Grid == GridType.HeroInventory)
-                GameScene.Game.HeroBox.HeroChanged();
         }
 
         public void Process(S.ItemDelete p)
@@ -2718,38 +2418,20 @@ namespace Client.Envir
 
         public void Process(S.ItemExperience p)
         {
-            DXItemCell cell;
+            if (p.Target == null) return;
+            if (!ItemSync.TryGetTarget(p.Target.GridType, p.Target.Slot, p.HeroIndex, out ItemSyncTarget target)) return;
 
-            switch (p.Target.GridType)
-            {
-                case GridType.Inventory:
-                    cell = GameScene.Game.InventoryBox.Grid.Grid[p.Target.Slot];
-                    break;
-                case GridType.Equipment:
-                    cell = GameScene.Game.CharacterBox.Grid[p.Target.Slot];
-                    break;
-                case GridType.Storage:
-                    cell = GameScene.Game.StorageBox.Grid.Grid[p.Target.Slot];
-                    break;
-                case GridType.PartsStorage:
-                    cell = GameScene.Game.StorageBox.PartGrid.Grid[p.Target.Slot];
-                    break;
-                case GridType.CompanionInventory:
-                    cell = GameScene.Game.CompanionBox.InventoryGrid.Grid[p.Target.Slot];
-                    break;
-                case GridType.CompanionEquipment:
-                    cell = GameScene.Game.CompanionBox.EquipmentGrid[p.Target.Slot];
-                    break;
-                default: return;
-            }
+            ClientUserItem item = target.Item;
+            if (item == null) return;
 
-            if (cell.Item == null) return;
+            item.Experience = p.Experience;
+            item.Level = p.Level;
+            item.Flags = p.Flags;
 
-            cell.Item.Experience = p.Experience;
-            cell.Item.Level = p.Level;
-            cell.Item.Flags = p.Flags;
+            target.Refresh();
 
-            cell.RefreshItem();
+            if (ItemSync.IsHeroGrid(p.Target.GridType))
+                ItemSync.RefreshHeroItems(p.HeroIndex, false);
         }
 
         public void Process(S.Chat p)
@@ -2775,262 +2457,51 @@ namespace Client.Envir
         {
             bool heroInvolved = false;
 
-            foreach (CellLinkInfo cellLinkInfo in p.Links)
+            foreach (CellLinkInfo cellLinkInfo in p.Links ?? Enumerable.Empty<CellLinkInfo>())
             {
+                if (cellLinkInfo == null) continue;
 
-                DXItemCell[] grid;
+                if (cellLinkInfo.GridType == GridType.GuildStorage && GameScene.Game.Observer) continue;
+                if (!ItemSync.TryGetTarget(cellLinkInfo.GridType, cellLinkInfo.Slot, p.HeroIndex, out ItemSyncTarget target)) continue;
 
-                switch (cellLinkInfo.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.GuildStorage:
-                        if (GameScene.Game.Observer) continue;
-
-                        grid = GameScene.Game.GuildBox.StorageGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    case GridType.HeroInventory:
-                        grid = GameScene.Game.HeroBox.InventoryGrid.Grid;
-                        heroInvolved = true;
-                        break;
-                    case GridType.HeroEquipment:
-                        grid = GameScene.Game.HeroBox.EquipmentGrid;
-                        heroInvolved = true;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-
-
-                DXItemCell cell = grid[cellLinkInfo.Slot];
-
-                cell.Locked = false;
+                target.Unlock();
+                heroInvolved |= ItemSync.IsHeroGrid(cellLinkInfo.GridType);
 
                 if (!p.Success) continue;
 
-                cell.Link = null;
+                target.ClearLink();
+
+                ClientUserItem item = target.Item;
+                if (item == null) continue;
 
                 if (p.Special)
                 {
-                    cell.Item.CurrentDurability = cell.Item.MaxDurability;
-                    if (cell.Item.Info.ItemType != ItemType.Weapon && p.SpecialRepairDelay > TimeSpan.Zero)
-                        cell.Item.NextSpecialRepair = CEnvir.Now.Add(p.SpecialRepairDelay);
+                    item.CurrentDurability = item.MaxDurability;
+                    if (item.Info.ItemType != ItemType.Weapon && p.SpecialRepairDelay > TimeSpan.Zero)
+                        item.NextSpecialRepair = CEnvir.Now.Add(p.SpecialRepairDelay);
                 }
                 else
                 {
-                    cell.Item.MaxDurability = Math.Max(0, cell.Item.MaxDurability - (cell.Item.MaxDurability - cell.Item.CurrentDurability) / Globals.DuraLossRate);
-                    cell.Item.CurrentDurability = cell.Item.MaxDurability;
+                    item.MaxDurability = Math.Max(0, item.MaxDurability - (item.MaxDurability - item.CurrentDurability) / Globals.DuraLossRate);
+                    item.CurrentDurability = item.MaxDurability;
                 }
 
-                cell.RefreshItem();
+                target.Refresh();
             }
 
             if (heroInvolved)
-                GameScene.Game.HeroBox.UpdateLabels();
+                ItemSync.RefreshHeroItems(p.HeroIndex, false);
         }
         public void Process(S.NPCRefine p)
         {
             foreach (CellLinkInfo cellLinkInfo in p.Ores)
-            {
-                DXItemCell[] grid;
-
-                switch (cellLinkInfo.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-
-
-                DXItemCell fromCell = grid[cellLinkInfo.Slot];
-                fromCell.Locked = false;
-
-                if (!p.Success) continue;
-
-
-                if (!fromCell.Item.Info.ShouldLinkInfo)
-                {
-                    for (int i = 0; i < GameScene.Game.BeltBox.Links.Length; i++)
-                    {
-                        ClientBeltLink link = GameScene.Game.BeltBox.Links[i];
-                        if (link.LinkItemIndex != fromCell.Item.Index) continue;
-
-                        link.LinkItemIndex = -1;
-
-                        if (i < GameScene.Game.BeltBox.Grid.Grid.Length)
-                            GameScene.Game.BeltBox.Grid.Grid[i].QuickItem = null; //set belt to null
-
-                        if (!GameScene.Game.Observer)
-                            CEnvir.Enqueue(new C.BeltLinkChanged { Slot = link.Slot, LinkIndex = link.LinkInfoIndex, LinkItemIndex = link.LinkItemIndex }); //Update server
-                    }
-                }
-
-
-                if (cellLinkInfo.Count == fromCell.Item.Count)
-                    fromCell.Item = null;
-                else
-                    fromCell.Item.Count -= cellLinkInfo.Count;
-
-                fromCell.RefreshItem();
-            }
+                ApplyLinkedItemReduction(cellLinkInfo, p.Success);
 
             foreach (CellLinkInfo cellLinkInfo in p.Items)
-            {
-                DXItemCell[] grid;
-
-                switch (cellLinkInfo.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-
-
-                DXItemCell fromCell = grid[cellLinkInfo.Slot];
-                fromCell.Locked = false;
-
-                if (!p.Success) continue;
-
-
-                if (!fromCell.Item.Info.ShouldLinkInfo)
-                {
-                    for (int i = 0; i < GameScene.Game.BeltBox.Links.Length; i++)
-                    {
-                        ClientBeltLink link = GameScene.Game.BeltBox.Links[i];
-                        if (link.LinkItemIndex != fromCell.Item.Index) continue;
-
-                        link.LinkItemIndex = -1;
-
-                        if (i < GameScene.Game.BeltBox.Grid.Grid.Length)
-                            GameScene.Game.BeltBox.Grid.Grid[i].QuickItem = null; //set belt to null
-
-                        if (!GameScene.Game.Observer)
-                            CEnvir.Enqueue(new C.BeltLinkChanged { Slot = link.Slot, LinkIndex = link.LinkInfoIndex, LinkItemIndex = link.LinkItemIndex }); //Update server
-                    }
-                }
-
-
-                if (cellLinkInfo.Count == fromCell.Item.Count)
-                    fromCell.Item = null;
-                else
-                    fromCell.Item.Count -= cellLinkInfo.Count;
-
-                fromCell.RefreshItem();
-            }
+                ApplyLinkedItemReduction(cellLinkInfo, p.Success);
 
             foreach (CellLinkInfo cellLinkInfo in p.Specials)
-            {
-                DXItemCell[] grid;
-
-                switch (cellLinkInfo.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-
-                DXItemCell fromCell = grid[cellLinkInfo.Slot];
-                fromCell.Locked = false;
-
-                if (!p.Success) continue;
-
-
-                if (!fromCell.Item.Info.ShouldLinkInfo)
-                {
-                    for (int i = 0; i < GameScene.Game.BeltBox.Links.Length; i++)
-                    {
-                        ClientBeltLink link = GameScene.Game.BeltBox.Links[i];
-                        if (link.LinkItemIndex != fromCell.Item.Index) continue;
-
-                        link.LinkItemIndex = -1;
-
-                        if (i < GameScene.Game.BeltBox.Grid.Grid.Length)
-                            GameScene.Game.BeltBox.Grid.Grid[i].QuickItem = null; //set belt to null
-
-                        if (!GameScene.Game.Observer)
-                            CEnvir.Enqueue(new C.BeltLinkChanged { Slot = link.Slot, LinkIndex = link.LinkInfoIndex, LinkItemIndex = link.LinkItemIndex }); //Update server
-                    }
-                }
-
-
-                if (cellLinkInfo.Count == fromCell.Item.Count)
-                    fromCell.Item = null;
-                else
-                    fromCell.Item.Count -= cellLinkInfo.Count;
-
-                fromCell.RefreshItem();
-            }
+                ApplyLinkedItemReduction(cellLinkInfo, p.Success);
 
             if (p.Success)
             {
@@ -3044,311 +2515,19 @@ namespace Client.Envir
         public void Process(S.NPCMasterRefine p)
         {
             foreach (CellLinkInfo cellLinkInfo in p.Fragment1s)
-            {
-                DXItemCell[] grid;
-
-                switch (cellLinkInfo.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-
-
-                DXItemCell fromCell = grid[cellLinkInfo.Slot];
-                fromCell.Locked = false;
-
-                if (!p.Success) continue;
-
-
-                if (!fromCell.Item.Info.ShouldLinkInfo)
-                {
-                    for (int i = 0; i < GameScene.Game.BeltBox.Links.Length; i++)
-                    {
-                        ClientBeltLink link = GameScene.Game.BeltBox.Links[i];
-                        if (link.LinkItemIndex != fromCell.Item.Index) continue;
-
-                        link.LinkItemIndex = -1;
-
-                        if (i < GameScene.Game.BeltBox.Grid.Grid.Length)
-                            GameScene.Game.BeltBox.Grid.Grid[i].QuickItem = null; //set belt to null
-
-                        if (!GameScene.Game.Observer)
-                            CEnvir.Enqueue(new C.BeltLinkChanged { Slot = link.Slot, LinkIndex = link.LinkInfoIndex, LinkItemIndex = link.LinkItemIndex }); //Update server
-                    }
-                }
-
-
-                if (cellLinkInfo.Count == fromCell.Item.Count)
-                    fromCell.Item = null;
-                else
-                    fromCell.Item.Count -= cellLinkInfo.Count;
-
-                fromCell.RefreshItem();
-            }
+                ApplyLinkedItemReduction(cellLinkInfo, p.Success);
 
             foreach (CellLinkInfo cellLinkInfo in p.Fragment2s)
-            {
-                DXItemCell[] grid;
-
-                switch (cellLinkInfo.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-
-
-                DXItemCell fromCell = grid[cellLinkInfo.Slot];
-                fromCell.Locked = false;
-
-                if (!p.Success) continue;
-
-
-                if (!fromCell.Item.Info.ShouldLinkInfo)
-                {
-                    for (int i = 0; i < GameScene.Game.BeltBox.Links.Length; i++)
-                    {
-                        ClientBeltLink link = GameScene.Game.BeltBox.Links[i];
-                        if (link.LinkItemIndex != fromCell.Item.Index) continue;
-
-                        link.LinkItemIndex = -1;
-
-                        if (i < GameScene.Game.BeltBox.Grid.Grid.Length)
-                            GameScene.Game.BeltBox.Grid.Grid[i].QuickItem = null; //set belt to null
-
-                        if (!GameScene.Game.Observer)
-                            CEnvir.Enqueue(new C.BeltLinkChanged { Slot = link.Slot, LinkIndex = link.LinkInfoIndex, LinkItemIndex = link.LinkItemIndex }); //Update server
-                    }
-                }
-
-
-                if (cellLinkInfo.Count == fromCell.Item.Count)
-                    fromCell.Item = null;
-                else
-                    fromCell.Item.Count -= cellLinkInfo.Count;
-
-                fromCell.RefreshItem();
-            }
+                ApplyLinkedItemReduction(cellLinkInfo, p.Success);
 
             foreach (CellLinkInfo cellLinkInfo in p.Fragment3s)
-            {
-                DXItemCell[] grid;
-
-                switch (cellLinkInfo.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-
-                DXItemCell fromCell = grid[cellLinkInfo.Slot];
-                fromCell.Locked = false;
-
-                if (!p.Success) continue;
-
-
-                if (!fromCell.Item.Info.ShouldLinkInfo)
-                {
-                    for (int i = 0; i < GameScene.Game.BeltBox.Links.Length; i++)
-                    {
-                        ClientBeltLink link = GameScene.Game.BeltBox.Links[i];
-                        if (link.LinkItemIndex != fromCell.Item.Index) continue;
-
-                        link.LinkItemIndex = -1;
-
-                        if (i < GameScene.Game.BeltBox.Grid.Grid.Length)
-                            GameScene.Game.BeltBox.Grid.Grid[i].QuickItem = null; //set belt to null
-
-                        if (!GameScene.Game.Observer)
-                            CEnvir.Enqueue(new C.BeltLinkChanged { Slot = link.Slot, LinkIndex = link.LinkInfoIndex, LinkItemIndex = link.LinkItemIndex }); //Update server
-                    }
-                }
-
-
-                if (cellLinkInfo.Count == fromCell.Item.Count)
-                    fromCell.Item = null;
-                else
-                    fromCell.Item.Count -= cellLinkInfo.Count;
-
-                fromCell.RefreshItem();
-            }
+                ApplyLinkedItemReduction(cellLinkInfo, p.Success);
 
             foreach (CellLinkInfo cellLinkInfo in p.Stones)
-            {
-                DXItemCell[] grid;
-
-                switch (cellLinkInfo.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-
-                DXItemCell fromCell = grid[cellLinkInfo.Slot];
-                fromCell.Locked = false;
-
-                if (!p.Success) continue;
-
-
-                if (!fromCell.Item.Info.ShouldLinkInfo)
-                {
-                    for (int i = 0; i < GameScene.Game.BeltBox.Links.Length; i++)
-                    {
-                        ClientBeltLink link = GameScene.Game.BeltBox.Links[i];
-                        if (link.LinkItemIndex != fromCell.Item.Index) continue;
-
-                        link.LinkItemIndex = -1;
-
-                        if (i < GameScene.Game.BeltBox.Grid.Grid.Length)
-                            GameScene.Game.BeltBox.Grid.Grid[i].QuickItem = null; //set belt to null
-
-                        if (!GameScene.Game.Observer)
-                            CEnvir.Enqueue(new C.BeltLinkChanged { Slot = link.Slot, LinkIndex = link.LinkInfoIndex, LinkItemIndex = link.LinkItemIndex }); //Update server
-                    }
-                }
-
-
-                if (cellLinkInfo.Count == fromCell.Item.Count)
-                    fromCell.Item = null;
-                else
-                    fromCell.Item.Count -= cellLinkInfo.Count;
-
-                fromCell.RefreshItem();
-            }
+                ApplyLinkedItemReduction(cellLinkInfo, p.Success);
 
             foreach (CellLinkInfo cellLinkInfo in p.Specials)
-            {
-                DXItemCell[] grid;
-
-                switch (cellLinkInfo.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-
-                DXItemCell fromCell = grid[cellLinkInfo.Slot];
-                fromCell.Locked = false;
-
-                if (!p.Success) continue;
-
-
-                if (!fromCell.Item.Info.ShouldLinkInfo)
-                {
-                    for (int i = 0; i < GameScene.Game.BeltBox.Links.Length; i++)
-                    {
-                        ClientBeltLink link = GameScene.Game.BeltBox.Links[i];
-                        if (link.LinkItemIndex != fromCell.Item.Index) continue;
-
-                        link.LinkItemIndex = -1;
-
-                        if (i < GameScene.Game.BeltBox.Grid.Grid.Length)
-                            GameScene.Game.BeltBox.Grid.Grid[i].QuickItem = null; //set belt to null
-
-                        if (!GameScene.Game.Observer)
-                            CEnvir.Enqueue(new C.BeltLinkChanged { Slot = link.Slot, LinkIndex = link.LinkInfoIndex, LinkItemIndex = link.LinkItemIndex }); //Update server
-                    }
-                }
-
-
-                if (cellLinkInfo.Count == fromCell.Item.Count)
-                    fromCell.Item = null;
-                else
-                    fromCell.Item.Count -= cellLinkInfo.Count;
-
-                fromCell.RefreshItem();
-            }
+                ApplyLinkedItemReduction(cellLinkInfo, p.Success);
         }
         public void Process(S.RefineList p)
         {
@@ -3378,36 +2557,7 @@ namespace Client.Envir
                 p.Links.Add(p.Target);
 
             foreach (CellLinkInfo cellLinkInfo in p.Links)
-            {
-                DXItemCell[] grid;
-
-                switch (cellLinkInfo.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-                DXItemCell fromCell = grid[cellLinkInfo.Slot];
-                fromCell.Locked = false;
-            }
+                UnlockLinkedItem(cellLinkInfo);
         }
 
         public void Process(S.GroupSwitch p)
@@ -3851,7 +3001,10 @@ namespace Client.Envir
                 }
             }
 
-            GameScene.Game.HeroBox.SelectHero(GameScene.Game.CurrentHeroIndex, false);
+            if (GameScene.Game.HeroBox.IsViewingCurrentHero || GameScene.Game.HeroBox.SelectedHeroIndex == 0)
+                GameScene.Game.HeroBox.SelectHero(GameScene.Game.CurrentHeroIndex, false);
+            else
+                GameScene.Game.HeroBox.HeroChanged();
         }
 
         public void Process(S.HeroMagicLeveled p)
@@ -3962,34 +3115,7 @@ namespace Client.Envir
         }
         public void Process(S.TradeAddItem p)
         {
-            DXItemCell fromCell;
-
-            switch (p.Cell.GridType)
-            {
-                case GridType.Inventory:
-                    fromCell = GameScene.Game.InventoryBox.Grid.Grid[p.Cell.Slot];
-                    break;
-                case GridType.Equipment:
-                    fromCell = GameScene.Game.CharacterBox.Grid[p.Cell.Slot];
-                    break;
-                case GridType.Storage:
-                    fromCell = GameScene.Game.StorageBox.Grid.Grid[p.Cell.Slot];
-                    break;
-                case GridType.PartsStorage:
-                    fromCell = GameScene.Game.StorageBox.PartGrid.Grid[p.Cell.Slot];
-                    break;
-                /*    case GridType.GuildStorage:
-                      fromCell = GameScene.Game.GuildPanel.StorageControl.Grid[p.FromSlot];
-                      break;*/
-                case GridType.CompanionInventory:
-                    fromCell = GameScene.Game.CompanionBox.InventoryGrid.Grid[p.Cell.Slot];
-                    break;
-                case GridType.CompanionEquipment:
-                    fromCell = GameScene.Game.CompanionBox.EquipmentGrid[p.Cell.Slot];
-                    break;
-                default: return;
-            }
-
+            if (!TryGetLinkedItemCell(p.Cell, out DXItemCell fromCell)) return;
 
             if (!p.Success)
             {
@@ -4080,37 +3206,7 @@ namespace Client.Envir
 
         public void Process(S.GuildGetItem p)
         {
-            DXItemCell[] grid;
-
-            switch (p.Grid)
-            {
-                case GridType.Inventory:
-                    grid = GameScene.Game.InventoryBox.Grid.Grid;
-                    break;
-                case GridType.Equipment:
-                    grid = GameScene.Game.CharacterBox.Grid;
-                    break;
-                case GridType.Storage:
-                    grid = GameScene.Game.StorageBox.Grid.Grid;
-                    break;
-                case GridType.PartsStorage:
-                    grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                    break;
-                case GridType.GuildStorage:
-                    grid = GameScene.Game.GuildBox.StorageGrid.Grid;
-                    break;
-                case GridType.CompanionInventory:
-                    grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                    break;
-                case GridType.CompanionEquipment:
-                    grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException();
-            }
-
-
-            DXItemCell fromCell = grid[p.Slot];
+            if (!ItemSync.TryGetCell(p.Grid, p.Slot, out DXItemCell fromCell)) return;
 
             fromCell.Item = p.Item;
         }
@@ -4796,311 +3892,13 @@ namespace Client.Envir
 
         public void Process(S.NPCWeaponCraft p)
         {
-            #region Template
-
-            DXItemCell[] grid;
-
-            switch (p.Template.GridType)
-            {
-                case GridType.Inventory:
-                    grid = GameScene.Game.InventoryBox.Grid.Grid;
-                    break;
-                case GridType.Equipment:
-                    grid = GameScene.Game.CharacterBox.Grid;
-                    break;
-                case GridType.Storage:
-                    grid = GameScene.Game.StorageBox.Grid.Grid;
-                    break;
-                case GridType.PartsStorage:
-                    grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                    break;
-                case GridType.CompanionInventory:
-                    grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                    break;
-                case GridType.CompanionEquipment:
-                    grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException();
-            }
-
-            DXItemCell fromCell = grid[p.Template.Slot];
-            fromCell.Locked = false;
-
-            if (p.Success)
-            {
-                if (p.Template.Count == fromCell.Item.Count)
-                    fromCell.Item = null;
-                else
-                    fromCell.Item.Count -= p.Template.Count;
-
-                fromCell.RefreshItem();
-            }
-            #endregion
-
-            #region Yellow
-
-            if (p.Yellow != null)
-            {
-                switch (p.Yellow.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-                fromCell = grid[p.Yellow.Slot];
-                fromCell.Locked = false;
-
-                if (p.Success)
-                {
-                    if (p.Yellow.Count == fromCell.Item.Count)
-                        fromCell.Item = null;
-                    else
-                        fromCell.Item.Count -= p.Yellow.Count;
-
-                    fromCell.RefreshItem();
-                }
-            }
-
-            #endregion
-
-            #region Blue
-
-            if (p.Blue != null)
-            {
-                switch (p.Blue.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-                fromCell = grid[p.Blue.Slot];
-                fromCell.Locked = false;
-
-                if (p.Success)
-                {
-                    if (p.Blue.Count == fromCell.Item.Count)
-                        fromCell.Item = null;
-                    else
-                        fromCell.Item.Count -= p.Blue.Count;
-
-                    fromCell.RefreshItem();
-                }
-            }
-
-            #endregion
-
-            #region Red
-
-            if (p.Red != null)
-            {
-                switch (p.Red.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-                fromCell = grid[p.Red.Slot];
-                fromCell.Locked = false;
-
-                if (p.Success)
-                {
-                    if (p.Red.Count == fromCell.Item.Count)
-                        fromCell.Item = null;
-                    else
-                        fromCell.Item.Count -= p.Red.Count;
-
-                    fromCell.RefreshItem();
-                }
-            }
-
-            #endregion
-
-            #region Purple
-
-            if (p.Purple != null)
-            {
-                switch (p.Purple.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-                fromCell = grid[p.Purple.Slot];
-                fromCell.Locked = false;
-
-                if (p.Success)
-                {
-                    if (p.Purple.Count == fromCell.Item.Count)
-                        fromCell.Item = null;
-                    else
-                        fromCell.Item.Count -= p.Purple.Count;
-
-                    fromCell.RefreshItem();
-                }
-            }
-
-            #endregion
-
-            #region Green
-
-            if (p.Green != null)
-            {
-                switch (p.Green.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-                fromCell = grid[p.Green.Slot];
-                fromCell.Locked = false;
-
-                if (p.Success)
-                {
-                    if (p.Green.Count == fromCell.Item.Count)
-                        fromCell.Item = null;
-                    else
-                        fromCell.Item.Count -= p.Green.Count;
-
-                    fromCell.RefreshItem();
-                }
-            }
-
-            #endregion
-
-            #region Grey
-
-            if (p.Grey != null)
-            {
-                switch (p.Grey.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-                fromCell = grid[p.Grey.Slot];
-                fromCell.Locked = false;
-
-                if (p.Success)
-                {
-                    if (p.Grey.Count == fromCell.Item.Count)
-                        fromCell.Item = null;
-                    else
-                        fromCell.Item.Count -= p.Grey.Count;
-
-                    fromCell.RefreshItem();
-                }
-            }
-
-            #endregion
+            ApplyLinkedItemReduction(p.Template, p.Success);
+            ApplyLinkedItemReduction(p.Yellow, p.Success);
+            ApplyLinkedItemReduction(p.Blue, p.Success);
+            ApplyLinkedItemReduction(p.Red, p.Success);
+            ApplyLinkedItemReduction(p.Purple, p.Success);
+            ApplyLinkedItemReduction(p.Green, p.Success);
+            ApplyLinkedItemReduction(p.Grey, p.Success);
         }
         public void Process(S.NPCAccessoryRefine p)
         {
@@ -5110,78 +3908,28 @@ namespace Client.Envir
                 p.Links.Add(p.OreTarget);
 
             foreach (CellLinkInfo cellLinkInfo in p.Links)
-            {
-                DXItemCell[] grid;
-
-                switch (cellLinkInfo.GridType)
-                {
-                    case GridType.Inventory:
-                        grid = GameScene.Game.InventoryBox.Grid.Grid;
-                        break;
-                    case GridType.Equipment:
-                        grid = GameScene.Game.CharacterBox.Grid;
-                        break;
-                    case GridType.Storage:
-                        grid = GameScene.Game.StorageBox.Grid.Grid;
-                        break;
-                    case GridType.PartsStorage:
-                        grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                        break;
-                    case GridType.CompanionInventory:
-                        grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                        break;
-                    case GridType.CompanionEquipment:
-                        grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-                DXItemCell fromCell = grid[cellLinkInfo.Slot];
-                fromCell.Locked = false;
-            }
+                UnlockLinkedItem(cellLinkInfo);
         }
 
         public void Process(S.ItemAcessoryRefined p)
         {
-            DXItemCell[] grid;
+            if (!ItemSync.TryGetTarget(p.GridType, p.Slot, p.HeroIndex, out ItemSyncTarget target)) return;
 
-            switch (p.GridType)
-            {
-                case GridType.Inventory:
-                    grid = GameScene.Game.InventoryBox.Grid.Grid;
-                    break;
-                case GridType.Equipment:
-                    grid = GameScene.Game.CharacterBox.Grid;
-                    break;
-                case GridType.Storage:
-                    grid = GameScene.Game.StorageBox.Grid.Grid;
-                    break;
-                case GridType.PartsStorage:
-                    grid = GameScene.Game.StorageBox.PartGrid.Grid;
-                    break;
-                case GridType.CompanionInventory:
-                    grid = GameScene.Game.CompanionBox.InventoryGrid.Grid;
-                    break;
-                case GridType.CompanionEquipment:
-                    grid = GameScene.Game.CompanionBox.EquipmentGrid;
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException();
-            }
-            DXItemCell fromCell = grid[p.Slot];
+            ClientUserItem item = target.Item;
+            if (item == null) return;
 
-            fromCell.Item.AddedStats.Add(p.NewStats);
+            item.AddedStats.Add(p.NewStats);
 
             if (p.NewStats.Count == 0)
             {
-                GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.NothingHappen, fromCell.Item.Info.ItemName), MessageType.Hint);
+                GameScene.Game.ReceiveChat(string.Format(CEnvir.Language.NothingHappen, item.Info.ItemName), MessageType.Hint);
                 return;
             }
 
+            target.Refresh();
 
-
-            fromCell.RefreshItem();
+            if (ItemSync.IsHeroGrid(p.GridType))
+                ItemSync.RefreshHeroItems(p.HeroIndex, false);
         }
 
         public void Process(S.JoinInstance p)

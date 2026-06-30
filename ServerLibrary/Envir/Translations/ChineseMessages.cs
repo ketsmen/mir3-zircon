@@ -131,6 +131,8 @@ namespace Server.Envir.Translations
         public override string CompanionFiltersUpdated { get; set; } = "Companion filters have been updated";
         public override string CompanionRetrieveFailed { get; set; } = "无法获得{0}宠物，该宠物当前跟随{1}";
         public override string CompanionReleaseFailed { get; set; } = "Unable to release {0} because it is currently with {1}.";
+        public override string HeroAutoPotionItemMissing { get; set; } = "英雄{0}自动喝药药品已不在背包中，设置已清空。";
+        public override string HeroRestoreSpawnFailed { get; set; } = "已尝试恢复英雄召唤，但当前位置暂时无法召唤，召唤意图仍会保留。";
         public override string QuestSelectReward { get; set; } = "你必须选择任务奖励";
         public override string QuestNeedSpace { get; set; } = "无法完成任务，你的背包空间不足";
 
@@ -289,6 +291,13 @@ namespace Server.Envir.Translations
         public override string NPCRepairResult { get; set; } = "你普通修理{0}件道具，支付{1:#,##0}金币";
         public override string NPCRepairSpecialResult { get; set; } = "你特殊修理{0}件道具，支付{1:#,##0}金币";
         public override string NPCRepairGuildResult { get; set; } = "{0}使用{1:#,##0}行会基金修理{2}件道具";
+        public override string HeroItemUnsupportedFeature { get; set; } = "当前功能暂不支持英雄物品。";
+        public override string HeroItemCannotEquipToPlayer { get; set; } = "英雄物品不能直接装备到人物身上。";
+        public override string HeroItemOnlyInventoryCanEquip { get; set; } = "只有英雄包裹中的物品可以装备到英雄身上。";
+        public override string PlayerEquipmentCannotMoveToHeroInventory { get; set; } = "人物装备不能直接放入英雄包裹。";
+        public override string HeroEquipmentCannotMoveToPlayerInventory { get; set; } = "英雄装备不能直接放入人物包裹。";
+        public override string HeroCannotEquipItem { get; set; } = "英雄不能装备{0}：{1}";
+        public override string HeroInventoryOverweight { get; set; } = "英雄背包负重不足。";
         public override string NPCRefinementGold { get; set; } = "你没有足够的金币";
         public override string NPCRefinementStoneFailedRoom { get; set; } = "精炼石合成失败，无法获得该道具";
         public override string NPCRefinementStoneFailed { get; set; } = "合成精炼石失败";

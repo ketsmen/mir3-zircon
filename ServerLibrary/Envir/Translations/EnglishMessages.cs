@@ -124,6 +124,8 @@ namespace Server.Envir.Translations
         public override string CompanionFiltersUpdated { get; set; } = "Companion filters have been updated";
         public override string CompanionRetrieveFailed { get; set; } = "Unable to retrieve {0} because it is currently with {1}.";
         public override string CompanionReleaseFailed { get; set; } = "Unable to release {0} because it is currently with {1}.";
+        public override string HeroAutoPotionItemMissing { get; set; } = "The hero {0} auto potion item is no longer in the inventory, so the setting has been cleared.";
+        public override string HeroRestoreSpawnFailed { get; set; } = "Tried to restore hero summon, but the hero cannot be summoned here yet. The summon intent will be kept.";
         public override string QuestSelectReward { get; set; } = "You must select a reward";
         public override string QuestNeedSpace { get; set; } = "Unable to complete quest, Not enough space in your inventory.";
 
@@ -275,6 +277,13 @@ namespace Server.Envir.Translations
         public override string NPCRepairResult { get; set; } = "You normal repaired {0} item(s) for {1:#,##0} Gold.";
         public override string NPCRepairSpecialResult { get; set; } = "You special repaired {0} item(s) for {1:#,##0} Gold.";
         public override string NPCRepairGuildResult { get; set; } = "{0} used {1:#,##0} gold of guild funds to repair {2} item(s).";
+        public override string HeroItemUnsupportedFeature { get; set; } = "Hero items are not supported by this feature.";
+        public override string HeroItemCannotEquipToPlayer { get; set; } = "Hero items cannot be equipped by the player.";
+        public override string HeroItemOnlyInventoryCanEquip { get; set; } = "Only items in the hero inventory can be equipped by the hero.";
+        public override string PlayerEquipmentCannotMoveToHeroInventory { get; set; } = "Player equipment cannot be moved directly to the hero inventory.";
+        public override string HeroEquipmentCannotMoveToPlayerInventory { get; set; } = "Hero equipment cannot be moved directly to the player inventory.";
+        public override string HeroCannotEquipItem { get; set; } = "The hero cannot equip {0}: {1}";
+        public override string HeroInventoryOverweight { get; set; } = "The hero inventory is overweight.";
         public override string NPCRefinementGold { get; set; } = "You do not have enough gold.";
         public override string NPCRefinementStoneFailedRoom { get; set; } = "Failed to create Refinement Stone, Unable to gain this item";
         public override string NPCRefinementStoneFailed { get; set; } = "Failed to synthesize a Refinement stone.";

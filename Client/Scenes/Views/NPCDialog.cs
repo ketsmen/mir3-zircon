@@ -1629,7 +1629,9 @@ namespace Client.Scenes.Views
                     cell.Link = null;
                 }
 
-                CEnvir.Enqueue(new C.NPCRepair { Links = links, Special = SpecialCheckBox.Checked, GuildFunds = GuildCheckBox.Checked });
+                int heroIndex = links.Any(x => Functions.IsHeroGrid(x.GridType)) ? GameScene.Game?.CurrentHeroIndex ?? 0 : 0;
+
+                CEnvir.Enqueue(new C.NPCRepair { Links = links, Special = SpecialCheckBox.Checked, GuildFunds = GuildCheckBox.Checked, HeroIndex = heroIndex });
 
                 GuildCheckBox.Checked = false;
             };

@@ -133,6 +133,10 @@ namespace Server.Envir
         public abstract string CompanionRetrieveFailed { get; set; }
         public abstract string CompanionReleaseFailed { get; set; }
 
+        [ConfigSection("Hero")]
+        public abstract string HeroAutoPotionItemMissing { get; set; }
+        public abstract string HeroRestoreSpawnFailed { get; set; }
+
         [ConfigSection("Quest")]
         public abstract string QuestSelectReward { get; set; }
         public abstract string QuestNeedSpace { get; set; }
@@ -290,6 +294,13 @@ namespace Server.Envir
         public abstract string NPCRepairResult { get; set; }
         public abstract string NPCRepairSpecialResult { get; set; }
         public abstract string NPCRepairGuildResult { get; set; }
+        public abstract string HeroItemUnsupportedFeature { get; set; }
+        public abstract string HeroItemCannotEquipToPlayer { get; set; }
+        public abstract string HeroItemOnlyInventoryCanEquip { get; set; }
+        public abstract string PlayerEquipmentCannotMoveToHeroInventory { get; set; }
+        public abstract string HeroEquipmentCannotMoveToPlayerInventory { get; set; }
+        public abstract string HeroCannotEquipItem { get; set; }
+        public abstract string HeroInventoryOverweight { get; set; }
         public abstract string NPCRefinementGold { get; set; }
         public abstract string NPCRefinementStoneFailedRoom { get; set; }
         public abstract string NPCRefinementStoneFailed { get; set; }

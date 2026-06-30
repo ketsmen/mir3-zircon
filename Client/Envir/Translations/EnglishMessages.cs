@@ -29,6 +29,16 @@ namespace Client.Envir.Translations
         public override string NoFreeSpaceInInventory { get; set; } = "No Free Space in Inventory.";
         public override string NoFreeSpaceInStorage { get; set; } = "No Free Space in Storage.";
         public override string NoFreeSpaceInCompanionInventory { get; set; } = "No Free Space in companion's Inventory.";
+        public override string NoFreeSpaceInHeroInventory { get; set; } = "No Free Space in the hero inventory.";
+        public override string HeroItemUnsupportedFeature { get; set; } = "Hero items are not supported by this feature.";
+        public override string HeroItemCannotEquipToPlayer { get; set; } = "Hero items cannot be equipped by the player.";
+        public override string HeroItemOnlyInventoryCanEquip { get; set; } = "Only items in the hero inventory can be equipped by the hero.";
+        public override string PlayerEquipmentCannotMoveToHeroInventory { get; set; } = "Player equipment cannot be moved directly to the hero inventory.";
+        public override string HeroEquipmentCannotMoveToPlayerInventory { get; set; } = "Hero equipment cannot be moved directly to the player inventory.";
+        public override string HeroAutoPotionTitle { get; set; } = "Hero Auto Potion";
+        public override string HeroAutoPotionNeedItem { get; set; } = "Select a potion from the hero inventory first.";
+        public override string HeroAutoPotionNeedHealth { get; set; } = "Select a hero inventory potion that restores health.";
+        public override string HeroAutoPotionNeedMana { get; set; } = "Select a hero inventory potion that restores mana.";
         public override string WeaponEnergyFlamingSword { get; set; } = "Energy builds up within your weapon, Flaming Sword is ready.";
         public override string WeaponEnergyDragonRise { get; set; } = "Energy builds up within your weapon, Dragon Rise is ready.";
         public override string WeaponEnergyBladeStorm { get; set; } = "Energy builds up within your weapon, Blade Storm is ready.";

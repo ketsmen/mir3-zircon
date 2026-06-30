@@ -189,8 +189,7 @@ namespace Server.Envir
                 return;
             }
 
-            var receiveList = ReceiveList;
-            if (receiveList != null && receiveList.Count > Config.MaxPacket)
+            if (ReceiveList.Count > Config.MaxPacket)
             {
                 TryDisconnect();
                 SEnvir.IPBlocks[IPAddress] = SEnvir.Now.Add(Config.PacketBanTime);
@@ -531,7 +530,7 @@ namespace Server.Envir
         {
             if (Stage != GameStage.Game) return;
 
-            Player.ItemUse(p.Link);
+            Player.ItemUse(p.Link, p.HeroIndex);
         }
 
         public void Process(C.BeltLinkChanged p)
@@ -639,9 +638,6 @@ namespace Server.Envir
 
             Player.NPC = null;
             Player.NPCPage = null;
-            Player.NPCTextPage = null;
-            Player.NPCTextBlock = null;
-            Player.NPCTextArguments = null;
 
             foreach (SConnection con in Observers)
             {
@@ -671,8 +667,10 @@ namespace Server.Envir
         {
             if (Stage != GameStage.Game) return;
 
-            foreach (MagicObject magicObject in Player.MagicObjects.OrderedObjects)
+            foreach (var type in Player.MagicObjects.Keys)
             {
+                var magicObject = Player.MagicObjects[type];
+
                 if (magicObject.Magic.Set1Key == p.Set1Key)
                     magicObject.Magic.Set1Key = SpellKey.None;
 
@@ -686,13 +684,7 @@ namespace Server.Envir
                     magicObject.Magic.Set4Key = SpellKey.None;
             }
 
-            MagicObject magic = null;
-
-            if (p.MagicInfoIndex > 0)
-                Player.MagicObjects.TryGetByInfoIndex(p.MagicInfoIndex, out magic);
-
-            if (magic == null && !Player.GetMagic(p.Magic, out magic)) return;
-            if (magic == null || !magic.CanUseMagic()) return;
+            if (!Player.GetMagic(p.Magic, out MagicObject magic)) return;
 
             magic.Magic.Set1Key = p.Set1Key;
             magic.Magic.Set2Key = p.Set2Key;
@@ -1068,66 +1060,6 @@ namespace Server.Envir
                     Enqueue(new S.ChangePetMode { Mode = p.Mode });
                     break;
             }
-        }
-        public void Process(C.NewHero p)
-        {
-            if (Stage != GameStage.Game) return;
-
-            Player.NewHero(p);
-        }
-        public void Process(C.ChangeHero p)
-        {
-            if (Stage != GameStage.Game) return;
-
-            Player.ChangeHero(p);
-        }
-        public void Process(C.InspectHero p)
-        {
-            if (Stage != GameStage.Game) return;
-
-            Player.InspectHero(p);
-        }
-        public void Process(C.RenameHero p)
-        {
-            if (Stage != GameStage.Game) return;
-
-            Player.RenameHero(p);
-        }
-        public void Process(C.DeleteHero p)
-        {
-            if (Stage != GameStage.Game) return;
-
-            Player.DeleteHero(p);
-        }
-        public void Process(C.MoveHeroSlot p)
-        {
-            if (Stage != GameStage.Game) return;
-
-            Player.MoveHeroSlot(p);
-        }
-        public void Process(C.ToggleHeroSpawn p)
-        {
-            if (Stage != GameStage.Game) return;
-
-            Player.ToggleHeroSpawn();
-        }
-        public void Process(C.SetHeroBehaviour p)
-        {
-            if (Stage != GameStage.Game) return;
-
-            Player.SetHeroBehaviour(p);
-        }
-        public void Process(C.SetHeroCustomBehaviourProfile p)
-        {
-            if (Stage != GameStage.Game) return;
-
-            Player.SetHeroCustomBehaviourProfile(p);
-        }
-        public void Process(C.SetHeroAutoPot p)
-        {
-            if (Stage != GameStage.Game) return;
-
-            Player.SetHeroAutoPot(p);
         }
 
         public void Process(C.ItemSplit p)

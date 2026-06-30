@@ -275,6 +275,8 @@ namespace Client.Scenes
 
         public List<ClientUserQuest> QuestLog = new List<ClientUserQuest>();
         public List<ClientHeroInformation> Heroes = new List<ClientHeroInformation>();
+        public int ServerProtocolVersion;
+        public ServerCapabilities ServerCapabilities;
         public int CurrentHeroIndex;
         public int MaximumHeroCount;
         public HeroSpawnState HeroSpawnState;

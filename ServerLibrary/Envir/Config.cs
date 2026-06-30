@@ -110,6 +110,7 @@ namespace Server.Envir
         public static bool HeroGradePromoteEnabled { get; set; } = true;
         public static long HeroGradePromoteBaseGoldCost { get; set; } = 100000;
         public static int HeroGradePromoteGoldCostMultiplier { get; set; } = 100;
+        public static int HeroGradePromoteCostGrowthRate { get; set; } = 0;
         public static int HeroGradePromoteItemIndex { get; set; } = 0;
         public static long HeroGradePromoteBaseItemCount { get; set; } = 0;
         public static int HeroGradePromoteCurrencyIndex { get; set; } = 0;

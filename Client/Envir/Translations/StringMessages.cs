@@ -28,6 +28,16 @@ namespace Client.Envir.Translations
         public abstract string NoFreeSpaceInInventory { get; set; }
         public abstract string NoFreeSpaceInStorage { get; set; }
         public abstract string NoFreeSpaceInCompanionInventory { get; set; }
+        public abstract string NoFreeSpaceInHeroInventory { get; set; }
+        public abstract string HeroItemUnsupportedFeature { get; set; }
+        public abstract string HeroItemCannotEquipToPlayer { get; set; }
+        public abstract string HeroItemOnlyInventoryCanEquip { get; set; }
+        public abstract string PlayerEquipmentCannotMoveToHeroInventory { get; set; }
+        public abstract string HeroEquipmentCannotMoveToPlayerInventory { get; set; }
+        public abstract string HeroAutoPotionTitle { get; set; }
+        public abstract string HeroAutoPotionNeedItem { get; set; }
+        public abstract string HeroAutoPotionNeedHealth { get; set; }
+        public abstract string HeroAutoPotionNeedMana { get; set; }
         public abstract string WeaponEnergyFlamingSword { get; set; }
         public abstract string WeaponEnergyDragonRise { get; set; }
         public abstract string WeaponEnergyBladeStorm { get; set; }

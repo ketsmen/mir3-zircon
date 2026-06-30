@@ -29,6 +29,16 @@ namespace Client.Envir.Translations
         public override string NoFreeSpaceInInventory { get; set; } = "背包已经满了.";
         public override string NoFreeSpaceInStorage { get; set; } = "仓库已经满了.";
         public override string NoFreeSpaceInCompanionInventory { get; set; } = "宠物的背包已经满了.";
+        public override string NoFreeSpaceInHeroInventory { get; set; } = "英雄背包已经满了.";
+        public override string HeroItemUnsupportedFeature { get; set; } = "当前功能暂不支持英雄物品。";
+        public override string HeroItemCannotEquipToPlayer { get; set; } = "英雄物品不能直接装备到人物身上。";
+        public override string HeroItemOnlyInventoryCanEquip { get; set; } = "只有英雄包裹中的物品可以装备到英雄身上。";
+        public override string PlayerEquipmentCannotMoveToHeroInventory { get; set; } = "人物装备不能直接放入英雄包裹。";
+        public override string HeroEquipmentCannotMoveToPlayerInventory { get; set; } = "英雄装备不能直接放入人物包裹。";
+        public override string HeroAutoPotionTitle { get; set; } = "英雄自动喝药";
+        public override string HeroAutoPotionNeedItem { get; set; } = "请先选中英雄背包里的药品。";
+        public override string HeroAutoPotionNeedHealth { get; set; } = "请选择可恢复生命值的英雄背包药品。";
+        public override string HeroAutoPotionNeedMana { get; set; } = "请选择可恢复魔法值的英雄背包药品。";
         public override string WeaponEnergyFlamingSword { get; set; } = "武器内能量积聚，烈火剑法已准备就绪.";
         public override string WeaponEnergyDragonRise { get; set; } = "武器内能量积聚, 翔空剑法已准备就绪.";
         public override string WeaponEnergyBladeStorm { get; set; } = "武器内能量积聚, 莲月剑法已准备就绪.";

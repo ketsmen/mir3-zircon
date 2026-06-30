@@ -44,10 +44,11 @@ namespace Client.Scenes.Views
         public MirClass CreateClass = MirClass.Warrior;
         public MirGender CreateGender = MirGender.Male;
         public bool Updating;
-        private ClientUserHero InspectedHero;
-        private int RequestedHeroIndex;
+        private readonly Dictionary<int, ClientUserHero> InspectedHeroes = new();
+        private readonly HashSet<int> RequestedHeroIndexes = new();
 
         public bool IsViewingCurrentHero => SelectedHeroIndex > 0 && SelectedHeroIndex == (GameScene.Game?.CurrentHeroIndex ?? 0);
+        public bool IsHeroItemPanelWritable => IsViewingCurrentHero && GameScene.Game?.CurrentHero != null;
 
         private static readonly MirClass[] ClassCycle = { MirClass.Warrior, MirClass.Wizard, MirClass.Taoist, MirClass.Assassin };
 
@@ -58,11 +59,40 @@ namespace Client.Scenes.Views
                 if (IsViewingCurrentHero)
                     return GameScene.Game?.CurrentHero;
 
-                return InspectedHero?.Index == SelectedHeroIndex ? InspectedHero : null;
+                return InspectedHeroes.TryGetValue(SelectedHeroIndex, out ClientUserHero hero) ? hero : null;
             }
         }
 
         private ClientHeroInformation SelectedSummary => GameScene.Game?.Heroes?.FirstOrDefault(x => x.Index == SelectedHeroIndex);
+
+        public bool IsDisplayingHero(int index)
+        {
+            return index > 0 && SelectedHeroIndex == index && DisplayedHero?.Index == index;
+        }
+
+        public bool TryGetDisplayedHeroGrid(GridType grid, out ClientUserItem[] items)
+        {
+            ClientUserHero hero = DisplayedHero;
+
+            items = grid switch
+            {
+                GridType.HeroInventory => hero?.InventoryArray,
+                GridType.HeroEquipment => hero?.EquipmentArray,
+                _ => null
+            };
+
+            return items != null;
+        }
+
+        public void RefreshHeroItems(int heroIndex, bool fullRefresh)
+        {
+            if (!IsDisplayingHero(heroIndex)) return;
+
+            if (fullRefresh)
+                HeroChanged();
+            else
+                UpdateLabels();
+        }
 
         public HeroDialog()
         {
@@ -307,8 +337,8 @@ namespace Client.Scenes.Views
             SortButton = CreateButtonControl(InventoryTab, "整理", 278, 76, 70);
             SortButton.MouseClick += (o, e) =>
             {
-                if (GameScene.Game.Observer) return;
-                CEnvir.Enqueue(new C.ItemSort { Grid = GridType.HeroInventory });
+                if (GameScene.Game.Observer || !IsHeroItemPanelWritable) return;
+                CEnvir.Enqueue(new C.ItemSort { Grid = GridType.HeroInventory, HeroIndex = GameScene.Game?.CurrentHeroIndex ?? 0 });
             };
 
             AutoPotLabel = CreateLabel(InventoryTab, "HP自动: 未设置\r\nMP自动: 未设置", 278, 116, 210, true);
@@ -595,9 +625,6 @@ namespace Client.Scenes.Views
 
             SelectedHeroIndex = index;
 
-            if (InspectedHero?.Index != SelectedHeroIndex)
-                InspectedHero = null;
-
             if (requestDetails)
                 RequestSelectedHeroDetails();
 
@@ -606,20 +633,33 @@ namespace Client.Scenes.Views
 
         public void SetInspectedHero(ClientUserHero hero)
         {
-            if (hero == null || hero.Index != SelectedHeroIndex) return;
+            if (hero == null) return;
 
-            InspectedHero = hero;
-            RequestedHeroIndex = 0;
-            HeroChanged();
+            RequestedHeroIndexes.Remove(hero.Index);
+
+            if (hero.Index == (GameScene.Game?.CurrentHeroIndex ?? 0))
+            {
+                InspectedHeroes.Remove(hero.Index);
+
+                if (hero.Index == SelectedHeroIndex)
+                    HeroChanged();
+
+                return;
+            }
+
+            InspectedHeroes[hero.Index] = hero;
+
+            if (hero.Index == SelectedHeroIndex)
+                HeroChanged();
         }
 
         private void RequestSelectedHeroDetails()
         {
             if (SelectedHeroIndex <= 0) return;
             if (DisplayedHero != null) return;
-            if (RequestedHeroIndex == SelectedHeroIndex) return;
+            if (RequestedHeroIndexes.Contains(SelectedHeroIndex)) return;
 
-            RequestedHeroIndex = SelectedHeroIndex;
+            RequestedHeroIndexes.Add(SelectedHeroIndex);
             CEnvir.Enqueue(new C.InspectHero { Index = SelectedHeroIndex });
         }
 
@@ -631,35 +671,47 @@ namespace Client.Scenes.Views
             if (heroes != null && heroes.Count > 0)
             {
                 int currentHeroIndex = GameScene.Game?.CurrentHeroIndex ?? 0;
+                HashSet<int> activeHeroIndexes = new HashSet<int>(heroes.Select(x => x.Index));
+
+                foreach (int index in InspectedHeroes.Keys.ToList())
+                {
+                    if (!activeHeroIndexes.Contains(index) || index == currentHeroIndex)
+                        InspectedHeroes.Remove(index);
+                }
+
+                foreach (int index in RequestedHeroIndexes.ToList())
+                {
+                    if (!activeHeroIndexes.Contains(index) || index == currentHeroIndex)
+                        RequestedHeroIndexes.Remove(index);
+                }
 
                 if (SelectedHeroIndex == 0 || heroes.All(x => x.Index != SelectedHeroIndex))
                 {
-                    InspectedHero = null;
-
                     if (currentHeroIndex > 0 && heroes.Any(x => x.Index == currentHeroIndex))
                         SelectedHeroIndex = currentHeroIndex;
                     else
                         SelectedHeroIndex = heroes[0].Index;
                 }
                 else if (currentHero != null && SelectedHeroIndex == currentHero.Index)
-                    InspectedHero = null;
+                    InspectedHeroes.Remove(SelectedHeroIndex);
             }
             else
             {
                 SelectedHeroIndex = 0;
-                InspectedHero = null;
+                InspectedHeroes.Clear();
+                RequestedHeroIndexes.Clear();
             }
 
-            if (InspectedHero != null)
+            if (heroes != null)
             {
-                ClientHeroInformation summary = SelectedSummary;
-
-                if (summary != null)
+                foreach (ClientHeroInformation summary in heroes)
                 {
-                    InspectedHero.Name = summary.Name;
-                    InspectedHero.Class = summary.Class;
-                    InspectedHero.Gender = summary.Gender;
-                    InspectedHero.Level = summary.Level;
+                    if (!InspectedHeroes.TryGetValue(summary.Index, out ClientUserHero inspectedHero)) continue;
+
+                    inspectedHero.Name = summary.Name;
+                    inspectedHero.Class = summary.Class;
+                    inspectedHero.Gender = summary.Gender;
+                    inspectedHero.Level = summary.Level;
                 }
             }
 
@@ -675,7 +727,7 @@ namespace Client.Scenes.Views
                 DXItemCell.SelectedCell = null;
 
             InventoryGrid.ItemGrid = hero?.InventoryArray;
-            bool canEdit = hero != null && IsViewingCurrentHero;
+            bool canEdit = hero != null && IsHeroItemPanelWritable;
 
             foreach (DXItemCell cell in InventoryGrid.Grid)
             {
@@ -770,7 +822,7 @@ namespace Client.Scenes.Views
 
             bool hasSelectedHero = summary != null || hero != null;
             bool hasFullHero = hero != null;
-            bool canEditHero = hasFullHero && selectedIsCurrent;
+            bool canEditHero = hasFullHero && IsHeroItemPanelWritable;
             bool canCreateHero = maximumHeroCount > 0 && heroCount < maximumHeroCount;
             bool canSelectHero = heroCount > 1 || heroCount == 1 && !hasSelectedHero;
             int selectedPosition = GameScene.Game?.Heroes?.FindIndex(x => x.Index == SelectedHeroIndex) ?? -1;
@@ -934,20 +986,20 @@ namespace Client.Scenes.Views
 
         private void SetPotion(bool hp)
         {
-            if (!IsViewingCurrentHero) return;
+            if (!IsHeroItemPanelWritable) return;
 
             ClientUserItem item = InventoryGrid.Grid.FirstOrDefault(x => x.Selected)?.Item;
 
             if (item == null || item.Info.ItemType != ItemType.Consumable || item.Info.Shape != 0 || !item.Info.CanAutoPot)
             {
-                DXMessageBox.Show("请先选中英雄背包里的药品。", "英雄自动喝药");
+                DXMessageBox.Show(CEnvir.Language.HeroAutoPotionNeedItem, CEnvir.Language.HeroAutoPotionTitle);
                 return;
             }
 
             Stat stat = hp ? Stat.Health : Stat.Mana;
             if (item.Info.Stats[stat] <= 0)
             {
-                DXMessageBox.Show(hp ? "请选择可以恢复生命的药品。" : "请选择可以恢复魔法的药品。", "英雄自动喝药");
+                DXMessageBox.Show(hp ? CEnvir.Language.HeroAutoPotionNeedHealth : CEnvir.Language.HeroAutoPotionNeedMana, CEnvir.Language.HeroAutoPotionTitle);
                 return;
             }
 
@@ -969,7 +1021,7 @@ namespace Client.Scenes.Views
 
         public void SendAutoPot()
         {
-            if (!IsViewingCurrentHero) return;
+            if (!IsHeroItemPanelWritable) return;
 
             ClientUserHero hero = DisplayedHero;
             if (hero == null) return;
@@ -1383,7 +1435,8 @@ namespace Client.Scenes.Views
             HPItemCell = null;
             MPItemCell = null;
             EquipmentGrid = null;
-            InspectedHero = null;
+            InspectedHeroes.Clear();
+            RequestedHeroIndexes.Clear();
             SkillCells.Clear();
             SkillScrollControls.Clear();
             DisciplineMagicCells.Clear();

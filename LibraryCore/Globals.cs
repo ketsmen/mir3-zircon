@@ -73,6 +73,8 @@ namespace Library
         public const string ClientName = "Legend of Mir 3";
 
         public const int
+            ProtocolVersion = 2,
+
             MinPasswordLength = 5,
             MaxPasswordLength = 15,
 
@@ -350,6 +352,9 @@ namespace Library
 
     public sealed class StartInformation
     {
+        public int ProtocolVersion { get; set; }
+        public ServerCapabilities ServerCapabilities { get; set; }
+
         public int Index { get; set; }
         public uint ObjectID { get; set; }
         public string Name { get; set; }

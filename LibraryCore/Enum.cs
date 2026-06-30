@@ -3,6 +3,17 @@ using System.ComponentModel;
 
 namespace Library
 {
+    [Flags]
+    public enum ServerCapabilities : int
+    {
+        None = 0,
+        HeroItemSyncIndex = 1,
+        HeroMultiInspectCache = 2,
+        HeroItemRequestIndex = 4,
+
+        Current = HeroItemSyncIndex | HeroMultiInspectCache | HeroItemRequestIndex,
+    }
+
     public enum MirGender : byte
     {
         Male = 0,

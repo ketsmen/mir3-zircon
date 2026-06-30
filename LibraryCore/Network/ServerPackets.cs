@@ -438,6 +438,7 @@ namespace Library.Network.ServerPackets
 
         public bool HideHead;
     }
+
     public sealed class ClientCustomResourceLibraryInfo
     {
         public int Index { get; set; }
@@ -741,9 +742,9 @@ namespace Library.Network.ServerPackets
         public string Say { get; set; }
         public NPCDialogType DialogType { get; set; }
         public int CurrencyIndex { get; set; }
-        public List<ClientTextNPCButton> Buttons { get; set; } = [];
-        public List<ClientTextNPCGood> Goods { get; set; } = [];
-        public List<ItemType> Types { get; set; } = [];
+        public List<ClientTextNPCButton> Buttons { get; set; } = new List<ClientTextNPCButton>();
+        public List<ClientTextNPCGood> Goods { get; set; } = new List<ClientTextNPCGood>();
+        public List<ItemType> Types { get; set; } = new List<ItemType>();
 
         [IgnorePropertyPacket]
         public CurrencyInfo Currency { get; set; }
@@ -754,6 +755,7 @@ namespace Library.Network.ServerPackets
             Currency = CurrencyIndex > 0 ? Globals.CurrencyInfoList?.Binding.FirstOrDefault(x => x.Index == CurrencyIndex) : null;
         }
     }
+
     public sealed class ObjectHero : Packet
     {
         public int Index { get; set; }
@@ -991,6 +993,7 @@ namespace Library.Network.ServerPackets
         public int FromSlot { get; set; }
         public int ToSlot { get; set; }
         public bool MergeItem { get; set; }
+        public int HeroIndex { get; set; }
 
         public bool Success { get; set; }
     }
@@ -999,6 +1002,7 @@ namespace Library.Network.ServerPackets
     {
         public GridType Grid { get; set; }
         public List<ClientUserItem> Items { get; set; }
+        public int HeroIndex { get; set; }
         public bool Success { get; set; }
     }
 
@@ -1008,6 +1012,7 @@ namespace Library.Network.ServerPackets
         public int Slot { get; set; }
         public long Count { get; set; }
         public int NewSlot { get; set; }
+        public int HeroIndex { get; set; }
 
         public bool Success { get; set; }
     }
@@ -1023,6 +1028,7 @@ namespace Library.Network.ServerPackets
     {
         public GridType Grid { get; set; }
         public int Slot { get; set; }
+        public int HeroIndex { get; set; }
         public bool Locked { get; set; }
 
     }
@@ -1034,6 +1040,7 @@ namespace Library.Network.ServerPackets
     public sealed class ItemChanged : Packet
     {
         public CellLinkInfo Link { get; set; }
+        public int HeroIndex { get; set; }
         public bool Success { get; set; }
     }
 
@@ -1041,23 +1048,27 @@ namespace Library.Network.ServerPackets
     {
         public GridType GridType { get; set; }
         public int Slot { get; set; }
+        public int HeroIndex { get; set; }
         public Stats NewStats { get; set; }
     }
     public sealed class ItemStatsRefreshed : Packet
     {
         public GridType GridType { get; set; }
         public int Slot { get; set; }
+        public int HeroIndex { get; set; }
         public Stats NewStats { get; set; }
     }
     public sealed class ItemDurability : Packet
     {
         public GridType GridType { get; set; }
         public int Slot { get; set; }
+        public int HeroIndex { get; set; }
         public int CurrentDurability { get; set; }
     }
     public sealed class ItemExperience : Packet
     {
         public CellLinkInfo Target { get; set; }
+        public int HeroIndex { get; set; }
         public decimal Experience { get; set; }
         public int Level { get; set; }
         public UserItemFlags Flags { get; set; }
@@ -1092,11 +1103,13 @@ namespace Library.Network.ServerPackets
     public sealed class ItemsChanged : Packet
     {
         public List<CellLinkInfo> Links { get; set; }
+        public int HeroIndex { get; set; }
         public bool Success { get; set; }
     }
     public sealed class NPCRepair : Packet
     {
         public List<CellLinkInfo> Links { get; set; }
+        public int HeroIndex { get; set; }
         public bool Special { get; set; }
         public bool Success { get; set; }
         public TimeSpan SpecialRepairDelay { get; set; }
@@ -1885,6 +1898,7 @@ namespace Library.Network.ServerPackets
     {
         public GridType GridType { get; set; }
         public int Slot { get; set; }
+        public int HeroIndex { get; set; }
         public Stats NewStats { get; set; }
     }
 

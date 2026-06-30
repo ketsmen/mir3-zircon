@@ -9,6 +9,59 @@ namespace Library
 {
     public static class Functions
     {
+        public static bool IsHeroGrid(GridType grid)
+        {
+            return grid == GridType.HeroInventory || grid == GridType.HeroEquipment;
+        }
+
+        public static bool IsHeroManagedGrid(GridType grid)
+        {
+            return IsHeroGrid(grid) || grid == GridType.HeroHPItem || grid == GridType.HeroMPItem;
+        }
+
+        public static bool IsUnsupportedHeroItemFeatureGrid(GridType grid)
+        {
+            switch (grid)
+            {
+                case GridType.RefineBlackIronOre:
+                case GridType.RefineAccessory:
+                case GridType.RefineSpecial:
+                case GridType.Consign:
+                case GridType.SendMail:
+                case GridType.TradeUser:
+                case GridType.TradePlayer:
+                case GridType.GuildStorage:
+                case GridType.RefinementStoneIronOre:
+                case GridType.RefinementStoneSilverOre:
+                case GridType.RefinementStoneDiamond:
+                case GridType.RefinementStoneGoldOre:
+                case GridType.RefinementStoneCrystal:
+                case GridType.ItemFragment:
+                case GridType.AccessoryRefineUpgradeTarget:
+                case GridType.AccessoryRefineLevelTarget:
+                case GridType.AccessoryRefineLevelItems:
+                case GridType.MasterRefineFragment1:
+                case GridType.MasterRefineFragment2:
+                case GridType.MasterRefineFragment3:
+                case GridType.MasterRefineStone:
+                case GridType.MasterRefineSpecial:
+                case GridType.AccessoryReset:
+                case GridType.WeaponCraftTemplate:
+                case GridType.WeaponCraftYellow:
+                case GridType.WeaponCraftBlue:
+                case GridType.WeaponCraftRed:
+                case GridType.WeaponCraftPurple:
+                case GridType.WeaponCraftGreen:
+                case GridType.WeaponCraftGrey:
+                case GridType.RefineCorundumOre:
+                case GridType.AccessoryRefineCombTarget:
+                case GridType.AccessoryRefineCombItems:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         public static TimeSpan Max(TimeSpan value1, TimeSpan value2)
         {
             return value1 > value2 ? value1 : value2;

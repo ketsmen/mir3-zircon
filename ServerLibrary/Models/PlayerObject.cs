@@ -1,4 +1,4 @@
-﻿using Library;
+using Library;
 using Library.Network;
 using Library.Network.ClientPackets;
 using Library.SystemModels;
@@ -798,6 +798,9 @@ namespace Server.Models
 
             return new StartInformation
             {
+                ProtocolVersion = Globals.ProtocolVersion,
+                ServerCapabilities = ServerCapabilities.Current,
+
                 Index = Character.Index,
                 ObjectID = ObjectID,
                 Name = Name,
@@ -3015,9 +3018,94 @@ namespace Server.Models
 
         #region Heroes
 
-        private static bool IsHeroGrid(GridType grid)
+        private int CurrentHeroItemPacketIndex()
         {
-            return grid == GridType.HeroInventory || grid == GridType.HeroEquipment;
+            return Character?.CurrentHero?.Index ?? Hero?.Info?.Index ?? 0;
+        }
+
+        private void StampHeroItemPacket(S.ItemMove packet)
+        {
+            if (packet == null) return;
+            if (!Functions.IsHeroGrid(packet.FromGrid) && !Functions.IsHeroGrid(packet.ToGrid)) return;
+
+            packet.HeroIndex = CurrentHeroItemPacketIndex();
+        }
+
+        private void StampHeroItemPacket(S.ItemSort packet)
+        {
+            if (packet == null || !Functions.IsHeroGrid(packet.Grid)) return;
+
+            packet.HeroIndex = CurrentHeroItemPacketIndex();
+        }
+
+        private void StampHeroItemPacket(S.ItemSplit packet)
+        {
+            if (packet == null || !Functions.IsHeroGrid(packet.Grid)) return;
+
+            packet.HeroIndex = CurrentHeroItemPacketIndex();
+        }
+
+        private void StampHeroItemPacket(S.ItemLock packet)
+        {
+            if (packet == null || !Functions.IsHeroGrid(packet.Grid)) return;
+
+            packet.HeroIndex = CurrentHeroItemPacketIndex();
+        }
+
+        private void StampHeroItemPacket(S.ItemChanged packet)
+        {
+            if (packet?.Link == null || !Functions.IsHeroGrid(packet.Link.GridType)) return;
+
+            packet.HeroIndex = CurrentHeroItemPacketIndex();
+        }
+
+        private void StampHeroItemPacket(S.ItemStatsChanged packet)
+        {
+            if (packet == null || !Functions.IsHeroGrid(packet.GridType)) return;
+
+            packet.HeroIndex = CurrentHeroItemPacketIndex();
+        }
+
+        private void StampHeroItemPacket(S.ItemStatsRefreshed packet)
+        {
+            if (packet == null || !Functions.IsHeroGrid(packet.GridType)) return;
+
+            packet.HeroIndex = CurrentHeroItemPacketIndex();
+        }
+
+        private void StampHeroItemPacket(S.ItemDurability packet)
+        {
+            if (packet == null || !Functions.IsHeroGrid(packet.GridType)) return;
+
+            packet.HeroIndex = CurrentHeroItemPacketIndex();
+        }
+
+        private void StampHeroItemPacket(S.ItemExperience packet)
+        {
+            if (packet?.Target == null || !Functions.IsHeroGrid(packet.Target.GridType)) return;
+
+            packet.HeroIndex = CurrentHeroItemPacketIndex();
+        }
+
+        private void StampHeroItemPacket(S.ItemsChanged packet)
+        {
+            if (packet?.Links == null || packet.Links.All(x => x == null || !Functions.IsHeroGrid(x.GridType))) return;
+
+            packet.HeroIndex = CurrentHeroItemPacketIndex();
+        }
+
+        private void StampHeroItemPacket(S.NPCRepair packet)
+        {
+            if (packet?.Links == null || packet.Links.All(x => x == null || !Functions.IsHeroGrid(x.GridType))) return;
+
+            packet.HeroIndex = CurrentHeroItemPacketIndex();
+        }
+
+        private void StampHeroItemPacket(S.ItemAcessoryRefined packet)
+        {
+            if (packet == null || !Functions.IsHeroGrid(packet.GridType)) return;
+
+            packet.HeroIndex = CurrentHeroItemPacketIndex();
         }
 
         private static int GetMaximumHeroCount()
@@ -3089,16 +3177,20 @@ namespace Server.Models
             return hero.ToClientHero();
         }
 
-        private bool TryGetHeroItemArray(GridType grid, out UserItem[] array)
+        private bool TryGetHeroItemArray(GridType grid, int heroIndex, out UserItem[] array)
         {
             array = null;
 
-            if (!IsHeroGrid(grid)) return false;
-            if (Character?.CurrentHero == null || Character.CurrentHero.Deleted) return false;
+            if (!Functions.IsHeroGrid(grid)) return false;
+
+            HeroInfo currentHero = Character?.CurrentHero;
+            if (currentHero == null || currentHero.Deleted) return false;
+            if (heroIndex <= 0) return false;
+            if (heroIndex > 0 && heroIndex != currentHero.Index) return false;
 
             HeroSetup();
 
-            if (Hero == null || Hero.Info != Character.CurrentHero) return false;
+            if (Hero == null || Hero.Info != currentHero) return false;
 
             switch (grid)
             {
@@ -3113,21 +3205,23 @@ namespace Server.Models
             }
         }
 
-        private bool ValidateHeroItemOwnership(UserItem item, GridType grid, int slot)
+        private bool ValidateHeroItemOwnership(UserItem item, GridType grid, int slot, HeroInfo heroInfo = null)
         {
             if (item == null) return true;
-            if (!IsHeroGrid(grid)) return true;
+            if (!Functions.IsHeroGrid(grid)) return true;
 
-            if (Hero == null || item.Hero != Hero.Info)
+            heroInfo ??= Hero?.Info;
+
+            if (heroInfo == null || item.Hero != heroInfo)
             {
-                SEnvir.Log($"[Hero Item Ownership] Invalid owner. Character: {Character?.CharacterName}, Hero: {Hero?.Info?.Name}, Item: {item.Info?.ItemName}, ItemIndex: {item.Index}, Grid: {grid}, Slot: {slot}");
+                SEnvir.Log($"[Hero Item Ownership] Invalid owner. Character: {Character?.CharacterName}, Hero: {heroInfo?.Name}, Item: {item.Info?.ItemName}, ItemIndex: {item.Index}, Grid: {grid}, Slot: {slot}");
                 return false;
             }
 
             int expectedSlot = grid == GridType.HeroEquipment ? slot + Globals.EquipmentOffSet : slot;
             if (item.Slot == expectedSlot) return true;
 
-            SEnvir.Log($"[Hero Item Slot] Invalid slot. Character: {Character?.CharacterName}, Hero: {Hero.Info?.Name}, Item: {item.Info?.ItemName}, ItemIndex: {item.Index}, Grid: {grid}, ExpectedSlot: {expectedSlot}, ActualSlot: {item.Slot}");
+            SEnvir.Log($"[Hero Item Slot] Invalid slot. Character: {Character?.CharacterName}, Hero: {heroInfo.Name}, Item: {item.Info?.ItemName}, ItemIndex: {item.Index}, Grid: {grid}, ExpectedSlot: {expectedSlot}, ActualSlot: {item.Slot}");
             return false;
         }
 
@@ -3231,7 +3325,7 @@ namespace Server.Models
             });
 
             string potionType = hpChanged && mpChanged ? "HP/MP" : hpChanged ? "HP" : "MP";
-            Connection?.ReceiveChat($"英雄{potionType}自动喝药药品已不在背包中，设置已清空。", MessageType.System);
+            Connection?.ReceiveChat(string.Format(Connection.Language.HeroAutoPotionItemMissing, potionType), MessageType.System);
         }
 
         public void HeroSetup()
@@ -3337,6 +3431,8 @@ namespace Server.Models
 
             if (Hero?.Node != null)
                 Connection.ReceiveChat($"{Hero.Name}已随你重新召唤。", MessageType.System);
+            else
+                Connection.ReceiveChat(Connection.Language.HeroRestoreSpawnFailed, MessageType.System);
         }
 
         public HeroSpawnState GetHeroSpawnState()
@@ -3753,6 +3849,7 @@ namespace Server.Models
             decimal cost = Math.Max(0, Config.HeroGradePromoteBaseGoldCost);
             cost *= nextGrade;
             cost *= Math.Max(0, Config.HeroGradePromoteGoldCostMultiplier) / 100M;
+            cost = ApplyHeroGradePromoteCostGrowth(currentGrade, cost);
 
             if (cost >= long.MaxValue) return long.MaxValue;
             return Math.Max(0, (long)Math.Ceiling(cost));
@@ -3764,9 +3861,20 @@ namespace Server.Models
 
             decimal cost = baseCost;
             cost *= currentGrade + 1;
+            cost = ApplyHeroGradePromoteCostGrowth(currentGrade, cost);
 
             if (cost >= long.MaxValue) return long.MaxValue;
             return Math.Max(0, (long)Math.Ceiling(cost));
+        }
+
+        private static decimal ApplyHeroGradePromoteCostGrowth(byte currentGrade, decimal cost)
+        {
+            decimal rate = Math.Max(0, Config.HeroGradePromoteCostGrowthRate) / 100M;
+
+            for (int i = 0; i < currentGrade; i++)
+                cost *= rate;
+
+            return cost;
         }
 
         public void PreviewHeroGradePromote()
@@ -4603,6 +4711,7 @@ namespace Server.Models
             Enqueue(result);
 
             if (!ParseLinks(p.Links, 0, 5)) return;
+            if (RejectUnsupportedHeroLinks(p.Links)) return;
 
             if (p.Recipient == null || p.Recipient.Length > Globals.MaxCharacterNameLength)
             {
@@ -4781,6 +4890,7 @@ namespace Server.Models
             Enqueue(result);
 
             if (!ParseLinks(p.Link)) return;
+            if (RejectUnsupportedHeroLink(p.Link)) return;
 
             if (string.IsNullOrEmpty(p.Message) || p.Message.Length > 150) return;
 
@@ -6781,6 +6891,36 @@ namespace Server.Models
             return link != null && link.Count > 0;
         }
 
+        private static bool ContainsHeroLink(IEnumerable<CellLinkInfo> links)
+        {
+            return links != null && links.Any(x => x != null && Functions.IsHeroGrid(x.GridType));
+        }
+
+        private bool RejectUnsupportedHeroLinks(params IEnumerable<CellLinkInfo>[] linkSets)
+        {
+            if (linkSets == null || !linkSets.Any(ContainsHeroLink)) return false;
+
+            Connection.ReceiveChatWithObservers(con => con.Language.HeroItemUnsupportedFeature, MessageType.System);
+            return true;
+        }
+
+        private bool RejectUnsupportedHeroLink(CellLinkInfo link)
+        {
+            if (link == null || !Functions.IsHeroGrid(link.GridType)) return false;
+
+            Connection.ReceiveChatWithObservers(con => con.Language.HeroItemUnsupportedFeature, MessageType.System);
+            return true;
+        }
+
+        private bool RejectUnsupportedHeroItemMove(GridType fromGrid, GridType toGrid)
+        {
+            if (!Functions.IsHeroGrid(fromGrid) && !Functions.IsHeroGrid(toGrid)) return false;
+            if (!Functions.IsUnsupportedHeroItemFeatureGrid(fromGrid) && !Functions.IsUnsupportedHeroItemFeatureGrid(toGrid)) return false;
+
+            Connection.ReceiveChatWithObservers(con => con.Language.HeroItemUnsupportedFeature, MessageType.System);
+            return true;
+        }
+
         public void RemoveItem(UserItem item)
         {
             /*  foreach (BeltLink link in Character.BeltLinks)
@@ -7008,7 +7148,7 @@ namespace Server.Models
             RefreshWeight();
         }
 
-        public void ItemUse(CellLinkInfo link)
+        public void ItemUse(CellLinkInfo link, int heroIndex = 0)
         {
             if (!ParseLinks(link)) return;
 
@@ -7032,10 +7172,10 @@ namespace Server.Models
                     fromArray = Companion.Equipment;
                     break;
                 case GridType.HeroInventory:
-                    if (!TryGetHeroItemArray(link.GridType, out fromArray)) return;
+                    if (!TryGetHeroItemArray(link.GridType, heroIndex, out fromArray)) return;
                     break;
                 case GridType.HeroEquipment:
-                    if (!TryGetHeroItemArray(link.GridType, out fromArray)) return;
+                    if (!TryGetHeroItemArray(link.GridType, heroIndex, out fromArray)) return;
                     break;
                 default:
                     return;
@@ -7046,7 +7186,7 @@ namespace Server.Models
             UserItem item = fromArray[link.Slot];
 
             if (item == null) return;
-            if (!ValidateHeroItemOwnership(item, link.GridType, link.Slot)) return;
+            if (!ValidateHeroItemOwnership(item, link.GridType, link.Slot, Character.CurrentHero)) return;
 
             if (link.GridType == GridType.HeroInventory)
             {
@@ -8137,6 +8277,7 @@ namespace Server.Models
             Enqueue(result);
 
             if (Dead || (p.FromGrid == p.ToGrid && p.FromSlot == p.ToSlot)) return;
+            if (RejectUnsupportedHeroItemMove(p.FromGrid, p.ToGrid)) return;
 
             UserItem[] fromArray, toArray;
 
@@ -8199,10 +8340,10 @@ namespace Server.Models
                     fromArray = Companion.Equipment;
                     break;
                 case GridType.HeroInventory:
-                    if (!TryGetHeroItemArray(p.FromGrid, out fromArray)) return;
+                    if (!TryGetHeroItemArray(p.FromGrid, p.HeroIndex, out fromArray)) return;
                     break;
                 case GridType.HeroEquipment:
-                    if (!TryGetHeroItemArray(p.FromGrid, out fromArray)) return;
+                    if (!TryGetHeroItemArray(p.FromGrid, p.HeroIndex, out fromArray)) return;
                     break;
                 default:
                     return;
@@ -8214,7 +8355,7 @@ namespace Server.Models
 
             if (fromItem == null) return;
             if ((fromItem.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage) return;
-            if (!ValidateHeroItemOwnership(fromItem, p.FromGrid, p.FromSlot)) return;
+            if (!ValidateHeroItemOwnership(fromItem, p.FromGrid, p.FromSlot, Character.CurrentHero)) return;
 
             switch (p.ToGrid)
             {
@@ -8281,10 +8422,10 @@ namespace Server.Models
                     toArray = Companion.Equipment;
                     break;
                 case GridType.HeroInventory:
-                    if (!TryGetHeroItemArray(p.ToGrid, out toArray)) return;
+                    if (!TryGetHeroItemArray(p.ToGrid, p.HeroIndex, out toArray)) return;
                     break;
                 case GridType.HeroEquipment:
-                    if (!TryGetHeroItemArray(p.ToGrid, out toArray)) return;
+                    if (!TryGetHeroItemArray(p.ToGrid, p.HeroIndex, out toArray)) return;
                     break;
                 default:
                     return;
@@ -8295,31 +8436,31 @@ namespace Server.Models
             UserItem toItem = toArray[p.ToSlot];
 
             if (toItem != null && (toItem.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage) return;
-            if (!ValidateHeroItemOwnership(toItem, p.ToGrid, p.ToSlot)) return;
+            if (!ValidateHeroItemOwnership(toItem, p.ToGrid, p.ToSlot, Character.CurrentHero)) return;
 
-            bool heroInvolved = IsHeroGrid(p.FromGrid) || IsHeroGrid(p.ToGrid);
+            bool heroInvolved = Functions.IsHeroGrid(p.FromGrid) || Functions.IsHeroGrid(p.ToGrid);
 
             if (p.ToGrid == GridType.HeroEquipment && p.FromGrid != GridType.HeroInventory)
             {
-                Connection.ReceiveChatWithObservers(con => "只有英雄包裹中的物品可以装备到英雄身上。", MessageType.System);
+                Connection.ReceiveChatWithObservers(con => con.Language.HeroItemOnlyInventoryCanEquip, MessageType.System);
                 return;
             }
 
-            if (p.ToGrid == GridType.Equipment && IsHeroGrid(p.FromGrid))
+            if (p.ToGrid == GridType.Equipment && Functions.IsHeroGrid(p.FromGrid))
             {
-                Connection.ReceiveChatWithObservers(con => "英雄物品不能直接装备到人物身上。", MessageType.System);
+                Connection.ReceiveChatWithObservers(con => con.Language.HeroItemCannotEquipToPlayer, MessageType.System);
                 return;
             }
 
             if (p.FromGrid == GridType.Equipment && p.ToGrid == GridType.HeroInventory)
             {
-                Connection.ReceiveChatWithObservers(con => "人物装备不能直接放入英雄包裹。", MessageType.System);
+                Connection.ReceiveChatWithObservers(con => con.Language.PlayerEquipmentCannotMoveToHeroInventory, MessageType.System);
                 return;
             }
 
             if (p.FromGrid == GridType.HeroEquipment && p.ToGrid == GridType.Inventory)
             {
-                Connection.ReceiveChatWithObservers(con => "英雄装备不能直接放入人物包裹。", MessageType.System);
+                Connection.ReceiveChatWithObservers(con => con.Language.HeroEquipmentCannotMoveToPlayerInventory, MessageType.System);
                 return;
             }
 
@@ -8376,7 +8517,7 @@ namespace Server.Models
                 string heroWearFailure = Hero.GetWearItemFailureMessage(fromItem, (EquipmentSlot)p.ToSlot);
                 if (heroWearFailure != null)
                 {
-                    Connection.ReceiveChatWithObservers(con => $"英雄不能装备{fromItem.Info.ItemName}：{heroWearFailure}", MessageType.System);
+                    Connection.ReceiveChatWithObservers(con => string.Format(con.Language.HeroCannotEquipItem, fromItem.Info.ItemName, heroWearFailure), MessageType.System);
                     return;
                 }
             }
@@ -8452,7 +8593,7 @@ namespace Server.Models
 
                 if (Hero.BagWeight + weight > Hero.Stats[Stat.BagWeight])
                 {
-                    Connection.ReceiveChatWithObservers(con => "英雄背包负重不足。", MessageType.System);
+                    Connection.ReceiveChatWithObservers(con => con.Language.HeroInventoryOverweight, MessageType.System);
                     return;
                 }
             }
@@ -8478,7 +8619,7 @@ namespace Server.Models
 
                 if (Hero.BagWeight + weight > Hero.Stats[Stat.BagWeight])
                 {
-                    Connection.ReceiveChatWithObservers(con => "英雄背包负重不足。", MessageType.System);
+                    Connection.ReceiveChatWithObservers(con => con.Language.HeroInventoryOverweight, MessageType.System);
                     return;
                 }
             }
@@ -8807,7 +8948,7 @@ namespace Server.Models
                     array = PartsStorage;
                     break;
                 case GridType.HeroInventory:
-                    if (!TryGetHeroItemArray(p.Grid, out array)) return;
+                    if (!TryGetHeroItemArray(p.Grid, p.HeroIndex, out array)) return;
                     break;
                 default:
                     return;
@@ -8825,7 +8966,7 @@ namespace Server.Models
                 var item = array[i];
 
                 if (item == null) continue;
-                if (!ValidateHeroItemOwnership(item, p.Grid, i)) return;
+                if (!ValidateHeroItemOwnership(item, p.Grid, i, Character.CurrentHero)) return;
 
                 items.Add(item);
 
@@ -9050,10 +9191,10 @@ namespace Server.Models
                     itemArray = Companion.Equipment;
                     break;
                 case GridType.HeroInventory:
-                    if (!TryGetHeroItemArray(p.GridType, out itemArray)) return;
+                    if (!TryGetHeroItemArray(p.GridType, p.HeroIndex, out itemArray)) return;
                     break;
                 case GridType.HeroEquipment:
-                    if (!TryGetHeroItemArray(p.GridType, out itemArray)) return;
+                    if (!TryGetHeroItemArray(p.GridType, p.HeroIndex, out itemArray)) return;
                     break;
                 default:
                     return;
@@ -9065,7 +9206,7 @@ namespace Server.Models
             UserItem fromItem = itemArray[p.SlotIndex];
 
             if (fromItem == null) return;
-            if (!ValidateHeroItemOwnership(fromItem, p.GridType, p.SlotIndex)) return;
+            if (!ValidateHeroItemOwnership(fromItem, p.GridType, p.SlotIndex, Character.CurrentHero)) return;
 
             if (p.Locked)
                 fromItem.Flags |= UserItemFlags.Locked;
@@ -9122,7 +9263,7 @@ namespace Server.Models
                     array = Companion.Inventory;
                     break;
                 case GridType.HeroInventory:
-                    if (!TryGetHeroItemArray(p.Grid, out array)) return;
+                    if (!TryGetHeroItemArray(p.Grid, p.HeroIndex, out array)) return;
                     break;
                 default:
                     return;
@@ -9133,7 +9274,7 @@ namespace Server.Models
             UserItem item = array[p.Slot];
 
             if (item == null || item.Count <= p.Count || item.Info.StackSize < p.Count) return;
-            if (!ValidateHeroItemOwnership(item, p.Grid, p.Slot)) return;
+            if (!ValidateHeroItemOwnership(item, p.Grid, p.Slot, Character.CurrentHero)) return;
 
             int length = array.Length;
             if (p.Grid == GridType.CompanionInventory)
@@ -9230,6 +9371,7 @@ namespace Server.Models
             if (Dead || !ParseLinks(p.Link))
                 return;
 
+            if (RejectUnsupportedHeroLink(p.Link)) return;
 
             UserItem[] fromArray;
 
@@ -10550,6 +10692,8 @@ namespace Server.Models
 
         public void TradeAddItem(CellLinkInfo cell)
         {
+            if (RejectUnsupportedHeroLink(cell)) return;
+
             S.TradeAddItem result = new S.TradeAddItem
             {
                 Cell = cell,
@@ -11292,6 +11436,7 @@ namespace Server.Models
             var userCurrency = GetCurrency(currency);
 
             if (!ParseLinks(p.Links, 0, 100)) return;
+            if (RejectUnsupportedHeroLinks(p.Links)) return;
 
             long amount = 0;
             long count = 0;
@@ -11392,6 +11537,7 @@ namespace Server.Models
             if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.ItemFragment)) return;
 
             if (!ParseLinks(p.Links, 0, 100)) return;
+            if (RejectUnsupportedHeroLinks(p.Links)) return;
 
             if (SEnvir.FragmentInfo == null || SEnvir.Fragment2Info == null || SEnvir.Fragment3Info == null) return;
 
@@ -11508,6 +11654,8 @@ namespace Server.Models
         }
         public void NPCAccessoryLevelUp(C.NPCAccessoryLevelUp p)
         {
+            if (RejectUnsupportedHeroLink(p.Target) || RejectUnsupportedHeroLinks(p.Links)) return;
+
             Enqueue(new S.NPCAccessoryLevelUp { Target = p.Target, Links = p.Links });
 
             if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.AccessoryRefineLevel)) return;
@@ -11557,7 +11705,6 @@ namespace Server.Models
             bool changed = false;
 
             S.ItemsChanged result = new S.ItemsChanged { Links = new List<CellLinkInfo>(), Success = true };
-            Enqueue(result);
 
             foreach (CellLinkInfo link in p.Links)
             {
@@ -11643,6 +11790,7 @@ namespace Server.Models
                 changed = true;
             }
 
+            Enqueue(result);
 
             if (changed)
             {
@@ -11665,6 +11813,7 @@ namespace Server.Models
             if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.AccessoryRefineUpgrade)) return;
 
             if (!ParseLinks(p.Target)) return;
+            if (RejectUnsupportedHeroLink(p.Target)) return;
 
 
             UserItem[] targetArray = null;
@@ -11855,6 +12004,7 @@ namespace Server.Models
             if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.AccessoryReset)) return;
 
             if (!ParseLinks(p.Cell)) return;
+            if (RejectUnsupportedHeroLink(p.Cell)) return;
 
 
             UserItem[] targetArray = null;
@@ -11950,6 +12100,8 @@ namespace Server.Models
 
         public void NPCAccessoryRefine(C.NPCAccessoryRefine p)
         {
+            if (RejectUnsupportedHeroLink(p.Target) || RejectUnsupportedHeroLink(p.OreTarget) || RejectUnsupportedHeroLinks(p.Links)) return;
+
             Enqueue(new S.NPCAccessoryRefine { Target = p.Target, OreTarget = p.OreTarget, Links = p.Links });
 
             if (Dead || NPC == null || !HasCurrentNPCDialogType(NPCDialogType.AccessoryRefine)) return;
@@ -12319,7 +12471,7 @@ namespace Server.Models
                         break;
                     case GridType.HeroInventory:
                     case GridType.HeroEquipment:
-                        if (!TryGetHeroItemArray(link.GridType, out array)) return;
+                        if (!TryGetHeroItemArray(link.GridType, p.HeroIndex, out array)) return;
                         break;
                     default:
                         return;
@@ -12329,7 +12481,7 @@ namespace Server.Models
                 UserItem item = array[link.Slot];
 
                 if (item == null || !item.Info.CanRepair || item.Info.Durability == 0) return;
-                if (!ValidateHeroItemOwnership(item, link.GridType, link.Slot)) return;
+                if (!ValidateHeroItemOwnership(item, link.GridType, link.Slot, Character.CurrentHero)) return;
                 if ((item.Flags & UserItemFlags.Marriage) == UserItemFlags.Marriage) return;
 
                 switch (item.Info.ItemType)
@@ -12423,7 +12575,7 @@ namespace Server.Models
                         break;
                     case GridType.HeroInventory:
                     case GridType.HeroEquipment:
-                        if (!TryGetHeroItemArray(link.GridType, out array)) return;
+                        if (!TryGetHeroItemArray(link.GridType, p.HeroIndex, out array)) return;
                         break;
                 }
 
@@ -12503,6 +12655,7 @@ namespace Server.Models
             if (!ParseLinks(p.DiamondOres, 4, 4)) return;
             if (!ParseLinks(p.GoldOres, 2, 2)) return;
             if (!ParseLinks(p.Crystal, 1, 1)) return;
+            if (RejectUnsupportedHeroLinks(p.IronOres, p.SilverOres, p.DiamondOres, p.GoldOres, p.Crystal)) return;
 
             if (p.Gold < 0) return;
 
@@ -12827,6 +12980,8 @@ namespace Server.Models
         }
         public void NPCRefine(C.NPCRefine p)
         {
+            if (RejectUnsupportedHeroLinks(p.Ores, p.Items, p.Specials)) return;
+
             S.NPCRefine result = new S.NPCRefine
             {
                 RefineQuality = p.RefineQuality,
@@ -13426,6 +13581,8 @@ namespace Server.Models
 
         public void NPCMasterRefine(C.NPCMasterRefine p)
         {
+            if (RejectUnsupportedHeroLinks(p.Fragment1s, p.Fragment2s, p.Fragment3s, p.Stones, p.Specials)) return;
+
             S.NPCMasterRefine result = new S.NPCMasterRefine
             {
                 Fragment1s = p.Fragment1s,
@@ -13956,6 +14113,7 @@ namespace Server.Models
             if (!ParseLinks(p.Fragment3s, 1, 1)) return;
             if (!ParseLinks(p.Stones, 1, 1)) return;
             if (!ParseLinks(p.Specials, 0, 1)) return;
+            if (RejectUnsupportedHeroLinks(p.Fragment1s, p.Fragment2s, p.Fragment3s, p.Stones, p.Specials)) return;
 
             if (Gold.Amount < Globals.MasterRefineEvaluateCost)
             {
@@ -14183,6 +14341,14 @@ namespace Server.Models
         }
         public void NPCWeaponCraft(C.NPCWeaponCraft p)
         {
+            if (RejectUnsupportedHeroLink(p.Template) ||
+                RejectUnsupportedHeroLink(p.Yellow) ||
+                RejectUnsupportedHeroLink(p.Blue) ||
+                RejectUnsupportedHeroLink(p.Red) ||
+                RejectUnsupportedHeroLink(p.Purple) ||
+                RejectUnsupportedHeroLink(p.Green) ||
+                RejectUnsupportedHeroLink(p.Grey)) return;
+
             S.NPCWeaponCraft result = new S.NPCWeaponCraft
             {
                 Template = p.Template,
@@ -17240,7 +17406,50 @@ namespace Server.Models
         }
         #endregion
 
-        public void Enqueue(Packet p) => Connection.Enqueue(p);
+        public void Enqueue(Packet p)
+        {
+            switch (p)
+            {
+                case S.ItemMove itemMove:
+                    StampHeroItemPacket(itemMove);
+                    break;
+                case S.ItemChanged itemChanged:
+                    StampHeroItemPacket(itemChanged);
+                    break;
+                case S.ItemSplit itemSplit:
+                    StampHeroItemPacket(itemSplit);
+                    break;
+                case S.ItemLock itemLock:
+                    StampHeroItemPacket(itemLock);
+                    break;
+                case S.ItemStatsChanged itemStatsChanged:
+                    StampHeroItemPacket(itemStatsChanged);
+                    break;
+                case S.ItemStatsRefreshed itemStatsRefreshed:
+                    StampHeroItemPacket(itemStatsRefreshed);
+                    break;
+                case S.ItemDurability itemDurability:
+                    StampHeroItemPacket(itemDurability);
+                    break;
+                case S.ItemExperience itemExperience:
+                    StampHeroItemPacket(itemExperience);
+                    break;
+                case S.ItemsChanged itemsChanged:
+                    StampHeroItemPacket(itemsChanged);
+                    break;
+                case S.NPCRepair npcRepair:
+                    StampHeroItemPacket(npcRepair);
+                    break;
+                case S.ItemSort itemSort:
+                    StampHeroItemPacket(itemSort);
+                    break;
+                case S.ItemAcessoryRefined itemAcessoryRefined:
+                    StampHeroItemPacket(itemAcessoryRefined);
+                    break;
+            }
+
+            Connection.Enqueue(p);
+        }
         public override Packet GetInfoPacket(PlayerObject ob)
         {
             if (ob == this) return null;
