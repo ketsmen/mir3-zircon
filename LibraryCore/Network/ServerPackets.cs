@@ -993,6 +993,7 @@ namespace Library.Network.ServerPackets
         public int FromSlot { get; set; }
         public int ToSlot { get; set; }
         public bool MergeItem { get; set; }
+        [PacketCapability(ServerCapabilities.HeroItemSyncIndex)]
         public int HeroIndex { get; set; }
 
         public bool Success { get; set; }
@@ -1002,6 +1003,7 @@ namespace Library.Network.ServerPackets
     {
         public GridType Grid { get; set; }
         public List<ClientUserItem> Items { get; set; }
+        [PacketCapability(ServerCapabilities.HeroItemSyncIndex)]
         public int HeroIndex { get; set; }
         public bool Success { get; set; }
     }
@@ -1012,6 +1014,7 @@ namespace Library.Network.ServerPackets
         public int Slot { get; set; }
         public long Count { get; set; }
         public int NewSlot { get; set; }
+        [PacketCapability(ServerCapabilities.HeroItemSyncIndex)]
         public int HeroIndex { get; set; }
 
         public bool Success { get; set; }
@@ -1028,6 +1031,7 @@ namespace Library.Network.ServerPackets
     {
         public GridType Grid { get; set; }
         public int Slot { get; set; }
+        [PacketCapability(ServerCapabilities.HeroItemSyncIndex)]
         public int HeroIndex { get; set; }
         public bool Locked { get; set; }
 
@@ -1040,6 +1044,7 @@ namespace Library.Network.ServerPackets
     public sealed class ItemChanged : Packet
     {
         public CellLinkInfo Link { get; set; }
+        [PacketCapability(ServerCapabilities.HeroItemSyncIndex)]
         public int HeroIndex { get; set; }
         public bool Success { get; set; }
     }
@@ -1048,6 +1053,7 @@ namespace Library.Network.ServerPackets
     {
         public GridType GridType { get; set; }
         public int Slot { get; set; }
+        [PacketCapability(ServerCapabilities.HeroItemSyncIndex)]
         public int HeroIndex { get; set; }
         public Stats NewStats { get; set; }
     }
@@ -1055,6 +1061,7 @@ namespace Library.Network.ServerPackets
     {
         public GridType GridType { get; set; }
         public int Slot { get; set; }
+        [PacketCapability(ServerCapabilities.HeroItemSyncIndex)]
         public int HeroIndex { get; set; }
         public Stats NewStats { get; set; }
     }
@@ -1062,12 +1069,14 @@ namespace Library.Network.ServerPackets
     {
         public GridType GridType { get; set; }
         public int Slot { get; set; }
+        [PacketCapability(ServerCapabilities.HeroItemSyncIndex)]
         public int HeroIndex { get; set; }
         public int CurrentDurability { get; set; }
     }
     public sealed class ItemExperience : Packet
     {
         public CellLinkInfo Target { get; set; }
+        [PacketCapability(ServerCapabilities.HeroItemSyncIndex)]
         public int HeroIndex { get; set; }
         public decimal Experience { get; set; }
         public int Level { get; set; }
@@ -1103,12 +1112,14 @@ namespace Library.Network.ServerPackets
     public sealed class ItemsChanged : Packet
     {
         public List<CellLinkInfo> Links { get; set; }
+        [PacketCapability(ServerCapabilities.HeroItemSyncIndex)]
         public int HeroIndex { get; set; }
         public bool Success { get; set; }
     }
     public sealed class NPCRepair : Packet
     {
         public List<CellLinkInfo> Links { get; set; }
+        [PacketCapability(ServerCapabilities.HeroItemSyncIndex)]
         public int HeroIndex { get; set; }
         public bool Special { get; set; }
         public bool Success { get; set; }
@@ -1388,11 +1399,14 @@ namespace Library.Network.ServerPackets
     public sealed class HeroInformation : Packet
     {
         public ClientUserHero Hero { get; set; }
+        [PacketCapability(ServerCapabilities.HeroMultiInspectCache)]
+        [OptionalPacketProperty]
         public bool Inspect { get; set; }
     }
 
     public sealed class HeroMagicLeveled : Packet
     {
+        [PacketCapability(ServerCapabilities.None)]
         public int HeroIndex { get; set; }
         public int InfoIndex { get; set; }
         public MagicInfo Info;
@@ -1898,6 +1912,7 @@ namespace Library.Network.ServerPackets
     {
         public GridType GridType { get; set; }
         public int Slot { get; set; }
+        [PacketCapability(ServerCapabilities.HeroItemSyncIndex)]
         public int HeroIndex { get; set; }
         public Stats NewStats { get; set; }
     }

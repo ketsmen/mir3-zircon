@@ -146,12 +146,16 @@ namespace Library.Network.ClientPackets
         public int FromSlot { get; set; }
         public int ToSlot { get; set; }
         public bool MergeItem { get; set; }
+        [OptionalPacketProperty]
+        [PacketCapability(ServerCapabilities.HeroItemRequestIndex)]
         public int HeroIndex { get; set; }
     }
 
     public sealed class ItemSort : Packet
     {
         public GridType Grid { get; set; }
+        [OptionalPacketProperty]
+        [PacketCapability(ServerCapabilities.HeroItemRequestIndex)]
         public int HeroIndex { get; set; }
     }
 
@@ -166,6 +170,8 @@ namespace Library.Network.ClientPackets
         public GridType Grid { get; set; }
         public int Slot { get; set; }
         public long Count { get; set; }
+        [OptionalPacketProperty]
+        [PacketCapability(ServerCapabilities.HeroItemRequestIndex)]
         public int HeroIndex { get; set; }
     }
 
@@ -184,6 +190,8 @@ namespace Library.Network.ClientPackets
     public sealed class ItemUse : Packet
     {
         public CellLinkInfo Link { get; set; }
+        [OptionalPacketProperty]
+        [PacketCapability(ServerCapabilities.HeroItemRequestIndex)]
         public int HeroIndex { get; set; }
     }
 
@@ -192,6 +200,8 @@ namespace Library.Network.ClientPackets
         public GridType GridType { get; set; }
         public int SlotIndex { get; set; }
         public bool Locked { get; set; }
+        [OptionalPacketProperty]
+        [PacketCapability(ServerCapabilities.HeroItemRequestIndex)]
         public int HeroIndex { get; set; }
     }
 
@@ -261,6 +271,8 @@ namespace Library.Network.ClientPackets
         public List<CellLinkInfo> Links { get; set; }
         public bool Special { get; set; }
         public bool GuildFunds { get; set; }
+        [OptionalPacketProperty]
+        [PacketCapability(ServerCapabilities.HeroItemRequestIndex)]
         public int HeroIndex { get; set; }
     }
 

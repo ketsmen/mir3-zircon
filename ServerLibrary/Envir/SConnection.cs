@@ -28,8 +28,34 @@ namespace Server.Envir
         public GameStage Stage { get; set; }
         public AccountInfo Account { get; set; }
         public PlayerObject Player { get; set; }
+        public ServerCapabilities ClientCapabilities { get; private set; }
         public string IPAddress { get; }
         public int SessionID { get; }
+
+        protected override ServerCapabilities ReadCapabilities => ServerCapabilities.Current;
+        protected override ServerCapabilities WriteCapabilities => ClientCapabilities;
+
+        public bool SupportsClientCapability(ServerCapabilities capability)
+        {
+            return (ClientCapabilities & capability) == capability;
+        }
+
+        public string GetCapabilitiesSummary()
+        {
+            return $"Client={ClientCapabilities}, Server={ServerCapabilities.Current}, " +
+                   $"HeroItemSyncIndex={SupportsClientCapability(ServerCapabilities.HeroItemSyncIndex)}, " +
+                   $"HeroMultiInspectCache={SupportsClientCapability(ServerCapabilities.HeroMultiInspectCache)}, " +
+                   $"HeroItemRequestIndex={SupportsClientCapability(ServerCapabilities.HeroItemRequestIndex)}";
+        }
+
+        public void LogCapabilityAudit(string stage)
+        {
+            if (!Config.CapabilityAuditLog) return;
+
+            SEnvir.Log($"[Capabilities] Stage:{stage}, Session:{SessionID}, IP Address:{IPAddress}, " +
+                       $"Account:{Account?.EMailAddress ?? string.Empty}, Character:{Player?.Name ?? string.Empty}, " +
+                       GetCapabilitiesSummary());
+        }
 
         public SConnection Observed;
         public List<SConnection> Observers = new List<SConnection>();
@@ -59,7 +85,7 @@ namespace Server.Envir
             UpdateTimeOut();
             BeginReceive();
 
-            Enqueue(new G.Connected());
+            Enqueue(new G.Connected { Capabilities = ServerCapabilities.Current });
         }
 
         public override void Disconnect()
@@ -268,6 +294,9 @@ namespace Server.Envir
         }
         public void Process(G.Connected p)
         {
+            ClientCapabilities = p.Capabilities;
+            LogCapabilityAudit("Handshake");
+
             if (Config.CheckVersion)
             {
                 Enqueue(new G.CheckVersion());
@@ -280,6 +309,8 @@ namespace Server.Envir
                 DatabaseKey = Config.EncryptionEnabled ? SEnvir.CryptoKey : null,
                 SystemDatabaseVersion = SEnvir.Session?.RefreshSystemVersion(),
             });
+
+            LogCapabilityAudit("VersionAccepted");
         }
         public void Process(G.Version p)
         {
@@ -297,6 +328,8 @@ namespace Server.Envir
                 DatabaseKey = Config.EncryptionEnabled ? SEnvir.CryptoKey : null,
                 SystemDatabaseVersion = SEnvir.Session?.RefreshSystemVersion(),
             });
+
+            LogCapabilityAudit("VersionAccepted");
         }
         public void Process(G.Ping p)
         {

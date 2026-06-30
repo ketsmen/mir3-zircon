@@ -49,6 +49,7 @@ namespace Client.Scenes.Views
 
         public bool IsViewingCurrentHero => SelectedHeroIndex > 0 && SelectedHeroIndex == (GameScene.Game?.CurrentHeroIndex ?? 0);
         public bool IsHeroItemPanelWritable => IsViewingCurrentHero && GameScene.Game?.CurrentHero != null;
+        private static bool SupportsMultiInspectCache => GameScene.Game?.SupportsHeroMultiInspectCache == true;
 
         private static readonly MirClass[] ClassCycle = { MirClass.Warrior, MirClass.Wizard, MirClass.Taoist, MirClass.Assassin };
 
@@ -58,6 +59,8 @@ namespace Client.Scenes.Views
             {
                 if (IsViewingCurrentHero)
                     return GameScene.Game?.CurrentHero;
+
+                if (!SupportsMultiInspectCache) return null;
 
                 return InspectedHeroes.TryGetValue(SelectedHeroIndex, out ClientUserHero hero) ? hero : null;
             }
@@ -637,6 +640,8 @@ namespace Client.Scenes.Views
 
             RequestedHeroIndexes.Remove(hero.Index);
 
+            if (!SupportsMultiInspectCache && hero.Index != (GameScene.Game?.CurrentHeroIndex ?? 0)) return;
+
             if (hero.Index == (GameScene.Game?.CurrentHeroIndex ?? 0))
             {
                 InspectedHeroes.Remove(hero.Index);
@@ -656,6 +661,7 @@ namespace Client.Scenes.Views
         private void RequestSelectedHeroDetails()
         {
             if (SelectedHeroIndex <= 0) return;
+            if (!IsViewingCurrentHero && !SupportsMultiInspectCache) return;
             if (DisplayedHero != null) return;
             if (RequestedHeroIndexes.Contains(SelectedHeroIndex)) return;
 
@@ -672,16 +678,17 @@ namespace Client.Scenes.Views
             {
                 int currentHeroIndex = GameScene.Game?.CurrentHeroIndex ?? 0;
                 HashSet<int> activeHeroIndexes = new HashSet<int>(heroes.Select(x => x.Index));
+                bool supportsMultiInspectCache = SupportsMultiInspectCache;
 
                 foreach (int index in InspectedHeroes.Keys.ToList())
                 {
-                    if (!activeHeroIndexes.Contains(index) || index == currentHeroIndex)
+                    if (!supportsMultiInspectCache || !activeHeroIndexes.Contains(index) || index == currentHeroIndex)
                         InspectedHeroes.Remove(index);
                 }
 
                 foreach (int index in RequestedHeroIndexes.ToList())
                 {
-                    if (!activeHeroIndexes.Contains(index) || index == currentHeroIndex)
+                    if (!supportsMultiInspectCache || !activeHeroIndexes.Contains(index) || index == currentHeroIndex)
                         RequestedHeroIndexes.Remove(index);
                 }
 

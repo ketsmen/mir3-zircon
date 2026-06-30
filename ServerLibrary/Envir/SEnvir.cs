@@ -3745,6 +3745,7 @@ namespace Server.Envir
 
             con.Account = account;
             con.Stage = GameStage.Select;
+            con.LogCapabilityAudit("LoginSelect");
 
             account.Key = Functions.RandomString(Random, 20);
 

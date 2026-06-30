@@ -266,6 +266,7 @@ namespace Server.WinForms
             toolsMenu.DropDownItems.Add("服务器诊断", null, (_, _) => OpenDiagnostics());
             toolsMenu.DropDownItems.Add("孤立数据诊断", null, (_, _) => OpenOrphanDiagnostics());
             toolsMenu.DropDownItems.Add("网络诊断", null, (_, _) => OpenNetworkDiagnostics());
+            toolsMenu.DropDownItems.Add("连接能力", null, (_, _) => OpenConnectionDiagnostics());
             toolsMenu.DropDownItems.Add(new ToolStripSeparator());
             toolsMenu.DropDownItems.Add("导出当前日志", null, (_, _) => ExportDisplayedLogs());
             toolsMenu.DropDownItems.Add("清空当前日志", null, (_, _) => ClearDisplayedLogs());
@@ -1046,6 +1047,11 @@ namespace Server.WinForms
         private void OpenNetworkDiagnostics()
         {
             OpenDiagnosticsForm()?.ShowNetworkPage();
+        }
+
+        private void OpenConnectionDiagnostics()
+        {
+            OpenDiagnosticsForm()?.ShowConnectionsPage();
         }
 
         private DiagnosticsForm OpenDiagnosticsForm()

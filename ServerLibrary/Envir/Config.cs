@@ -17,6 +17,7 @@ namespace Server.Envir
         public static int MaxPacket { get; set; } = 50;
         public static TimeSpan PacketBanTime { get; set; } = TimeSpan.FromMinutes(5);
         public static string SyncRemotePreffix { get; set; } = "http://127.0.0.1:80/Command/";
+        public static bool CapabilityAuditLog { get; set; } = true;
 
         [ConfigSection("System")]
         public static bool CheckVersion { get; set; } = true;

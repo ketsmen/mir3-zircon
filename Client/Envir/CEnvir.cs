@@ -565,7 +565,7 @@ namespace Client.Envir
                 else
                     received = $"{Connection.TotalBytesReceived:#,##0}B";
 
-                connectionText = $"Ping: {Connection.Ping}, Sent: {sent}, Received: {received}";
+                connectionText = $"Ping: {Connection.Ping}, Sent: {sent}, Received: {received}, Caps: {Connection.ServerCapabilities}";
             }
 
             if (Config.FullScreen || Config.Borderless)

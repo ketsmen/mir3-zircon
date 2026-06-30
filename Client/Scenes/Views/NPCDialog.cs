@@ -1629,7 +1629,9 @@ namespace Client.Scenes.Views
                     cell.Link = null;
                 }
 
-                int heroIndex = links.Any(x => Functions.IsHeroGrid(x.GridType)) ? GameScene.Game?.CurrentHeroIndex ?? 0 : 0;
+                int heroIndex = links.Any(x => Functions.IsHeroGrid(x.GridType)) && GameScene.Game?.SupportsHeroItemRequestIndex == true
+                    ? GameScene.Game.CurrentHeroIndex
+                    : 0;
 
                 CEnvir.Enqueue(new C.NPCRepair { Links = links, Special = SpecialCheckBox.Checked, GuildFunds = GuildCheckBox.Checked, HeroIndex = heroIndex });
 

@@ -353,6 +353,7 @@ namespace Library
     public sealed class StartInformation
     {
         public int ProtocolVersion { get; set; }
+        [PacketCapability(ServerCapabilities.Current, RequireAll = false)]
         public ServerCapabilities ServerCapabilities { get; set; }
 
         public int Index { get; set; }

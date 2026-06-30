@@ -25,6 +25,9 @@ namespace Library.Network
 
         protected TcpClient Client;
 
+        protected virtual ServerCapabilities ReadCapabilities => ServerCapabilities.Current;
+        protected virtual ServerCapabilities WriteCapabilities => ServerCapabilities.Current;
+
         public DateTime TimeConnected { get; set; }
         public TimeSpan Duration => Time.Now - TimeConnected;
 
@@ -111,7 +114,7 @@ namespace Library.Network
 
                 Packet p;
 
-                while ((p = Packet.ReceivePacket(_rawData, out _rawData)) != null)
+                while ((p = Packet.ReceivePacket(_rawData, out _rawData, ReadCapabilities)) != null)
                 {
                     receiveList.Enqueue(p);
                     TotalPacketsProcessed++;
@@ -204,7 +207,7 @@ namespace Library.Network
 
             List<byte> data = new List<byte>();
 
-            data.AddRange(p.GetPacketBytes());
+            data.AddRange(p.GetPacketBytes(WriteCapabilities));
 
             BeginSendDisconnect(data);
         }
@@ -311,7 +314,7 @@ namespace Library.Network
 
                 try
                 {
-                    byte[] bytes = p.GetPacketBytes();
+                    byte[] bytes = p.GetPacketBytes(WriteCapabilities);
 
                     data.AddRange(bytes);
                 }

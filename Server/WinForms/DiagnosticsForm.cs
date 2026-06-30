@@ -1,3 +1,4 @@
+using Library;
 using Library.Network;
 using MirDB;
 using Server.Diagnostics;
@@ -5,6 +6,7 @@ using Server.Envir;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Drawing;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
@@ -19,15 +21,22 @@ namespace Server.WinForms
         private readonly TabPage _reportPage = new TabPage("报告");
         private readonly TabPage _orphanPage = new TabPage("孤立数据");
         private readonly TabPage _networkPage = new TabPage("网络诊断");
+        private readonly TabPage _connectionsPage = new TabPage("连接能力");
         private readonly TextBox _reportText = new TextBox();
         private readonly DataGridView _orphanGrid = new DataGridView();
         private readonly DataGridView _networkGrid = new DataGridView();
+        private readonly DataGridView _connectionsGrid = new DataGridView();
         private readonly StatusStrip _statusStrip = new StatusStrip();
         private readonly ToolStripStatusLabel _statusLabel = new ToolStripStatusLabel();
         private readonly System.Windows.Forms.Timer _refreshTimer = new System.Windows.Forms.Timer();
         private readonly ToolStripButton _networkMonitorButton = new ToolStripButton("网络诊断");
+        private readonly ToolStripButton _connectionCapabilityFilterButton = new ToolStripButton("只看旧端/缺能力");
         private readonly BindingList<OrphanDiagnostic.OrphanTypeResult> _orphanResults = new BindingList<OrphanDiagnostic.OrphanTypeResult>();
         private readonly BindingList<DiagnosticValue> _networkDiagnostics = new BindingList<DiagnosticValue>();
+        private readonly BindingList<ConnectionCapabilityRow> _connectionCapabilities = new BindingList<ConnectionCapabilityRow>();
+        private int _connectionTotalCount;
+        private int _connectionMissingCount;
+        private int _connectionLegacyCount;
         private bool _operationRunning;
         private bool CanUpdateUi => !IsDisposed && !Disposing;
 
@@ -49,7 +58,7 @@ namespace Server.WinForms
             UpdateStatus("诊断窗口已打开。");
 
             _refreshTimer.Interval = 1000;
-            _refreshTimer.Tick += (_, _) => RefreshNetworkDiagnostics();
+            _refreshTimer.Tick += (_, _) => RefreshLiveDiagnostics();
             _refreshTimer.Start();
         }
 
@@ -74,6 +83,10 @@ namespace Server.WinForms
             _networkMonitorButton.CheckedChanged += (_, _) => BaseConnection.Monitor = _networkMonitorButton.Checked;
             toolStrip.Items.Add(_networkMonitorButton);
             AddButton(toolStrip, "刷新网络统计", (_, _) => RefreshNetworkDiagnostics());
+            _connectionCapabilityFilterButton.CheckOnClick = true;
+            _connectionCapabilityFilterButton.CheckedChanged += (_, _) => RefreshConnectionCapabilities();
+            toolStrip.Items.Add(_connectionCapabilityFilterButton);
+            AddButton(toolStrip, "刷新连接能力", (_, _) => RefreshConnectionCapabilities());
             AddButton(toolStrip, "重置网络统计", (_, _) => ResetNetworkDiagnostics());
             toolStrip.Items.Add(new ToolStripSeparator());
             AddButton(toolStrip, "复制报告", (_, _) => CopyReport());
@@ -115,6 +128,20 @@ namespace Server.WinForms
             _networkPage.Controls.Add(_networkGrid);
             _tabs.TabPages.Add(_networkPage);
 
+            _connectionsGrid.Dock = DockStyle.Fill;
+            _connectionsGrid.AutoGenerateColumns = false;
+            _connectionsGrid.ReadOnly = true;
+            _connectionsGrid.AllowUserToAddRows = false;
+            _connectionsGrid.AllowUserToDeleteRows = false;
+            _connectionsGrid.SelectionMode = DataGridViewSelectionMode.CellSelect;
+            _connectionsGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells;
+            _connectionsGrid.RowPrePaint += ConnectionsGrid_RowPrePaint;
+            ConfigureConnectionColumns();
+            _connectionsGrid.DataSource = _connectionCapabilities;
+
+            _connectionsPage.Controls.Add(_connectionsGrid);
+            _tabs.TabPages.Add(_connectionsPage);
+
             _statusLabel.Spring = true;
             _statusLabel.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             _statusStrip.Items.Add(_statusLabel);
@@ -147,6 +174,11 @@ namespace Server.WinForms
             _tabs.SelectedTab = _networkPage;
         }
 
+        public void ShowConnectionsPage()
+        {
+            _tabs.SelectedTab = _connectionsPage;
+        }
+
         private static ToolStripButton AddButton(ToolStrip toolStrip, string text, EventHandler click)
         {
             ToolStripButton button = new ToolStripButton(text);
@@ -173,7 +205,7 @@ namespace Server.WinForms
 
             if (e.KeyCode == Keys.F5)
             {
-                RefreshNetworkDiagnostics();
+                RefreshLiveDiagnostics();
                 SuppressKey(e);
             }
         }
@@ -192,12 +224,27 @@ namespace Server.WinForms
         private void LoadNetworkDiagnostics()
         {
             ReloadNetworkDiagnostics();
+            ReloadConnectionCapabilities();
         }
 
         private void RefreshNetworkDiagnostics()
         {
+            RefreshLiveDiagnostics();
+        }
+
+        private void RefreshConnectionCapabilities()
+        {
+            ReloadConnectionCapabilities();
+            _connectionsGrid.Refresh();
+            UpdateStatus();
+        }
+
+        private void RefreshLiveDiagnostics()
+        {
             ReloadNetworkDiagnostics();
+            ReloadConnectionCapabilities();
             _networkGrid.Refresh();
+            _connectionsGrid.Refresh();
             UpdateStatus();
         }
 
@@ -207,6 +254,66 @@ namespace Server.WinForms
 
             foreach (DiagnosticValue value in BaseConnection.Diagnostics.Values.Select(CloneDiagnosticValue).OrderBy(x => x.Name))
                 _networkDiagnostics.Add(value);
+        }
+
+        private void ReloadConnectionCapabilities()
+        {
+            _connectionCapabilities.Clear();
+
+            List<ConnectionCapabilityRow> rows = SnapshotConnections()
+                .OrderBy(x => x.SessionID)
+                .Select(connection => new ConnectionCapabilityRow(connection))
+                .ToList();
+
+            _connectionTotalCount = rows.Count;
+            _connectionMissingCount = rows.Count(x => x.MissingHeroCapabilities);
+            _connectionLegacyCount = rows.Count(x => x.LegacyOrUnknown);
+
+            foreach (ConnectionCapabilityRow row in rows)
+            {
+                if (_connectionCapabilityFilterButton.Checked && !row.MissingHeroCapabilities) continue;
+
+                _connectionCapabilities.Add(row);
+            }
+        }
+
+        private void ConnectionsGrid_RowPrePaint(object sender, DataGridViewRowPrePaintEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.RowIndex >= _connectionsGrid.Rows.Count) return;
+
+            DataGridViewRow gridRow = _connectionsGrid.Rows[e.RowIndex];
+            if (gridRow.DataBoundItem is not ConnectionCapabilityRow row) return;
+
+            if (row.LegacyOrUnknown)
+                gridRow.DefaultCellStyle.BackColor = Color.MistyRose;
+            else if (row.MissingHeroCapabilities)
+                gridRow.DefaultCellStyle.BackColor = Color.LemonChiffon;
+            else
+                gridRow.DefaultCellStyle.BackColor = Color.Empty;
+        }
+
+        private static List<SConnection> SnapshotConnections()
+        {
+            List<SConnection> connections = new List<SConnection>();
+
+            for (int i = 0; i < SEnvir.Connections.Count; i++)
+            {
+                SConnection connection;
+
+                try
+                {
+                    connection = SEnvir.Connections[i];
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    break;
+                }
+
+                if (connection != null)
+                    connections.Add(connection);
+            }
+
+            return connections;
         }
 
         private static DiagnosticValue CloneDiagnosticValue(DiagnosticValue value)
@@ -515,6 +622,11 @@ namespace Server.WinForms
                 int totalOrphans = _orphanResults.Sum(x => x.CleanableOrphans + x.ExistingTemporaryOrphans);
                 pageStatus = $"孤立数据: {_orphanResults.Count:#,##0} 类，{totalOrphans:#,##0} 条";
             }
+            else if (_tabs.SelectedTab == _connectionsPage)
+            {
+                string filter = _connectionCapabilityFilterButton.Checked ? $"，当前显示 {_connectionCapabilities.Count:#,##0}" : string.Empty;
+                pageStatus = $"连接能力: {_connectionTotalCount:#,##0} 个连接，旧端/未知: {_connectionLegacyCount:#,##0}，缺能力: {_connectionMissingCount:#,##0}{filter}";
+            }
             else
             {
                 pageStatus = $"网络统计: {_networkDiagnostics.Count:#,##0} 项，监控: {(BaseConnection.Monitor ? "开启" : "关闭")}";
@@ -574,6 +686,82 @@ namespace Server.WinForms
                 .Replace("\t", " ")
                 .Replace("\r", " ")
                 .Replace("\n", " ");
+        }
+
+        private void ConfigureConnectionColumns()
+        {
+            _connectionsGrid.Columns.Add(CreateTextColumn(nameof(ConnectionCapabilityRow.SessionID), "会话"));
+            _connectionsGrid.Columns.Add(CreateTextColumn(nameof(ConnectionCapabilityRow.IPAddress), "IP"));
+            _connectionsGrid.Columns.Add(CreateTextColumn(nameof(ConnectionCapabilityRow.Stage), "阶段"));
+            _connectionsGrid.Columns.Add(CreateTextColumn(nameof(ConnectionCapabilityRow.Account), "账号"));
+            _connectionsGrid.Columns.Add(CreateTextColumn(nameof(ConnectionCapabilityRow.Character), "角色"));
+            _connectionsGrid.Columns.Add(CreateTextColumn(nameof(ConnectionCapabilityRow.ClientCapabilities), "客户端能力"));
+            _connectionsGrid.Columns.Add(CreateCheckColumn(nameof(ConnectionCapabilityRow.MissingHeroCapabilities), "缺能力"));
+            _connectionsGrid.Columns.Add(CreateCheckColumn(nameof(ConnectionCapabilityRow.HeroItemSyncIndex), "英雄同步索引"));
+            _connectionsGrid.Columns.Add(CreateCheckColumn(nameof(ConnectionCapabilityRow.HeroMultiInspectCache), "多查看缓存"));
+            _connectionsGrid.Columns.Add(CreateCheckColumn(nameof(ConnectionCapabilityRow.HeroItemRequestIndex), "请求目标索引"));
+            _connectionsGrid.Columns.Add(CreateTextColumn(nameof(ConnectionCapabilityRow.Summary), "摘要", DataGridViewAutoSizeColumnMode.Fill));
+        }
+
+        private static DataGridViewTextBoxColumn CreateTextColumn(string propertyName, string headerText, DataGridViewAutoSizeColumnMode autoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells)
+        {
+            return new DataGridViewTextBoxColumn
+            {
+                DataPropertyName = propertyName,
+                HeaderText = headerText,
+                AutoSizeMode = autoSizeMode,
+                ReadOnly = true,
+                SortMode = DataGridViewColumnSortMode.Automatic
+            };
+        }
+
+        private static DataGridViewCheckBoxColumn CreateCheckColumn(string propertyName, string headerText)
+        {
+            return new DataGridViewCheckBoxColumn
+            {
+                DataPropertyName = propertyName,
+                HeaderText = headerText,
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells,
+                ReadOnly = true,
+                SortMode = DataGridViewColumnSortMode.Automatic
+            };
+        }
+
+        private sealed class ConnectionCapabilityRow
+        {
+            private const ServerCapabilities HeroCapabilities =
+                ServerCapabilities.HeroItemSyncIndex |
+                ServerCapabilities.HeroMultiInspectCache |
+                ServerCapabilities.HeroItemRequestIndex;
+
+            public int SessionID { get; }
+            public string IPAddress { get; }
+            public string Stage { get; }
+            public string Account { get; }
+            public string Character { get; }
+            public string ClientCapabilities { get; }
+            public bool LegacyOrUnknown { get; }
+            public bool MissingHeroCapabilities { get; }
+            public bool HeroItemSyncIndex { get; }
+            public bool HeroMultiInspectCache { get; }
+            public bool HeroItemRequestIndex { get; }
+            public string Summary { get; }
+
+            public ConnectionCapabilityRow(SConnection connection)
+            {
+                SessionID = connection.SessionID;
+                IPAddress = connection.IPAddress;
+                Stage = connection.Stage.ToString();
+                Account = connection.Account?.EMailAddress ?? string.Empty;
+                Character = connection.Player?.Name ?? string.Empty;
+                ClientCapabilities = connection.ClientCapabilities.ToString();
+                LegacyOrUnknown = connection.ClientCapabilities == ServerCapabilities.None;
+                MissingHeroCapabilities = (connection.ClientCapabilities & HeroCapabilities) != HeroCapabilities;
+                HeroItemSyncIndex = connection.SupportsClientCapability(ServerCapabilities.HeroItemSyncIndex);
+                HeroMultiInspectCache = connection.SupportsClientCapability(ServerCapabilities.HeroMultiInspectCache);
+                HeroItemRequestIndex = connection.SupportsClientCapability(ServerCapabilities.HeroItemRequestIndex);
+                Summary = connection.GetCapabilitiesSummary();
+            }
         }
     }
 }

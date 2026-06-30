@@ -1049,6 +1049,7 @@ namespace Server.Models
 
             HeroSetup();
 
+            Connection.LogCapabilityAudit("StartGame");
             Enqueue(new S.StartGame { Result = StartGameResult.Success, StartInformation = GetStartInformation() });
             //Send Items
 
@@ -3185,8 +3186,9 @@ namespace Server.Models
 
             HeroInfo currentHero = Character?.CurrentHero;
             if (currentHero == null || currentHero.Deleted) return false;
-            if (heroIndex <= 0) return false;
-            if (heroIndex > 0 && heroIndex != currentHero.Index) return false;
+            if (heroIndex <= 0)
+                heroIndex = currentHero.Index;
+            if (heroIndex != currentHero.Index) return false;
 
             HeroSetup();
 
@@ -3596,6 +3598,8 @@ namespace Server.Models
             if (info == null) return;
 
             bool current = info == Character.CurrentHero;
+            if (!current && Connection.SupportsClientCapability(ServerCapabilities.HeroMultiInspectCache) == false) return;
+
             Enqueue(new S.HeroInformation { Hero = CreateHeroPreview(info), Inspect = !current });
         }
 

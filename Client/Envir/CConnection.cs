@@ -24,8 +24,12 @@ namespace Client.Envir
         protected override TimeSpan TimeOutDelay => Config.TimeOutDuration;
 
         public bool ServerConnected { get; set; }
+        public ServerCapabilities ServerCapabilities { get; private set; }
 
         public int Ping;
+
+        protected override ServerCapabilities ReadCapabilities => ServerCapabilities;
+        protected override ServerCapabilities WriteCapabilities => ServerCapabilities;
 
         public CConnection(TcpClient client)
             : base(client)
@@ -80,6 +84,12 @@ namespace Client.Envir
         {
             scene.ServerProtocolVersion = info.ProtocolVersion;
             scene.ServerCapabilities = info.ServerCapabilities;
+
+            if (scene.ServerCapabilities == Library.ServerCapabilities.None && CEnvir.Connection != null)
+                scene.ServerCapabilities = CEnvir.Connection.ServerCapabilities;
+
+            if (CEnvir.Connection != null)
+                CEnvir.Connection.ServerCapabilities = scene.ServerCapabilities;
 
             scene.MapControl.MapInfo = Globals.MapInfoList.Binding.FirstOrDefault(x => x.Index == info.MapIndex);
             scene.MapControl.InstanceInfo = Globals.InstanceInfoList.Binding.FirstOrDefault(x => x.Index == info.InstanceIndex);
@@ -163,7 +173,9 @@ namespace Client.Envir
 
         public void Process(G.Connected p)
         {
-            Enqueue(new G.Connected());
+            ServerCapabilities = p.Capabilities;
+            System.Diagnostics.Debug.WriteLine($"[Capabilities] Server:{ServerCapabilities}, Client:{Library.ServerCapabilities.Current}");
+            Enqueue(new G.Connected { Capabilities = Library.ServerCapabilities.Current });
             ServerConnected = true;
 
         }
@@ -2985,6 +2997,11 @@ namespace Client.Envir
                 GameScene.Game.HeroBox.SetInspectedHero(p.Hero);
                 return;
             }
+
+            if (p.Hero != null &&
+                p.Hero.Index != (GameScene.Game?.CurrentHeroIndex ?? 0) &&
+                GameScene.Game?.SupportsHeroMultiInspectCache != true)
+                return;
 
             GameScene.Game.CurrentHeroIndex = p.Hero?.Index ?? 0;
             GameScene.Game.CurrentHero = p.Hero;

@@ -34,6 +34,7 @@ namespace Client.Controls
         private static int GetHeroIndex(GridType grid, GridType otherGrid = GridType.None)
         {
             if (!Functions.IsHeroGrid(grid) && !Functions.IsHeroGrid(otherGrid)) return 0;
+            if (GameScene.Game?.SupportsHeroItemRequestIndex != true) return 0;
 
             return GameScene.Game?.CurrentHeroIndex ?? GameScene.Game?.CurrentHero?.Index ?? 0;
         }

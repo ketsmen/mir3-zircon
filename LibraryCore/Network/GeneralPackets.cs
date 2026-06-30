@@ -1,6 +1,10 @@
 ﻿namespace Library.Network.GeneralPackets
 {
-    public sealed class Connected : Packet { }
+    public sealed class Connected : Packet
+    {
+        [OptionalPacketProperty]
+        public ServerCapabilities Capabilities { get; set; }
+    }
     public sealed class Ping : Packet { }
     public sealed class CheckVersion : Packet
     {

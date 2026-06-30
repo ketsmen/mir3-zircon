@@ -7,11 +7,20 @@ namespace Library
     public enum ServerCapabilities : int
     {
         None = 0,
+
+        // Server -> client item delta packets include the owning hero index.
         HeroItemSyncIndex = 1,
+
+        // HeroInformation can identify inspected non-current heroes for client-side detail caching.
         HeroMultiInspectCache = 2,
+
+        // Client -> server item requests include the target hero index.
         HeroItemRequestIndex = 4,
 
-        Current = HeroItemSyncIndex | HeroMultiInspectCache | HeroItemRequestIndex,
+        Stable = HeroItemSyncIndex | HeroMultiInspectCache | HeroItemRequestIndex,
+        Experimental = None,
+
+        Current = Stable | Experimental,
     }
 
     public enum MirGender : byte

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Reflection;
+using Library;
 
 namespace Library.Network
 {
@@ -118,7 +119,7 @@ namespace Library.Network
 
         }
 
-        public static Packet ReceivePacket(byte[] rawBytes, out byte[] extra)
+        public static Packet ReceivePacket(byte[] rawBytes, out byte[] extra, ServerCapabilities capabilities = ServerCapabilities.Current)
         {
             extra = rawBytes;
 
@@ -144,7 +145,7 @@ namespace Library.Network
                 {
                     p = (Packet)Activator.CreateInstance(Packets[id]);
                     p.PacketType = Packets[id];
-                    ReadObject(reader, p);
+                    ReadObject(reader, p, capabilities);
                 }
             }
 
@@ -152,7 +153,7 @@ namespace Library.Network
 
             return p;
         }
-        public byte[] GetPacketBytes()
+        public byte[] GetPacketBytes(ServerCapabilities capabilities = ServerCapabilities.Current)
         {
             byte[] packet;
 
@@ -160,7 +161,7 @@ namespace Library.Network
             using (BinaryWriter writer = new BinaryWriter(stream))
             {
                 writer.Write((short)Packets.IndexOf(GetType()));
-                WriteObject(writer, this);
+                WriteObject(writer, this, capabilities);
                 packet = stream.ToArray();
             }
 
@@ -176,13 +177,30 @@ namespace Library.Network
             }
         }
 
-        private static void WriteObject(BinaryWriter writer, object ob)
+        private static bool HasCapability(PropertyInfo property, ServerCapabilities capabilities)
+        {
+            PacketCapability attribute = property.GetCustomAttribute<PacketCapability>();
+
+            return attribute?.IsSupported(capabilities) ?? true;
+        }
+
+        private static bool HasOptionalData(BinaryReader reader, PropertyInfo property)
+        {
+            if (property.GetCustomAttribute<OptionalPacketProperty>() == null) return true;
+
+            // Optional properties are only safe for tail fields because the reader cannot
+            // distinguish "missing" from "next field starts here" in the middle of a packet.
+            return reader.BaseStream.Position < reader.BaseStream.Length;
+        }
+
+        private static void WriteObject(BinaryWriter writer, object ob, ServerCapabilities capabilities)
         {
             PropertyInfo[] properties = ob.GetType().GetProperties();
 
             foreach (PropertyInfo item in properties)
             {
                 if (item.GetCustomAttribute<IgnorePropertyPacket>() != null) continue;
+                if (!HasCapability(item, capabilities)) continue;
 
                 Action<object, BinaryWriter> writeAction;
                 if (!TypeWrite.TryGetValue(item.PropertyType, out writeAction))
@@ -222,7 +240,7 @@ namespace Library.Network
 
                                         if (x == null) continue;
 
-                                        WriteObject(writer, x);
+                                        WriteObject(writer, x, capabilities);
                                     }
                                 }
                             }
@@ -260,7 +278,7 @@ namespace Library.Network
                             foreach (object key in dictionary.Keys)
                             {
                                 if (keyAction == null)
-                                    WriteObject(writer, key); //Not allowed to have Null Key so no point checking.
+                                    WriteObject(writer, key, capabilities); //Not allowed to have Null Key so no point checking.
                                 else
                                     keyAction(key, writer);
 
@@ -269,7 +287,7 @@ namespace Library.Network
                                     writer.Write(dictionary[key] != null);
                                     if (dictionary[key] == null) continue;
 
-                                    WriteObject(writer, dictionary[key]);
+                                    WriteObject(writer, dictionary[key], capabilities);
                                 }
                                 else
                                     valueAction(dictionary[key], writer);
@@ -277,7 +295,7 @@ namespace Library.Network
                         }
                     }
                     else if (item.PropertyType.IsClass)
-                        WriteObject(writer, item.GetValue(ob));
+                        WriteObject(writer, item.GetValue(ob), capabilities);
                     else
                         throw new NotImplementedException($"Not Implemented Exception: WirteObject: Type:{item.PropertyType}.");
 
@@ -287,7 +305,7 @@ namespace Library.Network
                 writeAction(item.GetValue(ob), writer);
             }
         }
-        private static void ReadObject(BinaryReader reader, object ob)
+        private static void ReadObject(BinaryReader reader, object ob, ServerCapabilities capabilities)
         {
             Type type = ob.GetType();
             PropertyInfo[] properties = type.GetProperties();
@@ -295,6 +313,8 @@ namespace Library.Network
             foreach (PropertyInfo item in properties)
             {
                 if (item.GetCustomAttribute<IgnorePropertyPacket>() != null) continue;
+                if (!HasCapability(item, capabilities)) continue;
+                if (!HasOptionalData(reader, item)) continue;
 
                 Func<BinaryReader, object> readAction;
                 if (!TypeRead.TryGetValue(item.PropertyType, out readAction))
@@ -332,7 +352,7 @@ namespace Library.Network
 
                                         object value = Activator.CreateInstance(genType);
                                         list.Add(value);
-                                        ReadObject(reader, value);
+                                        ReadObject(reader, value, capabilities);
                                     }
                                 }
                             }
@@ -375,7 +395,7 @@ namespace Library.Network
                                 {
                                     key = Activator.CreateInstance(genKey); //Never Null as it's a key
 
-                                    ReadObject(reader, key);
+                                    ReadObject(reader, key, capabilities);
                                 }
                                 else
                                     key = keyAction(reader);
@@ -390,7 +410,7 @@ namespace Library.Network
                                     {
                                         value = Activator.CreateInstance(genValue);
 
-                                        ReadObject(reader, value);
+                                        ReadObject(reader, value, capabilities);
                                     }
                                 }
                                 else
@@ -401,7 +421,7 @@ namespace Library.Network
                         }
                     }
                     else if (item.PropertyType.IsClass)
-                        ReadObject(reader, item.GetValue(ob));
+                        ReadObject(reader, item.GetValue(ob), capabilities);
                     else
                         throw new NotImplementedException($"Not Implemented Exception: ReadObject: Type: {item.PropertyType}.");
 
@@ -426,6 +446,35 @@ namespace Library.Network
     internal class IgnorePropertyPacket : Attribute
     {
 
+    }
+
+    [AttributeUsage(AttributeTargets.Property)]
+    internal class OptionalPacketProperty : Attribute
+    {
+
+    }
+
+    [AttributeUsage(AttributeTargets.Property)]
+    internal class PacketCapability : Attribute
+    {
+        public ServerCapabilities Capabilities { get; }
+        public bool RequireAll { get; set; } = true;
+
+        // Use this for fields that would shift later packet data when an older peer
+        // does not know about the field.
+        public PacketCapability(ServerCapabilities capabilities)
+        {
+            Capabilities = capabilities;
+        }
+
+        public bool IsSupported(ServerCapabilities capabilities)
+        {
+            if (Capabilities == ServerCapabilities.None) return true;
+
+            return RequireAll
+                ? (capabilities & Capabilities) == Capabilities
+                : (capabilities & Capabilities) != ServerCapabilities.None;
+        }
     }
 
     [AttributeUsage(AttributeTargets.Method)]

@@ -278,6 +278,16 @@ namespace Client.Scenes
         public int ServerProtocolVersion;
         public ServerCapabilities ServerCapabilities;
         public int CurrentHeroIndex;
+
+        public bool SupportsServerCapability(ServerCapabilities capability)
+        {
+            return (ServerCapabilities & capability) == capability;
+        }
+
+        public bool SupportsHeroItemSyncIndex => SupportsServerCapability(ServerCapabilities.HeroItemSyncIndex);
+        public bool SupportsHeroItemRequestIndex => SupportsServerCapability(ServerCapabilities.HeroItemRequestIndex);
+        public bool SupportsHeroMultiInspectCache => SupportsServerCapability(ServerCapabilities.HeroMultiInspectCache);
+
         public int MaximumHeroCount;
         public HeroSpawnState HeroSpawnState;
         public HeroBehaviour HeroBehaviour;
