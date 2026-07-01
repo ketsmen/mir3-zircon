@@ -43,6 +43,7 @@ namespace Server.Envir.Commands.Command.Admin
                 throw new UserCommandException(string.Format("{0} does not have a current hero.", target.Name));
 
             target.Character.CurrentHero.Grade = (byte)grade;
+            target.Character.CurrentHero.HeroGradePromoteFailureCount = 0;
             target.HeroSetup();
 
             if (target.Hero != null)

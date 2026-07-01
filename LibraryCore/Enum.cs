@@ -17,7 +17,10 @@ namespace Library
         // Client -> server item requests include the target hero index.
         HeroItemRequestIndex = 4,
 
-        Stable = HeroItemSyncIndex | HeroMultiInspectCache | HeroItemRequestIndex,
+        // Hero grade promote preview can be requested and rendered as structured data.
+        HeroGradePromotePreview = 8,
+
+        Stable = HeroItemSyncIndex | HeroMultiInspectCache | HeroItemRequestIndex | HeroGradePromotePreview,
         Experimental = None,
 
         Current = Stable | Experimental,

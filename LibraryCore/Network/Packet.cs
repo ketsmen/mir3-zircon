@@ -13,6 +13,13 @@ namespace Library.Network
         private static readonly List<Type> Packets;
         private static readonly Dictionary<Type, Action<object, BinaryWriter>> TypeWrite;
         private static readonly Dictionary<Type, Func<BinaryReader, object>> TypeRead;
+        private const string GeneralPacketsNamespace = @"Library.Network.GeneralPackets";
+        private const string ClientPacketsNamespace = @"Library.Network.ClientPackets";
+        private const string ServerPacketsNamespace = @"Library.Network.ServerPackets";
+        private static readonly HashSet<string> ClientFirstSameNamePackets = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "ItemSplit",
+        };
 
         public static bool IsClient { get; set; }
 
@@ -34,19 +41,7 @@ namespace Library.Network
                 Packets.Add(type);
             }
 
-            Packets.Sort((x1, x2) =>
-            {
-                if (String.Compare(x1.Namespace, x2.Namespace, StringComparison.Ordinal) == 0)
-                    return String.Compare(x1.Name, x2.Name, StringComparison.Ordinal);
-
-                if (string.Compare(x1.Namespace, @"Library.Network.GeneralPackets", StringComparison.Ordinal) == 0) //We want General Packets shifted To the top.
-                    return -1;
-
-                if (string.Compare(x2.Namespace, @"Library.Network.GeneralPackets", StringComparison.Ordinal) == 0) //We want General Packets shifted To the top.
-                    return 1;
-
-                return String.Compare(x1.Name, x2.Name, StringComparison.Ordinal);
-            });
+            Packets.Sort(ComparePacketTypes);
 
             #region Writes
 
@@ -117,6 +112,44 @@ namespace Library.Network
 
             #endregion
 
+        }
+
+        private static int ComparePacketTypes(Type x1, Type x2)
+        {
+            bool x1General = string.Compare(x1.Namespace, GeneralPacketsNamespace, StringComparison.Ordinal) == 0;
+            bool x2General = string.Compare(x2.Namespace, GeneralPacketsNamespace, StringComparison.Ordinal) == 0;
+
+            if (x1General || x2General)
+            {
+                if (x1General && x2General)
+                    return String.Compare(x1.Name, x2.Name, StringComparison.Ordinal);
+
+                return x1General ? -1 : 1; //We want General Packets shifted To the top.
+            }
+
+            int nameCompare = String.Compare(x1.Name, x2.Name, StringComparison.Ordinal);
+            if (nameCompare != 0) return nameCompare;
+
+            int namespaceCompare = String.Compare(x1.Namespace, x2.Namespace, StringComparison.Ordinal);
+            if (namespaceCompare == 0) return 0;
+
+            // Same-name client/server packets used to compare as equal; keep known legacy ties stable.
+            if (ClientFirstSameNamePackets.Contains(x1.Name))
+            {
+                if (string.Compare(x1.Namespace, ClientPacketsNamespace, StringComparison.Ordinal) == 0)
+                    return -1;
+
+                if (string.Compare(x2.Namespace, ClientPacketsNamespace, StringComparison.Ordinal) == 0)
+                    return 1;
+            }
+
+            if (string.Compare(x1.Namespace, ServerPacketsNamespace, StringComparison.Ordinal) == 0)
+                return -1;
+
+            if (string.Compare(x2.Namespace, ServerPacketsNamespace, StringComparison.Ordinal) == 0)
+                return 1;
+
+            return namespaceCompare;
         }
 
         public static Packet ReceivePacket(byte[] rawBytes, out byte[] extra, ServerCapabilities capabilities = ServerCapabilities.Current)

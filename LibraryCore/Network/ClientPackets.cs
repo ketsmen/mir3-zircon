@@ -883,4 +883,13 @@ namespace Library.Network.ClientPackets
     {
         public int Index { get; set; }
     }
+
+    public sealed class ZZHeroGradePromoteRequest : Packet
+    {
+        public bool RequestConfirmation { get; set; }
+        public bool Confirm { get; set; }
+        [OptionalPacketProperty]
+        [PacketCapability(ServerCapabilities.HeroGradePromotePreview)]
+        public int HeroIndex { get; set; }
+    }
 }

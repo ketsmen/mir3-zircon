@@ -491,6 +491,16 @@ namespace Library
         public int HairType { get; set; }
         public Color HairColour { get; set; }
         public byte Grade { get; set; }
+        [PacketCapability(ServerCapabilities.HeroGradePromotePreview)]
+        public int GradeStatBonusRate { get; set; }
+        [PacketCapability(ServerCapabilities.HeroGradePromotePreview)]
+        public int HeroGradePromoteFailureCount { get; set; }
+        [PacketCapability(ServerCapabilities.HeroGradePromotePreview)]
+        public int HeroGradePromoteEventCostRate { get; set; } = 100;
+        [PacketCapability(ServerCapabilities.HeroGradePromotePreview)]
+        public int HeroGradePromoteEventSuccessBonus { get; set; }
+        [PacketCapability(ServerCapabilities.HeroGradePromotePreview)]
+        public DateTime HeroGradePromoteEventEnd { get; set; }
 
         public decimal Experience { get; set; }
         public decimal MaxExperience { get; set; }
@@ -534,6 +544,52 @@ namespace Library
                     EquipmentArray[slot] = item;
             }
         }
+    }
+
+    public sealed class ClientHeroGradePromotePreview
+    {
+        public bool Enabled { get; set; }
+        public bool CanPromote { get; set; }
+        public bool ResourcesEnough { get; set; }
+        public string ErrorText { get; set; }
+        public string WarningText { get; set; }
+
+        public string HeroName { get; set; }
+        public byte CurrentGrade { get; set; }
+        public byte NextGrade { get; set; }
+        public int SuccessRate { get; set; }
+        public int GradeStatBonusRate { get; set; }
+        public int CurrentGradeBonusRate { get; set; }
+        public int NextGradeBonusRate { get; set; }
+        public string GrowthText { get; set; }
+        public int CostRate { get; set; } = 100;
+        public DateTime EventEnd { get; set; }
+        public int BaseSuccessRate { get; set; }
+        public int EventSuccessBonus { get; set; }
+        public int FailureCount { get; set; }
+        public int FailureBonusRate { get; set; }
+        public int FailureBonusMax { get; set; }
+        public int FailureBonus { get; set; }
+
+        public long GoldCost { get; set; }
+        public long GoldAvailable { get; set; }
+        public bool GoldEnough { get; set; }
+
+        public string MaterialName { get; set; }
+        public long MaterialCount { get; set; }
+        public long MaterialAvailable { get; set; }
+        public bool MaterialEnough { get; set; }
+
+        public string CurrencyName { get; set; }
+        public long CurrencyAmount { get; set; }
+        public long CurrencyAvailable { get; set; }
+        public bool CurrencyEnough { get; set; }
+
+        public string ProtectionName { get; set; }
+        public long ProtectionCount { get; set; }
+        public long ProtectionAvailable { get; set; }
+        public bool UseProtection { get; set; }
+        public bool ProtectionConsumeOnFailureOnly { get; set; }
     }
 
     public sealed class ClientUserItem

@@ -117,8 +117,16 @@ namespace Server.Envir
         public static int HeroGradePromoteCurrencyIndex { get; set; } = 0;
         public static long HeroGradePromoteBaseCurrencyAmount { get; set; } = 0;
         public static int HeroGradePromoteSuccessRate { get; set; } = 100;
+        public static int HeroGradePromoteEventCostRate { get; set; } = 100;
+        public static int HeroGradePromoteEventSuccessBonus { get; set; } = 0;
+        public static DateTime HeroGradePromoteEventEnd { get; set; } = DateTime.MinValue;
+        public static bool HeroGradePromoteEventSaveOnExpire { get; set; } = false;
+        public static string HeroGradePromoteEventPresets { get; set; } = "weekend=80,10,2880;boost=100,10,120;discount=80,0,120";
+        public static int HeroGradePromoteFailureBonusRate { get; set; } = 0;
+        public static int HeroGradePromoteFailureBonusMax { get; set; } = 100;
         public static int HeroGradePromoteProtectionItemIndex { get; set; } = 0;
         public static long HeroGradePromoteProtectionItemCount { get; set; } = 0;
+        public static bool HeroGradePromoteProtectionConsumeOnFailureOnly { get; set; } = false;
         public static int DayCycleCount { get; set; } = 3;
         public static int SkillExp { get; set; } = 3;
         public static bool AllowObservation { get; set; } = true;

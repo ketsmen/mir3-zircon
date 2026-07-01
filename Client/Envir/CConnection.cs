@@ -2992,6 +2992,9 @@ namespace Client.Envir
 
         public void Process(S.HeroInformation p)
         {
+            ClientUserHero currentHero = GameScene.Game.CurrentHero;
+            byte? oldGrade = currentHero != null && p.Hero != null && currentHero.Index == p.Hero.Index ? currentHero.Grade : null;
+
             if (p.Inspect)
             {
                 GameScene.Game.HeroBox.SetInspectedHero(p.Hero);
@@ -3022,6 +3025,16 @@ namespace Client.Envir
                 GameScene.Game.HeroBox.SelectHero(GameScene.Game.CurrentHeroIndex, false);
             else
                 GameScene.Game.HeroBox.HeroChanged();
+
+            if (oldGrade.HasValue && p.Hero != null && p.Hero.Grade > oldGrade.Value)
+                GameScene.Game.HeroBox.HighlightGradeLabel();
+        }
+
+        public void Process(S.ZZHeroGradePromotePreview p)
+        {
+            if (GameScene.Game?.SupportsHeroGradePromotePreview != true) return;
+
+            GameScene.Game.HeroBox.ShowHeroGradePromotePreview(p.Preview, p.ConfirmRequested, p.HeroIndex);
         }
 
         public void Process(S.HeroMagicLeveled p)

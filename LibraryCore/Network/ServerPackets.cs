@@ -1998,5 +1998,13 @@ namespace Library.Network.ServerPackets
     {
         public int Index { get; set; }
     }
-}
 
+    public sealed class ZZHeroGradePromotePreview : Packet
+    {
+        public ClientHeroGradePromotePreview Preview { get; set; }
+        public bool ConfirmRequested { get; set; }
+        [OptionalPacketProperty]
+        [PacketCapability(ServerCapabilities.HeroGradePromotePreview)]
+        public int HeroIndex { get; set; }
+    }
+}

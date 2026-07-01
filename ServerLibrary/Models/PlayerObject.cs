@@ -3847,87 +3847,83 @@ namespace Server.Models
             };
         }
 
+        private static int GetHeroGradeStatBonusRate()
+        {
+            return Math.Max(0, Math.Min(20, Config.HeroGradeStatBonusRate));
+        }
+
         private static long GetHeroGradePromoteCost(byte currentGrade)
         {
-            int nextGrade = currentGrade + 1;
-            decimal cost = Math.Max(0, Config.HeroGradePromoteBaseGoldCost);
-            cost *= nextGrade;
-            cost *= Math.Max(0, Config.HeroGradePromoteGoldCostMultiplier) / 100M;
-            cost = ApplyHeroGradePromoteCostGrowth(currentGrade, cost);
-
-            if (cost >= long.MaxValue) return long.MaxValue;
-            return Math.Max(0, (long)Math.Ceiling(cost));
+            return HeroGradePromoteCostCalculator.GetGoldCost(
+                currentGrade,
+                Config.HeroGradePromoteBaseGoldCost,
+                Config.HeroGradePromoteGoldCostMultiplier,
+                Config.HeroGradePromoteCostGrowthRate,
+                Config.HeroGradePromoteEventCostRate);
         }
 
         private static long GetHeroGradePromoteScaledCost(byte currentGrade, long baseCost)
         {
-            if (baseCost <= 0) return 0;
-
-            decimal cost = baseCost;
-            cost *= currentGrade + 1;
-            cost = ApplyHeroGradePromoteCostGrowth(currentGrade, cost);
-
-            if (cost >= long.MaxValue) return long.MaxValue;
-            return Math.Max(0, (long)Math.Ceiling(cost));
-        }
-
-        private static decimal ApplyHeroGradePromoteCostGrowth(byte currentGrade, decimal cost)
-        {
-            decimal multiplier = GetHeroGradePromoteCostGrowthMultiplier(currentGrade);
-
-            return cost * multiplier;
-        }
-
-        private static decimal GetHeroGradePromoteCostGrowthMultiplier(byte currentGrade)
-        {
-            decimal rate = 1M + GetHeroGradePromoteCostGrowthRate() / 100M;
-            decimal multiplier = 1M;
-
-            for (int i = 0; i < currentGrade; i++)
-                multiplier *= rate;
-
-            return multiplier;
+            return HeroGradePromoteCostCalculator.GetScaledCost(
+                currentGrade,
+                baseCost,
+                Config.HeroGradePromoteCostGrowthRate,
+                Config.HeroGradePromoteEventCostRate);
         }
 
         private static string GetHeroGradePromoteCostGrowthText(byte currentGrade)
         {
-            int growthRate = GetHeroGradePromoteCostGrowthRate();
-            decimal multiplier = GetHeroGradePromoteCostGrowthMultiplier(currentGrade);
-
-            if (growthRate <= 0)
-                return "消耗成长率 0%，本档成长倍率 x1";
-
-            return $"消耗成长率 {growthRate}%，本档成长倍率 x{multiplier:0.##}";
+            return HeroGradePromoteCostCalculator.GetCostGrowthText(
+                currentGrade,
+                Config.HeroGradePromoteCostGrowthRate,
+                Config.HeroGradePromoteEventCostRate);
         }
 
-        private static int GetHeroGradePromoteCostGrowthRate()
+        private ClientHeroGradePromotePreview BuildHeroGradePromotePreview(HeroInfo targetHero = null)
         {
-            return Math.Max(0, Math.Min(1000, Config.HeroGradePromoteCostGrowthRate));
-        }
+            ClientHeroGradePromotePreview preview = new ClientHeroGradePromotePreview
+            {
+                Enabled = Config.HeroGradePromoteEnabled,
+                ProtectionConsumeOnFailureOnly = Config.HeroGradePromoteProtectionConsumeOnFailureOnly,
+                GoldAvailable = Gold?.Amount ?? 0,
+                GoldEnough = true,
+                MaterialEnough = true,
+                CurrencyEnough = true,
+                ResourcesEnough = true
+            };
 
-        public void PreviewHeroGradePromote()
-        {
             if (!Config.HeroGradePromoteEnabled)
             {
-                Connection.ReceiveChat("英雄品质培养当前未开启。", MessageType.System);
-                return;
+                preview.ErrorText = "英雄品质培养当前未开启。";
+                return preview;
             }
 
-            HeroInfo info = Character?.CurrentHero;
+            HeroInfo info = targetHero ?? Character?.CurrentHero;
             if (info == null || info.Deleted)
             {
-                Connection.ReceiveChat("当前没有可培养的英雄。", MessageType.System);
-                return;
+                preview.ErrorText = "当前没有可培养的英雄。";
+                return preview;
             }
+
+            preview.HeroName = info.Name;
+            preview.CurrentGrade = info.Grade;
+            preview.NextGrade = (byte)(info.Grade + 1);
+            preview.GradeStatBonusRate = GetHeroGradeStatBonusRate();
+            preview.CurrentGradeBonusRate = preview.CurrentGrade * preview.GradeStatBonusRate;
+            preview.NextGradeBonusRate = preview.NextGrade * preview.GradeStatBonusRate;
+            preview.CostRate = HeroGradePromoteCostCalculator.ClampCostRate(Config.HeroGradePromoteEventCostRate);
+            preview.EventEnd = Config.HeroGradePromoteEventEnd;
 
             int maxGrade = Math.Max(0, Math.Min(4, Config.HeroMaxGrade));
             if (info.Grade >= maxGrade)
             {
-                Connection.ReceiveChat($"{info.Name}的品质已达到上限。", MessageType.System);
-                return;
+                preview.ErrorText = $"{info.Name}的品质已达到上限。";
+                return preview;
             }
 
             long cost = GetHeroGradePromoteCost(info.Grade);
+            preview.GoldCost = cost;
+            preview.GoldEnough = preview.GoldAvailable >= cost;
 
             ItemInfo material = Config.HeroGradePromoteItemIndex > 0
                 ? SEnvir.ItemInfoList.Binding.FirstOrDefault(x => x.Index == Config.HeroGradePromoteItemIndex)
@@ -3936,9 +3932,14 @@ namespace Server.Models
 
             if (Config.HeroGradePromoteItemIndex > 0 && material == null)
             {
-                Connection.ReceiveChat($"英雄品质培养材料配置无效，找不到物品索引 {Config.HeroGradePromoteItemIndex}。", MessageType.System);
-                return;
+                preview.ErrorText = $"英雄品质培养材料配置无效，找不到物品索引 {Config.HeroGradePromoteItemIndex}。";
+                return preview;
             }
+
+            preview.MaterialName = material?.ItemName ?? string.Empty;
+            preview.MaterialCount = materialCount;
+            preview.MaterialAvailable = material == null ? 0 : GetItemCount(material);
+            preview.MaterialEnough = materialCount <= 0 || preview.MaterialAvailable >= materialCount;
 
             CurrencyInfo currencyInfo = Config.HeroGradePromoteCurrencyIndex > 0
                 ? SEnvir.CurrencyInfoList.Binding.FirstOrDefault(x => x.Index == Config.HeroGradePromoteCurrencyIndex)
@@ -3948,9 +3949,14 @@ namespace Server.Models
 
             if (Config.HeroGradePromoteCurrencyIndex > 0 && currencyInfo == null)
             {
-                Connection.ReceiveChat($"英雄品质培养货币配置无效，找不到货币索引 {Config.HeroGradePromoteCurrencyIndex}。", MessageType.System);
-                return;
+                preview.ErrorText = $"英雄品质培养货币配置无效，找不到货币索引 {Config.HeroGradePromoteCurrencyIndex}。";
+                return preview;
             }
+
+            preview.CurrencyName = currencyInfo?.Name ?? string.Empty;
+            preview.CurrencyAmount = currencyAmount;
+            preview.CurrencyAvailable = currency?.Amount ?? 0;
+            preview.CurrencyEnough = currencyAmount <= 0 || preview.CurrencyAvailable >= currencyAmount;
 
             ItemInfo protection = Config.HeroGradePromoteProtectionItemIndex > 0
                 ? SEnvir.ItemInfoList.Binding.FirstOrDefault(x => x.Index == Config.HeroGradePromoteProtectionItemIndex)
@@ -3959,8 +3965,8 @@ namespace Server.Models
 
             if (Config.HeroGradePromoteProtectionItemIndex > 0 && protection == null)
             {
-                Connection.ReceiveChat($"英雄品质保护材料配置无效，找不到物品索引 {Config.HeroGradePromoteProtectionItemIndex}。", MessageType.System);
-                return;
+                preview.ErrorText = $"英雄品质保护材料配置无效，找不到物品索引 {Config.HeroGradePromoteProtectionItemIndex}。";
+                return preview;
             }
 
             long protectionAvailable = protection == null ? 0 : GetItemCount(protection);
@@ -3968,27 +3974,203 @@ namespace Server.Models
                 protectionAvailable = Math.Max(0, protectionAvailable - materialCount);
 
             bool useProtection = protectionCount > 0 && protectionAvailable >= protectionCount;
-            int successRate = Math.Max(0, Math.Min(100, Config.HeroGradePromoteSuccessRate));
+            int baseSuccessRate = Math.Max(0, Math.Min(100, Config.HeroGradePromoteSuccessRate));
+            int eventSuccessBonus = HeroGradePromoteCostCalculator.ClampSuccessBonus(Config.HeroGradePromoteEventSuccessBonus);
+            int failureBonusRate = HeroGradePromoteCostCalculator.ClampSuccessBonus(Config.HeroGradePromoteFailureBonusRate);
+            int failureBonusMax = HeroGradePromoteCostCalculator.ClampSuccessBonus(Config.HeroGradePromoteFailureBonusMax);
+            int failureCount = Math.Max(0, info.HeroGradePromoteFailureCount);
+            int failureBonus = HeroGradePromoteCostCalculator.GetFailureBonus(failureCount, failureBonusRate, failureBonusMax);
+            int successRate = HeroGradePromoteCostCalculator.GetSuccessRate(baseSuccessRate, eventSuccessBonus, failureCount, failureBonusRate, failureBonusMax);
             string growthText = GetHeroGradePromoteCostGrowthText(info.Grade);
 
-            List<string> costs = new List<string>();
-            if (cost > 0)
-                costs.Add($"金币 {cost:#,##0}({(Gold.Amount >= cost ? "足够" : $"不足 {cost - Gold.Amount:#,##0}")})");
-            if (materialCount > 0)
+            preview.ProtectionName = protection?.ItemName ?? string.Empty;
+            preview.ProtectionCount = protectionCount;
+            preview.ProtectionAvailable = protectionAvailable;
+            preview.UseProtection = useProtection;
+            preview.BaseSuccessRate = baseSuccessRate;
+            preview.EventSuccessBonus = eventSuccessBonus;
+            preview.FailureCount = failureCount;
+            preview.FailureBonusRate = failureBonusRate;
+            preview.FailureBonusMax = failureBonusMax;
+            preview.FailureBonus = failureBonus;
+            preview.SuccessRate = successRate;
+            preview.GrowthText = growthText;
+            preview.WarningText = successRate <= 0 && !useProtection
+                ? $"当前成功率为 0 且无保护材料，无法培养；下一步建议: {GetHeroGradePromoteNoChanceAdvice(protection, protectionCount, protectionAvailable)}"
+                : string.Empty;
+            preview.ResourcesEnough = preview.GoldEnough && preview.MaterialEnough && preview.CurrencyEnough;
+            preview.CanPromote = preview.ResourcesEnough && string.IsNullOrEmpty(preview.WarningText);
+
+            return preview;
+        }
+
+        public ClientHeroGradePromotePreview GetHeroGradePromotePreview(HeroInfo targetHero = null)
+        {
+            return BuildHeroGradePromotePreview(targetHero);
+        }
+
+        public void SendHeroGradePromotePreview(bool structured, bool confirmRequested)
+        {
+            ClientHeroGradePromotePreview preview = BuildHeroGradePromotePreview();
+
+            if (structured && Connection?.SupportsClientCapability(ServerCapabilities.HeroGradePromotePreview) == true)
             {
-                long count = GetItemCount(material);
-                costs.Add($"{material.ItemName} x{materialCount:#,##0}({(count >= materialCount ? "足够" : $"不足 {materialCount - count:#,##0}")})");
+                Enqueue(new S.ZZHeroGradePromotePreview
+                {
+                    Preview = preview,
+                    ConfirmRequested = confirmRequested,
+                    HeroIndex = Character?.CurrentHero?.Index ?? 0,
+                });
+                return;
             }
-            if (currencyAmount > 0)
-                costs.Add($"{currencyInfo.Name} x{currencyAmount:#,##0}({(currency.Amount >= currencyAmount ? "足够" : $"不足 {currencyAmount - currency.Amount:#,##0}")})");
+
+            SendHeroGradePromotePreviewChat(preview);
+        }
+
+        private void SendHeroGradePromotePreviewChat(ClientHeroGradePromotePreview preview)
+        {
+            if (!string.IsNullOrEmpty(preview.ErrorText))
+            {
+                Connection.ReceiveChat(preview.ErrorText, MessageType.System);
+                return;
+            }
+
+            List<string> costs = new List<string>();
+            if (preview.GoldCost > 0)
+                costs.Add($"金币 {preview.GoldCost:#,##0}({FormatHeroGradePromoteAvailability(preview.GoldCost, preview.GoldAvailable)})");
+            if (preview.MaterialCount > 0)
+                costs.Add($"{preview.MaterialName} x{preview.MaterialCount:#,##0}({FormatHeroGradePromoteAvailability(preview.MaterialCount, preview.MaterialAvailable)})");
+            if (preview.CurrencyAmount > 0)
+                costs.Add($"{preview.CurrencyName} x{preview.CurrencyAmount:#,##0}({FormatHeroGradePromoteAvailability(preview.CurrencyAmount, preview.CurrencyAvailable)})");
 
             string costText = costs.Count == 0 ? "预计消耗: 无" : $"预计消耗: {string.Join("、", costs)}";
-            string protectionText = protectionCount <= 0 || protection == null
+            string protectionText = preview.ProtectionCount <= 0 || string.IsNullOrEmpty(preview.ProtectionName)
                 ? "保护: 未配置"
-                : $"保护: {protection.ItemName} x{protectionCount:#,##0}，可用 {protectionAvailable:#,##0}，{(useProtection ? "本次将自动使用并保底成功" : "不足，本次不启用保护")}";
-            string warning = successRate <= 0 && !useProtection ? "；当前成功率为 0 且无保护材料，无法培养" : string.Empty;
+                : $"保护: {preview.ProtectionName} x{preview.ProtectionCount:#,##0}，可用 {preview.ProtectionAvailable:#,##0}，{FormatHeroGradePromoteProtectionState(preview)}";
+            string warning = string.IsNullOrEmpty(preview.WarningText) ? string.Empty : $"；{preview.WarningText}";
 
-            Connection.ReceiveChat($"{info.Name}品质培养预览：{HeroGradeName(info.Grade)} -> {HeroGradeName((byte)(info.Grade + 1))}；成功率 {successRate}%；{growthText}；{costText}；{protectionText}{warning}。", MessageType.System);
+            Connection.ReceiveChat($"{preview.HeroName}品质培养预览：{HeroGradeName(preview.CurrentGrade)} -> {HeroGradeName(preview.NextGrade)}；基础属性加成 +{preview.CurrentGradeBonusRate}% -> +{preview.NextGradeBonusRate}%；活动:{FormatHeroGradePromoteEvent(preview.CostRate, preview.EventSuccessBonus, preview.EventEnd)}；{FormatHeroGradePromoteSuccessRate(preview)}；{preview.GrowthText}；{costText}；{protectionText}{warning}。", MessageType.System);
+        }
+
+        public void PreviewHeroGradePromote()
+        {
+            SendHeroGradePromotePreview(false, false);
+        }
+
+        private static string FormatHeroGradePromoteAvailability(long required, long available)
+        {
+            return available >= required ? "足够" : $"不足 {required - available:#,##0}";
+        }
+
+        private static string FormatHeroGradePromoteSuccessRate(ClientHeroGradePromotePreview preview)
+        {
+            List<string> parts = new List<string> { $"基础 {preview.BaseSuccessRate}%" };
+
+            if (preview.EventSuccessBonus > 0)
+                parts.Add($"活动 +{preview.EventSuccessBonus}%");
+
+            if (preview.FailureBonus > 0)
+                parts.Add($"失败补偿 +{preview.FailureBonus}%({preview.FailureCount}次)");
+
+            return parts.Count <= 1
+                ? $"成功率 {preview.SuccessRate}%"
+                : $"成功率 {preview.SuccessRate}%({string.Join("，", parts)})";
+        }
+
+        private static string FormatHeroGradePromoteEvent(int costRate, int successBonus, DateTime eventEnd)
+        {
+            bool active = costRate != 100 || successBonus > 0;
+            if (!active) return "无";
+
+            string text = $"消耗 {costRate}%，成功 +{successBonus}%";
+
+            if (eventEnd == DateTime.MinValue)
+                return text;
+
+            TimeSpan remaining = eventEnd - SEnvir.Now;
+            return remaining <= TimeSpan.Zero
+                ? $"{text}，已到期"
+                : $"{text}，剩余 {FormatHeroGradePromoteDuration(remaining)}";
+        }
+
+        private static string FormatHeroGradePromoteDuration(TimeSpan duration)
+        {
+            if (duration.TotalDays >= 1)
+                return $"{Math.Ceiling(duration.TotalDays)}天";
+
+            if (duration.TotalHours >= 1)
+                return $"{Math.Ceiling(duration.TotalHours)}小时";
+
+            if (duration.TotalMinutes >= 1)
+                return $"{Math.Ceiling(duration.TotalMinutes)}分钟";
+
+            return $"{Math.Ceiling(Math.Max(0, duration.TotalSeconds))}秒";
+        }
+
+        private static string FormatHeroGradePromoteProtectionState(ClientHeroGradePromotePreview preview)
+        {
+            if (!preview.UseProtection)
+                return "不足，本次不启用保护";
+
+            if (preview.ProtectionConsumeOnFailureOnly && preview.SuccessRate >= 100)
+                return "成功率已满，本次不会消耗保护";
+
+            return preview.ProtectionConsumeOnFailureOnly
+                ? "失败时才消耗并保底成功"
+                : "本次将自动使用并保底成功";
+        }
+
+        private static string FormatHeroGradePromoteMissing(long required, long available)
+        {
+            long missing = Math.Max(0, required - available);
+            return missing <= 0 ? "已足够" : missing.ToString("#,##0");
+        }
+
+        private static string GetHeroGradePromoteNoChanceAdvice(ItemInfo protection, long protectionCount, long protectionAvailable)
+        {
+            if (protection != null && protectionCount > 0)
+                return $"补足 {protection.ItemName} x{FormatHeroGradePromoteMissing(protectionCount, protectionAvailable)}，或调高成功率。";
+
+            return "调高成功率，或配置保护材料后再培养。";
+        }
+
+        private static string GetHeroGradePromoteFailureAdvice(ItemInfo protection, long protectionCount, long protectionAvailable)
+        {
+            if (protection != null && protectionCount > 0)
+                return $"准备保护材料 {protection.ItemName} x{FormatHeroGradePromoteMissing(protectionCount, protectionAvailable)}，或提高成功率后再尝试。";
+
+            return "准备保护材料或提高成功率后再尝试。";
+        }
+
+        private static string GetHeroGradePromoteSuccessAdvice(HeroInfo info, int maxGrade)
+        {
+            return info.Grade >= maxGrade ? "已达到最高品质。" : "可继续预览下一档培养消耗。";
+        }
+
+        private void LogHeroGradePromoteAttempt(
+            HeroInfo info,
+            byte beforeGrade,
+            byte afterGrade,
+            bool success,
+            bool naturalSuccess,
+            bool protectionConsumed,
+            bool useProtection,
+            bool protectionConsumeOnFailureOnly,
+            int baseSuccessRate,
+            int eventSuccessBonus,
+            int failureCountBefore,
+            int failureCountAfter,
+            int failureBonus,
+            int failureBonusMax,
+            int successRate,
+            string costText)
+        {
+            string characterName = Character?.CharacterName ?? Name ?? string.Empty;
+            string protectionMode = protectionConsumeOnFailureOnly ? "失败才消耗" : "启用即消耗";
+            string result = success ? "成功" : "失败";
+
+            SEnvir.Log(
+                $"[HeroGradePromote] 角色:{characterName}，英雄:{info.Name}(#{info.Index})，结果:{result}，品质:{HeroGradeName(beforeGrade)}({beforeGrade})->{HeroGradeName(afterGrade)}({afterGrade})，有效成功率:{successRate}%，基础:{baseSuccessRate}%，活动加成:{eventSuccessBonus}%，失败补偿:{failureBonus}%/{failureBonusMax}%，失败次数:{failureCountBefore}->{failureCountAfter}，自然成功:{naturalSuccess}，保护可用:{useProtection}，保护消耗:{protectionConsumed}，保护保底:{protectionConsumed && !naturalSuccess}，保护策略:{protectionMode}，实际{costText}。");
         }
 
         public void PromoteHeroGrade()
@@ -4013,11 +4195,12 @@ namespace Server.Models
                 return;
             }
 
+            byte beforeGrade = info.Grade;
             long cost = GetHeroGradePromoteCost(info.Grade);
             string growthText = GetHeroGradePromoteCostGrowthText(info.Grade);
             if (Gold.Amount < cost)
             {
-                Connection.ReceiveChat($"金币不足，提升{info.Name}品质需要 {cost:#,##0} 金币（{growthText}）。", MessageType.System);
+                Connection.ReceiveChat($"金币不足，提升{info.Name}品质需要 {cost:#,##0} 金币（{growthText}）。下一步建议: 补足 {FormatHeroGradePromoteMissing(cost, Gold.Amount)} 金币后再培养。", MessageType.System);
                 return;
             }
 
@@ -4034,7 +4217,8 @@ namespace Server.Models
 
             if (materialCount > 0 && GetItemCount(material) < materialCount)
             {
-                Connection.ReceiveChat($"材料不足，提升{info.Name}品质需要 {material.ItemName} x{materialCount:#,##0}（{growthText}）。", MessageType.System);
+                long materialAvailable = GetItemCount(material);
+                Connection.ReceiveChat($"材料不足，提升{info.Name}品质需要 {material.ItemName} x{materialCount:#,##0}（{growthText}）。下一步建议: 补足 {material.ItemName} x{FormatHeroGradePromoteMissing(materialCount, materialAvailable)} 后再培养。", MessageType.System);
                 return;
             }
 
@@ -4052,7 +4236,7 @@ namespace Server.Models
 
             if (currencyAmount > 0 && currency.Amount < currencyAmount)
             {
-                Connection.ReceiveChat($"货币不足，提升{info.Name}品质需要 {currencyInfo.Name} x{currencyAmount:#,##0}（{growthText}）。", MessageType.System);
+                Connection.ReceiveChat($"货币不足，提升{info.Name}品质需要 {currencyInfo.Name} x{currencyAmount:#,##0}（{growthText}）。下一步建议: 补足 {currencyInfo.Name} x{FormatHeroGradePromoteMissing(currencyAmount, currency.Amount)} 后再培养。", MessageType.System);
                 return;
             }
 
@@ -4072,11 +4256,18 @@ namespace Server.Models
                 protectionAvailable = Math.Max(0, protectionAvailable - materialCount);
 
             bool useProtection = protectionCount > 0 && protectionAvailable >= protectionCount;
-            int successRate = Math.Max(0, Math.Min(100, Config.HeroGradePromoteSuccessRate));
+            bool protectionConsumeOnFailureOnly = Config.HeroGradePromoteProtectionConsumeOnFailureOnly;
+            int baseSuccessRate = Math.Max(0, Math.Min(100, Config.HeroGradePromoteSuccessRate));
+            int eventSuccessBonus = HeroGradePromoteCostCalculator.ClampSuccessBonus(Config.HeroGradePromoteEventSuccessBonus);
+            int failureBonusRate = HeroGradePromoteCostCalculator.ClampSuccessBonus(Config.HeroGradePromoteFailureBonusRate);
+            int failureBonusMax = HeroGradePromoteCostCalculator.ClampSuccessBonus(Config.HeroGradePromoteFailureBonusMax);
+            int failureCountBefore = Math.Max(0, info.HeroGradePromoteFailureCount);
+            int failureBonus = HeroGradePromoteCostCalculator.GetFailureBonus(failureCountBefore, failureBonusRate, failureBonusMax);
+            int successRate = HeroGradePromoteCostCalculator.GetSuccessRate(baseSuccessRate, eventSuccessBonus, failureCountBefore, failureBonusRate, failureBonusMax);
 
             if (successRate <= 0 && !useProtection)
             {
-                Connection.ReceiveChat($"英雄品质培养成功率为 0，且没有足够的保护材料（{growthText}）。", MessageType.System);
+                Connection.ReceiveChat($"英雄品质培养成功率为 0，且没有足够的保护材料（{growthText}）。下一步建议: {GetHeroGradePromoteNoChanceAdvice(protection, protectionCount, protectionAvailable)}", MessageType.System);
                 return;
             }
 
@@ -4084,7 +4275,6 @@ namespace Server.Models
             if (cost > 0) costs.Add($"金币 {cost:#,##0}");
             if (materialCount > 0) costs.Add($"{material.ItemName} x{materialCount:#,##0}");
             if (currencyAmount > 0) costs.Add($"{currencyInfo.Name} x{currencyAmount:#,##0}");
-            if (useProtection) costs.Add($"{protection.ItemName} x{protectionCount:#,##0}");
 
             if (cost > 0)
             {
@@ -4101,20 +4291,33 @@ namespace Server.Models
                 CurrencyChanged(currency);
             }
 
-            if (useProtection)
-                TakeItem(protection, protectionCount);
+            bool naturalSuccess = successRate >= 100 || SEnvir.Random.Next(100) < successRate;
+            bool protectionConsumed = false;
 
-            bool success = useProtection || successRate >= 100 || SEnvir.Random.Next(100) < successRate;
+            if (useProtection && (!protectionConsumeOnFailureOnly || !naturalSuccess))
+            {
+                TakeItem(protection, protectionCount);
+                costs.Add($"{protection.ItemName} x{protectionCount:#,##0}");
+                protectionConsumed = true;
+            }
+
+            bool success = naturalSuccess || protectionConsumed;
             string costText = costs.Count == 0 ? $"未消耗资源（{growthText}）" : $"消耗{string.Join("、", costs)}（{growthText}）";
 
             if (!success)
             {
+                info.HeroGradePromoteFailureCount = Math.Min(1000, failureCountBefore + 1);
+                LogHeroGradePromoteAttempt(info, beforeGrade, beforeGrade, false, naturalSuccess, protectionConsumed, useProtection, protectionConsumeOnFailureOnly, baseSuccessRate, eventSuccessBonus, failureCountBefore, info.HeroGradePromoteFailureCount, failureBonus, failureBonusMax, successRate, costText);
+                Enqueue(new S.HeroInformation { Hero = Hero?.ToClientHero() ?? info.ToClientHero() });
                 SendHeroManage();
-                Connection.ReceiveChat($"{info.Name}的品质培养失败，品质未变化，{costText}。", MessageType.System);
+                Connection.ReceiveChat($"{info.Name}的品质培养失败，品质未变化，{costText}。下一步建议: {GetHeroGradePromoteFailureAdvice(protection, protectionCount, protectionAvailable)}", MessageType.System);
                 return;
             }
 
-            info.Grade++;
+            byte afterGrade = (byte)(beforeGrade + 1);
+            info.HeroGradePromoteFailureCount = 0;
+            LogHeroGradePromoteAttempt(info, beforeGrade, afterGrade, true, naturalSuccess, protectionConsumed, useProtection, protectionConsumeOnFailureOnly, baseSuccessRate, eventSuccessBonus, failureCountBefore, info.HeroGradePromoteFailureCount, failureBonus, failureBonusMax, successRate, costText);
+            info.Grade = afterGrade;
             HeroSetup();
 
             if (Hero != null)
@@ -4124,7 +4327,7 @@ namespace Server.Models
             }
 
             SendHeroManage();
-            Connection.ReceiveChat($"{info.Name}的品质提升为{HeroGradeName(info.Grade)}，{costText}。", MessageType.System);
+            Connection.ReceiveChat($"{info.Name}的品质提升为{HeroGradeName(info.Grade)}，{costText}。下一步建议: {GetHeroGradePromoteSuccessAdvice(info, maxGrade)}", MessageType.System);
         }
 
         public void SetHeroAutoPot(C.SetHeroAutoPot p)

@@ -208,6 +208,21 @@ namespace Server.DBModels
         }
         private byte _Grade;
 
+        public int HeroGradePromoteFailureCount
+        {
+            get { return _HeroGradePromoteFailureCount; }
+            set
+            {
+                if (_HeroGradePromoteFailureCount == value) return;
+
+                int oldValue = _HeroGradePromoteFailureCount;
+                _HeroGradePromoteFailureCount = value;
+
+                OnChanged(oldValue, value, "HeroGradePromoteFailureCount");
+            }
+        }
+        private int _HeroGradePromoteFailureCount;
+
         public bool AutoPot
         {
             get { return _AutoPot; }
@@ -361,6 +376,11 @@ namespace Server.DBModels
                 HairType = HairType,
                 HairColour = HairColour,
                 Grade = Grade,
+                GradeStatBonusRate = Math.Max(0, Math.Min(20, Config.HeroGradeStatBonusRate)),
+                HeroGradePromoteFailureCount = Math.Max(0, HeroGradePromoteFailureCount),
+                HeroGradePromoteEventCostRate = HeroGradePromoteCostCalculator.ClampCostRate(Config.HeroGradePromoteEventCostRate),
+                HeroGradePromoteEventSuccessBonus = HeroGradePromoteCostCalculator.ClampSuccessBonus(Config.HeroGradePromoteEventSuccessBonus),
+                HeroGradePromoteEventEnd = Config.HeroGradePromoteEventEnd,
                 Experience = Experience,
                 MaxExperience = Level < Globals.ExperienceList.Count ? Globals.ExperienceList[Level] : 0,
                 CurrentHP = CurrentHP,

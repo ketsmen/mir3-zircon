@@ -25,9 +25,9 @@ namespace Client.Scenes.Views
         private DXTab CharacterTab, InventoryTab, DisciplineTab, SkillTab;
         private DXVScrollBar SkillScrollBar;
 
-        public DXLabel NameLabel, ClassLabel, LevelLabel, GradeLabel, HealthLabel, ManaLabel, ExperienceLabel, WeightLabel, StateLabel, BehaviourLabel, CreateInfoLabel, CreateCountLabel, SkillLabel, AutoPotLabel, HPItemLabel, MPItemLabel;
+        public DXLabel NameLabel, ClassLabel, LevelLabel, GradeLabel, HealthLabel, ManaLabel, ExperienceLabel, WeightLabel, StateLabel, BehaviourLabel, CreateInfoLabel, CreateCountLabel, SkillLabel, AutoPotLabel, HPItemLabel, MPItemLabel, PromoteCompensationLabel, PromoteEventLabel;
         private DXLabel WearWeightLabel, HandWeightLabel, ManageLabel, DisciplineLevelLabel, DisciplineExperienceLabel, DisciplineMessageLabel, EmptySkillLabel;
-        public DXButton PreviousButton, NextButton, CurrentButton, RenameButton, DeleteButton, MoveUpButton, MoveDownButton, CreateButton, ClassButton, GenderButton, SpawnButton, AttackButton, CounterButton, FollowButton, CustomButton, SetHPButton, SetMPButton, SaveAutoPotButton;
+        public DXButton PreviousButton, NextButton, CurrentButton, RenameButton, DeleteButton, MoveUpButton, MoveDownButton, CreateButton, ClassButton, GenderButton, SpawnButton, AttackButton, CounterButton, FollowButton, CustomButton, PromoteButton, SetHPButton, SetMPButton, SaveAutoPotButton;
         private DXButton SortButton;
         public DXCheckBox AutoPotCheckBox;
         public DXNumberBox HPPercentBox, MPPercentBox;
@@ -46,6 +46,7 @@ namespace Client.Scenes.Views
         public bool Updating;
         private readonly Dictionary<int, ClientUserHero> InspectedHeroes = new();
         private readonly HashSet<int> RequestedHeroIndexes = new();
+        private DateTime GradeHighlightUntil;
 
         public bool IsViewingCurrentHero => SelectedHeroIndex > 0 && SelectedHeroIndex == (GameScene.Game?.CurrentHeroIndex ?? 0);
         public bool IsHeroItemPanelWritable => IsViewingCurrentHero && GameScene.Game?.CurrentHero != null;
@@ -146,12 +147,13 @@ namespace Client.Scenes.Views
             NameLabel = CreateLabel(CharacterTab, "未选择英雄", 12, 8, 220, true);
             ClassLabel = CreateLabel(CharacterTab, "职业: -", 12, 30, 120);
             LevelLabel = CreateLabel(CharacterTab, "等级: -", 140, 30, 66);
-            GradeLabel = CreateLabel(CharacterTab, "品质: -", 210, 30, 70);
+            GradeLabel = CreateLabel(CharacterTab, "品质: -", 210, 30, 110);
             StateLabel = CreateLabel(CharacterTab, "状态: -", 285, 8, 145);
-            BehaviourLabel = CreateLabel(CharacterTab, "模式: -", 285, 30, 190);
+            BehaviourLabel = CreateLabel(CharacterTab, "模式: -", 325, 30, 170);
 
             HealthLabel = CreateLabel(CharacterTab, "生命: -", 12, 54, 180);
             ManaLabel = CreateLabel(CharacterTab, "魔法: -", 210, 54, 180);
+            PromoteCompensationLabel = CreateLabel(CharacterTab, "补偿: -", 400, 54, 88);
             ExperienceLabel = CreateLabel(CharacterTab, "经验: -", 12, 76, 260);
             WeightLabel = CreateLabel(CharacterTab, "负重: -", 285, 76, 145);
 
@@ -214,6 +216,12 @@ namespace Client.Scenes.Views
 
             MoveDownButton = CreateButtonControl(CharacterTab, "下移", 186, 448, 52);
             MoveDownButton.MouseClick += (o, e) => MoveSelectedHero(1);
+
+            PromoteButton = CreateButtonControl(CharacterTab, "培养", 244, 448, 60);
+            PromoteButton.Hint = "左键预览品质培养消耗；右键打开确认培养窗口。";
+            PromoteButton.MouseClick += (o, e) => PromoteHeroGrade(e.Button);
+
+            PromoteEventLabel = CreateLabel(CharacterTab, "活动: 无", 312, 451, 176);
 
             CharacterTab.BeforeChildrenDraw += CharacterTab_BeforeChildrenDraw;
 
@@ -597,6 +605,113 @@ namespace Client.Scenes.Views
             });
         }
 
+        private void PromoteHeroGrade(MouseButtons button)
+        {
+            if (!IsViewingCurrentHero || GameScene.Game?.CurrentHero == null) return;
+            if (button != MouseButtons.Left && button != MouseButtons.Right) return;
+
+            if (GameScene.Game?.SupportsHeroGradePromotePreview == true)
+            {
+                CEnvir.Enqueue(new C.ZZHeroGradePromoteRequest
+                {
+                    RequestConfirmation = button == MouseButtons.Right,
+                    HeroIndex = GameScene.Game.CurrentHero.Index,
+                });
+                return;
+            }
+
+            if (button != MouseButtons.Right)
+            {
+                CEnvir.Enqueue(new C.Chat { Text = "@PROMOTEHEROGRADE preview" });
+                return;
+            }
+
+            ClientUserHero hero = GameScene.Game.CurrentHero;
+            int confirmHeroIndex = hero.Index;
+            byte confirmGrade = hero.Grade;
+            CEnvir.Enqueue(new C.Chat { Text = "@PROMOTEHEROGRADE preview" });
+
+            DXMessageBox box = new DXMessageBox(
+                $"{hero.Name}当前品质：{HeroGradeName(hero.Grade)}(+{HeroGradeBonusRate(hero)}%)\r\n" +
+                $"基础属性加成：+{HeroGradeBonusRate(hero)}% -> +{HeroNextGradeBonusRate(hero)}%\r\n\r\n" +
+                $"活动：{FormatHeroGradePromoteEvent(hero.HeroGradePromoteEventCostRate, hero.HeroGradePromoteEventSuccessBonus, hero.HeroGradePromoteEventEnd, false)}\r\n\r\n" +
+                "服务端已把本次预计消耗发送到聊天窗口。\r\n确认后会重新校验资源、成功率和保护材料，并按服务端当前配置扣费。",
+                "确认品质培养",
+                DXMessageBoxButtons.YesNo);
+            box.YesButton.MouseClick += (o, e) =>
+            {
+                if (!IsCurrentHero(confirmHeroIndex, confirmGrade))
+                {
+                    DXMessageBox.Show("当前英雄或品质已经变化，请重新预览后再确认培养。", "品质培养");
+                    return;
+                }
+
+                CEnvir.Enqueue(new C.Chat { Text = "@PROMOTEHEROGRADE" });
+            };
+        }
+
+        public void ShowHeroGradePromotePreview(ClientHeroGradePromotePreview preview, bool confirmRequested, int heroIndex)
+        {
+            if (preview == null) return;
+
+            if (!string.IsNullOrEmpty(preview.ErrorText))
+            {
+                DXMessageBox.Show(preview.ErrorText, "品质培养");
+                return;
+            }
+
+            string text =
+                $"{preview.HeroName}：{HeroGradeName(preview.CurrentGrade)} -> {HeroGradeName(preview.NextGrade)}\r\n" +
+                $"基础属性加成: +{preview.CurrentGradeBonusRate}% -> +{preview.NextGradeBonusRate}%\r\n" +
+                $"活动: {FormatHeroGradePromoteEvent(preview.CostRate, preview.EventSuccessBonus, preview.EventEnd, false)}\r\n" +
+                $"成功率: {FormatPreviewSuccessRate(preview)}\r\n" +
+                $"{preview.GrowthText}\r\n\r\n" +
+                $"金币: {FormatPreviewCost(preview.GoldCost, preview.GoldAvailable)}\r\n" +
+                $"材料: {FormatPreviewNamedCost(preview.MaterialName, preview.MaterialCount, preview.MaterialAvailable)}\r\n" +
+                $"货币: {FormatPreviewNamedCost(preview.CurrencyName, preview.CurrencyAmount, preview.CurrencyAvailable)}\r\n" +
+                $"保护: {FormatPreviewProtection(preview)}";
+
+            if (!string.IsNullOrEmpty(preview.WarningText))
+                text += $"\r\n\r\n{preview.WarningText}";
+
+            if (confirmRequested && heroIndex <= 0)
+                text += "\r\n\r\n本次预览缺少英雄索引，请重新打开英雄页后再尝试。";
+
+            DXMessageBox box = new DXMessageBox(text, confirmRequested ? "确认品质培养" : "品质培养预览", confirmRequested ? DXMessageBoxButtons.YesNo : DXMessageBoxButtons.OK);
+            if (confirmRequested)
+            {
+                box.YesButton.Enabled = preview.CanPromote && heroIndex > 0;
+                box.YesButton.MouseClick += (o, e) =>
+                {
+                    if (GameScene.Game?.SupportsHeroGradePromotePreview != true) return;
+                    if (!IsCurrentHero(heroIndex, preview.CurrentGrade))
+                    {
+                        DXMessageBox.Show("当前英雄或品质已经变化，请重新预览后再确认培养。", "品质培养");
+                        return;
+                    }
+
+                    CEnvir.Enqueue(new C.ZZHeroGradePromoteRequest
+                    {
+                        Confirm = true,
+                        HeroIndex = heroIndex,
+                    });
+                };
+            }
+        }
+
+        private static bool IsCurrentHero(int heroIndex, byte grade)
+        {
+            ClientUserHero hero = GameScene.Game?.CurrentHero;
+
+            return hero != null && hero.Index == heroIndex && hero.Grade == grade;
+        }
+
+        public void HighlightGradeLabel()
+        {
+            GradeHighlightUntil = CEnvir.Now.AddSeconds(3);
+            UpdateLabels();
+        }
+
         private static HeroCustomBehaviourProfile NextCustomProfile(HeroCustomBehaviourProfile profile)
         {
             return profile switch
@@ -797,10 +912,13 @@ namespace Client.Scenes.Views
                               summary != null ? $"职业: {ClassName(summary.Class)} {GenderName(summary.Gender)}" : "职业: -";
             LevelLabel.Text = hero != null ? $"等级: {hero.Level}" :
                               summary != null ? $"等级: {summary.Level}" : "等级: -";
-            GradeLabel.Text = hero == null ? "品质: -" : $"品质: {HeroGradeName(hero.Grade)}";
-            GradeLabel.ForeColour = hero == null ? Color.White : HeroGradeColour(hero.Grade);
+            GradeLabel.Text = hero == null ? "品质: -" : $"品质: {HeroGradeName(hero.Grade)}(+{HeroGradeBonusRate(hero)}%)";
+            GradeLabel.ForeColour = hero == null ? Color.White : CEnvir.Now < GradeHighlightUntil ? Color.Gold : HeroGradeColour(hero.Grade);
             HealthLabel.Text = hero == null ? "生命: -" : $"生命: {hero.CurrentHP:#,##0}/{hero.MaxHP:#,##0}";
             ManaLabel.Text = hero == null ? "魔法: -" : $"魔法: {hero.CurrentMP:#,##0}/{hero.MaxMP:#,##0}";
+            PromoteCompensationLabel.Text = hero == null ? "补偿: -" : $"补偿: {Math.Max(0, hero.HeroGradePromoteFailureCount)}次";
+            PromoteEventLabel.Text = hero == null ? "活动: 无" : $"活动: {FormatHeroGradePromoteEvent(hero.HeroGradePromoteEventCostRate, hero.HeroGradePromoteEventSuccessBonus, hero.HeroGradePromoteEventEnd, true)}";
+            PromoteEventLabel.Hint = hero == null ? string.Empty : FormatHeroGradePromoteEvent(hero.HeroGradePromoteEventCostRate, hero.HeroGradePromoteEventSuccessBonus, hero.HeroGradePromoteEventEnd, false);
             ExperienceLabel.Text = hero == null || hero.MaxExperience <= 0 ? "经验: -" : $"经验: {hero.Experience:#,##0}/{hero.MaxExperience:#,##0}";
 
             long bagWeight = hero?.InventoryArray?.Where(x => x != null).Sum(x => (long)x.Weight) ?? 0;
@@ -850,6 +968,7 @@ namespace Client.Scenes.Views
             CounterButton.Enabled = canEditHero;
             FollowButton.Enabled = canEditHero;
             CustomButton.Enabled = canEditHero;
+            PromoteButton.Enabled = canEditHero;
             SortButton.Enabled = canEditHero;
             HPItemCell.Enabled = canEditHero;
             MPItemCell.Enabled = canEditHero;
@@ -1080,8 +1199,17 @@ namespace Client.Scenes.Views
 
         private void CharacterTab_BeforeChildrenDraw(object sender, EventArgs e)
         {
+            if (GradeHighlightUntil != DateTime.MinValue && CEnvir.Now >= GradeHighlightUntil)
+            {
+                GradeHighlightUntil = DateTime.MinValue;
+                UpdateLabels();
+            }
+
             ClientUserHero hero = DisplayedHero;
             if (hero == null) return;
+
+            PromoteEventLabel.Text = $"活动: {FormatHeroGradePromoteEvent(hero.HeroGradePromoteEventCostRate, hero.HeroGradePromoteEventSuccessBonus, hero.HeroGradePromoteEventEnd, true)}";
+            PromoteEventLabel.Hint = FormatHeroGradePromoteEvent(hero.HeroGradePromoteEventCostRate, hero.HeroGradePromoteEventSuccessBonus, hero.HeroGradePromoteEventEnd, false);
 
             int x = 130;
             int y = 313;
@@ -1299,6 +1427,101 @@ namespace Client.Scenes.Views
             };
         }
 
+        private static int HeroGradeBonusRate(ClientUserHero hero)
+        {
+            if (hero == null) return 0;
+
+            return Math.Max(0, (int)hero.Grade) * Math.Max(0, hero.GradeStatBonusRate);
+        }
+
+        private static int HeroNextGradeBonusRate(ClientUserHero hero)
+        {
+            if (hero == null) return 0;
+
+            return Math.Max(0, (int)hero.Grade + 1) * Math.Max(0, hero.GradeStatBonusRate);
+        }
+
+        private static string FormatPreviewCost(long required, long available)
+        {
+            return required <= 0 ? "无" : $"{required:#,##0}({FormatPreviewAvailability(required, available)})";
+        }
+
+        private static string FormatPreviewNamedCost(string name, long required, long available)
+        {
+            return required <= 0 ? "无" : $"{name} x{required:#,##0}({FormatPreviewAvailability(required, available)})";
+        }
+
+        private static string FormatPreviewAvailability(long required, long available)
+        {
+            return available >= required ? "足够" : $"不足 {required - available:#,##0}";
+        }
+
+        private static string FormatPreviewSuccessRate(ClientHeroGradePromotePreview preview)
+        {
+            List<string> parts = new List<string> { $"基础 {preview.BaseSuccessRate}%" };
+
+            if (preview.EventSuccessBonus > 0)
+                parts.Add($"活动 +{preview.EventSuccessBonus}%");
+
+            if (preview.FailureBonus > 0)
+                parts.Add($"失败补偿 +{preview.FailureBonus}%/{preview.FailureBonusMax}%({preview.FailureCount}次)");
+
+            return parts.Count <= 1
+                ? $"{preview.SuccessRate}%"
+                : $"{preview.SuccessRate}%({string.Join("，", parts)})";
+        }
+
+        private static string FormatHeroGradePromoteEvent(int costRate, int successBonus, DateTime eventEnd, bool compact)
+        {
+            bool active = costRate != 100 || successBonus > 0;
+            if (!active) return "无";
+
+            string text = compact ? $"{costRate}%/+{successBonus}%" : $"消耗 {costRate}%，成功 +{successBonus}%";
+
+            if (eventEnd == DateTime.MinValue)
+                return text;
+
+            TimeSpan remaining = eventEnd - CEnvir.Now;
+            if (remaining <= TimeSpan.Zero)
+                return compact ? $"{text} 已到期" : $"{text}，已到期";
+
+            return compact
+                ? $"{text} {FormatHeroGradePromoteDuration(remaining)}"
+                : $"{text}，剩余 {FormatHeroGradePromoteDuration(remaining)}";
+        }
+
+        private static string FormatHeroGradePromoteDuration(TimeSpan duration)
+        {
+            if (duration.TotalDays >= 1)
+                return $"{Math.Ceiling(duration.TotalDays)}天";
+
+            if (duration.TotalHours >= 1)
+                return $"{Math.Ceiling(duration.TotalHours)}小时";
+
+            if (duration.TotalMinutes >= 1)
+                return $"{Math.Ceiling(duration.TotalMinutes)}分钟";
+
+            return $"{Math.Ceiling(Math.Max(0, duration.TotalSeconds))}秒";
+        }
+
+        private static string FormatPreviewProtection(ClientHeroGradePromotePreview preview)
+        {
+            if (preview.ProtectionCount <= 0 || string.IsNullOrEmpty(preview.ProtectionName))
+                return "未配置";
+
+            string state;
+            if (!preview.UseProtection)
+                state = "不足，本次不启用保护";
+            else if (preview.ProtectionConsumeOnFailureOnly && preview.SuccessRate >= 100)
+                state = "成功率已满，本次不会消耗保护";
+            else if (preview.ProtectionConsumeOnFailureOnly)
+                state = "失败时才消耗并保底成功";
+            else
+                state = "确认后立即消耗并保底成功";
+
+            return $"{preview.ProtectionName} x{preview.ProtectionCount:#,##0}，可用 {preview.ProtectionAvailable:#,##0}，{state}";
+        }
+
         private static string StateName(HeroSpawnState value)
         {
             return value switch
@@ -1408,6 +1631,8 @@ namespace Client.Scenes.Views
             AutoPotLabel = null;
             HPItemLabel = null;
             MPItemLabel = null;
+            PromoteCompensationLabel = null;
+            PromoteEventLabel = null;
             WearWeightLabel = null;
             HandWeightLabel = null;
             ManageLabel = null;
@@ -1431,6 +1656,7 @@ namespace Client.Scenes.Views
             CounterButton = null;
             FollowButton = null;
             CustomButton = null;
+            PromoteButton = null;
             SetHPButton = null;
             SetMPButton = null;
             SaveAutoPotButton = null;

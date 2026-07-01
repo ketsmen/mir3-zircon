@@ -18,6 +18,13 @@ namespace Server.Envir
     public sealed class SConnection : BaseConnection
     {
         private static int SessionCount;
+        private static readonly ServerCapabilities[] HeroCapabilityAuditOrder =
+        {
+            ServerCapabilities.HeroItemSyncIndex,
+            ServerCapabilities.HeroMultiInspectCache,
+            ServerCapabilities.HeroItemRequestIndex,
+            ServerCapabilities.HeroGradePromotePreview,
+        };
 
         protected override TimeSpan TimeOutDelay => Config.TimeOut;
 
@@ -40,12 +47,24 @@ namespace Server.Envir
             return (ClientCapabilities & capability) == capability;
         }
 
+        public string GetMissingHeroCapabilitiesSummary()
+        {
+            List<string> missing = HeroCapabilityAuditOrder
+                .Where(capability => !SupportsClientCapability(capability))
+                .Select(capability => capability.ToString())
+                .ToList();
+
+            return missing.Count == 0 ? "None" : string.Join("|", missing);
+        }
+
         public string GetCapabilitiesSummary()
         {
             return $"Client={ClientCapabilities}, Server={ServerCapabilities.Current}, " +
                    $"HeroItemSyncIndex={SupportsClientCapability(ServerCapabilities.HeroItemSyncIndex)}, " +
                    $"HeroMultiInspectCache={SupportsClientCapability(ServerCapabilities.HeroMultiInspectCache)}, " +
-                   $"HeroItemRequestIndex={SupportsClientCapability(ServerCapabilities.HeroItemRequestIndex)}";
+                   $"HeroItemRequestIndex={SupportsClientCapability(ServerCapabilities.HeroItemRequestIndex)}, " +
+                   $"HeroGradePromotePreview={SupportsClientCapability(ServerCapabilities.HeroGradePromotePreview)}, " +
+                   $"MissingHeroCapabilities={GetMissingHeroCapabilitiesSummary()}";
         }
 
         public void LogCapabilityAudit(string stage)
@@ -588,6 +607,52 @@ namespace Server.Envir
 
             if (Stage == GameStage.Observer)
                 Observed.Player.ObserverChat(this, p.Text);
+        }
+
+        public void Process(C.ZZHeroGradePromoteRequest p)
+        {
+            if (Stage != GameStage.Game) return;
+            if (Player?.Connection == null) return;
+
+            if (!SupportsClientCapability(ServerCapabilities.HeroGradePromotePreview))
+            {
+                if (p.Confirm)
+                {
+                    Player.Connection.ReceiveChat("当前连接未声明结构化品质培养能力，已拒绝本次确认；请使用 @PROMOTEHEROGRADE 聊天命令确认培养。", MessageType.System);
+                    return;
+                }
+
+                Player.SendHeroGradePromotePreview(false, false);
+                Player.Connection.ReceiveChat("当前连接未声明结构化品质培养能力，已回退为聊天预览。", MessageType.System);
+                return;
+            }
+
+            HeroInfo currentHero = Player?.Character?.CurrentHero;
+            if (currentHero == null)
+            {
+                Player.Connection.ReceiveChat("当前没有可培养的英雄。", MessageType.System);
+                return;
+            }
+
+            if (p.HeroIndex <= 0)
+            {
+                Player.Connection.ReceiveChat("结构化品质培养请求缺少英雄索引，请重新打开英雄页后再尝试。", MessageType.System);
+                return;
+            }
+
+            if (currentHero.Index != p.HeroIndex)
+            {
+                Player.Connection.ReceiveChat("当前英雄已变化，请重新预览后再确认培养。", MessageType.System);
+                return;
+            }
+
+            if (p.Confirm)
+            {
+                Player.PromoteHeroGrade();
+                return;
+            }
+
+            Player.SendHeroGradePromotePreview(true, p.RequestConfirmation);
         }
 
         public void Process(C.NPCCall p)

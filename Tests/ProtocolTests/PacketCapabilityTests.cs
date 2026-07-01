@@ -361,6 +361,110 @@ namespace ProtocolTests
         }
 
         [Fact]
+        public void HeroGradePromotePreviewFieldsAreCapabilityGated()
+        {
+            DateTime eventEnd = new DateTime(2026, 7, 1, 12, 0, 0, DateTimeKind.Utc);
+            S.HeroInformation packet = new()
+            {
+                Hero = new ClientUserHero
+                {
+                    Index = 789,
+                    Name = "Hero",
+                    Class = MirClass.Warrior,
+                    Gender = MirGender.Male,
+                    Level = 12,
+                    Grade = 1,
+                    GradeStatBonusRate = 5,
+                    HeroGradePromoteFailureCount = 2,
+                    HeroGradePromoteEventCostRate = 80,
+                    HeroGradePromoteEventSuccessBonus = 10,
+                    HeroGradePromoteEventEnd = eventEnd,
+                    Experience = 123.5M,
+                    MaxExperience = 999M,
+                    CurrentHP = 77,
+                    CurrentMP = 66,
+                    Stats = new Stats(),
+                    Items = new List<ClientUserItem>(),
+                    Magics = new List<ClientUserMagic>(),
+                },
+            };
+
+            S.HeroInformation legacy = RoundTrip(packet, ServerCapabilities.None, ServerCapabilities.None);
+            Assert.NotNull(legacy.Hero);
+            Assert.Equal(1, legacy.Hero.Grade);
+            Assert.Equal(0, legacy.Hero.GradeStatBonusRate);
+            Assert.Equal(0, legacy.Hero.HeroGradePromoteFailureCount);
+            Assert.Equal(100, legacy.Hero.HeroGradePromoteEventCostRate);
+            Assert.Equal(0, legacy.Hero.HeroGradePromoteEventSuccessBonus);
+            Assert.Equal(DateTime.MinValue, legacy.Hero.HeroGradePromoteEventEnd);
+            Assert.Equal(123.5M, legacy.Hero.Experience);
+            Assert.Equal(999M, legacy.Hero.MaxExperience);
+            Assert.Equal(77, legacy.Hero.CurrentHP);
+            Assert.Equal(66, legacy.Hero.CurrentMP);
+
+            S.HeroInformation current = RoundTrip(packet, ServerCapabilities.Current, ServerCapabilities.Current);
+            Assert.NotNull(current.Hero);
+            Assert.Equal(5, current.Hero.GradeStatBonusRate);
+            Assert.Equal(2, current.Hero.HeroGradePromoteFailureCount);
+            Assert.Equal(80, current.Hero.HeroGradePromoteEventCostRate);
+            Assert.Equal(10, current.Hero.HeroGradePromoteEventSuccessBonus);
+            Assert.Equal(eventEnd, current.Hero.HeroGradePromoteEventEnd);
+            Assert.Equal(123.5M, current.Hero.Experience);
+        }
+
+        [Fact]
+        public void HeroGradePromoteRequestHeroIndexIsCapabilityGatedTailField()
+        {
+            C.ZZHeroGradePromoteRequest packet = new()
+            {
+                RequestConfirmation = true,
+                Confirm = true,
+                HeroIndex = 321,
+            };
+
+            C.ZZHeroGradePromoteRequest legacy = RoundTrip(packet, ServerCapabilities.None, ServerCapabilities.Current);
+            Assert.True(legacy.RequestConfirmation);
+            Assert.True(legacy.Confirm);
+            Assert.Equal(0, legacy.HeroIndex);
+
+            C.ZZHeroGradePromoteRequest current = RoundTrip(packet, ServerCapabilities.Current, ServerCapabilities.Current);
+            Assert.True(current.RequestConfirmation);
+            Assert.True(current.Confirm);
+            Assert.Equal(321, current.HeroIndex);
+        }
+
+        [Fact]
+        public void HeroGradePromotePreviewHeroIndexIsCapabilityGatedTailField()
+        {
+            S.ZZHeroGradePromotePreview packet = new()
+            {
+                Preview = new ClientHeroGradePromotePreview
+                {
+                    Enabled = true,
+                    CanPromote = true,
+                    HeroName = "Hero",
+                    CurrentGrade = 1,
+                    NextGrade = 2,
+                    GrowthText = "growth",
+                },
+                ConfirmRequested = true,
+                HeroIndex = 654,
+            };
+
+            S.ZZHeroGradePromotePreview legacy = RoundTrip(packet, ServerCapabilities.None, ServerCapabilities.Current);
+            Assert.NotNull(legacy.Preview);
+            Assert.Equal("Hero", legacy.Preview.HeroName);
+            Assert.True(legacy.ConfirmRequested);
+            Assert.Equal(0, legacy.HeroIndex);
+
+            S.ZZHeroGradePromotePreview current = RoundTrip(packet, ServerCapabilities.Current, ServerCapabilities.Current);
+            Assert.NotNull(current.Preview);
+            Assert.Equal("Hero", current.Preview.HeroName);
+            Assert.True(current.ConfirmRequested);
+            Assert.Equal(654, current.HeroIndex);
+        }
+
+        [Fact]
         public void ClientItemMoveAllowsLegacyServerToReadMissingHeroIndex()
         {
             C.ItemMove packet = new()

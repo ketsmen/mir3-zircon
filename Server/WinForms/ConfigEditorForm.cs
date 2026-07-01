@@ -11,6 +11,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using S = Library.Network.ServerPackets;
@@ -51,8 +52,16 @@ namespace Server.WinForms
             "HeroGradePromoteCurrencyIndex",
             "HeroGradePromoteBaseCurrencyAmount",
             "HeroGradePromoteSuccessRate",
+            "HeroGradePromoteEventCostRate",
+            "HeroGradePromoteEventSuccessBonus",
+            "HeroGradePromoteEventEnd",
+            "HeroGradePromoteEventSaveOnExpire",
+            "HeroGradePromoteEventPresets",
+            "HeroGradePromoteFailureBonusRate",
+            "HeroGradePromoteFailureBonusMax",
             "HeroGradePromoteProtectionItemIndex",
             "HeroGradePromoteProtectionItemCount",
+            "HeroGradePromoteProtectionConsumeOnFailureOnly",
             "HeroExperienceRate"
         };
 
@@ -158,6 +167,7 @@ namespace Server.WinForms
             AddButton(toolStrip, "还原全部修改", (_, _) => ResetAllModifiedSettings());
             AddButton(toolStrip, "复制当前项", (_, _) => CopyCurrentSetting());
             AddButton(toolStrip, "英雄配置", (_, _) => FocusHeroSettings());
+            AddButton(toolStrip, "品质试算", (_, _) => ShowHeroGradePromoteCostPreview());
             toolStrip.Items.Add(new ToolStripSeparator());
             AddButton(toolStrip, "选择版本文件", (_, _) => SelectFileProperty("VersionPath", "选择客户端版本文件"));
             AddButton(toolStrip, "选择地图目录", (_, _) => SelectFolderProperty("MapPath", "选择地图目录"));
@@ -586,6 +596,26 @@ namespace Server.WinForms
                 (heroGradePromoteSuccessRate < 0 || heroGradePromoteSuccessRate > 100))
                 errors.Add("HeroGradePromoteSuccessRate: 英雄品质培养成功率必须在 0 到 100 之间。");
 
+            if (TryGetConfigValue(values, "HeroGradePromoteEventCostRate", out int heroGradePromoteEventCostRate) &&
+                (heroGradePromoteEventCostRate < 0 || heroGradePromoteEventCostRate > 1000))
+                errors.Add("HeroGradePromoteEventCostRate: 英雄品质培养活动消耗倍率建议在 0 到 1000 之间。");
+
+            if (TryGetConfigValue(values, "HeroGradePromoteEventSuccessBonus", out int heroGradePromoteEventSuccessBonus) &&
+                (heroGradePromoteEventSuccessBonus < 0 || heroGradePromoteEventSuccessBonus > 100))
+                errors.Add("HeroGradePromoteEventSuccessBonus: 英雄品质培养活动成功率加成必须在 0 到 100 之间。");
+
+            if (TryGetConfigValue(values, "HeroGradePromoteEventPresets", out string heroGradePromoteEventPresets) &&
+                !HeroGradePromoteEventPresetParser.TryParse(heroGradePromoteEventPresets, out _, out List<string> presetErrors))
+                errors.AddRange(presetErrors.Select(x => $"HeroGradePromoteEventPresets: {x}"));
+
+            if (TryGetConfigValue(values, "HeroGradePromoteFailureBonusRate", out int heroGradePromoteFailureBonusRate) &&
+                (heroGradePromoteFailureBonusRate < 0 || heroGradePromoteFailureBonusRate > 100))
+                errors.Add("HeroGradePromoteFailureBonusRate: 英雄品质培养每次失败补偿成功率必须在 0 到 100 之间。");
+
+            if (TryGetConfigValue(values, "HeroGradePromoteFailureBonusMax", out int heroGradePromoteFailureBonusMax) &&
+                (heroGradePromoteFailureBonusMax < 0 || heroGradePromoteFailureBonusMax > 100))
+                errors.Add("HeroGradePromoteFailureBonusMax: 英雄品质培养失败补偿总上限必须在 0 到 100 之间。");
+
             if (TryGetConfigValue(values, "HeroGradePromoteProtectionItemIndex", out int heroGradePromoteProtectionItemIndex) &&
                 heroGradePromoteProtectionItemIndex < 0)
                 errors.Add("HeroGradePromoteProtectionItemIndex: 英雄品质保护材料物品索引不能小于 0。");
@@ -657,6 +687,279 @@ namespace Server.WinForms
             {
                 MessageBox.Show(this, "客户端版本哈希没有变化。", "检查版本", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
+        }
+
+        private void ShowHeroGradePromoteCostPreview()
+        {
+            HeroGradePromoteCostPreviewForm form = new HeroGradePromoteCostPreviewForm(BuildHeroGradePromoteCostPreviewData);
+            form.Show(this);
+        }
+
+        private HeroGradePromoteCostPreviewData BuildHeroGradePromoteCostPreviewData()
+        {
+            HeroGradePromoteCostPreviewData data = new HeroGradePromoteCostPreviewData();
+
+            if (!EndGridEdits())
+            {
+                data.Errors.Add("当前表格编辑尚未提交，请先结束编辑后重试。");
+                return data;
+            }
+
+            TryReadSettingValue("HeroGradePromoteEnabled", data.Errors, out bool enabled);
+            TryReadSettingValue("HeroMaxGrade", data.Errors, out int heroMaxGrade);
+            TryReadSettingValue("HeroGradePromoteBaseGoldCost", data.Errors, out long baseGoldCost);
+            TryReadSettingValue("HeroGradePromoteGoldCostMultiplier", data.Errors, out int goldCostMultiplier);
+            TryReadSettingValue("HeroGradePromoteCostGrowthRate", data.Errors, out int costGrowthRate);
+            TryReadSettingValue("HeroGradePromoteItemIndex", data.Errors, out int itemIndex);
+            TryReadSettingValue("HeroGradePromoteBaseItemCount", data.Errors, out long baseItemCount);
+            TryReadSettingValue("HeroGradePromoteCurrencyIndex", data.Errors, out int currencyIndex);
+            TryReadSettingValue("HeroGradePromoteBaseCurrencyAmount", data.Errors, out long baseCurrencyAmount);
+            TryReadSettingValue("HeroGradePromoteEventCostRate", data.Errors, out int eventCostRate);
+            TryReadSettingValue("HeroGradePromoteEventSuccessBonus", data.Errors, out int eventSuccessBonus);
+            TryReadSettingValue("HeroGradePromoteEventEnd", data.Errors, out DateTime eventEnd);
+            TryReadSettingValue("HeroGradePromoteEventSaveOnExpire", data.Errors, out bool eventSaveOnExpire);
+            TryReadSettingValue("HeroGradePromoteEventPresets", data.Errors, out string eventPresets);
+            TryReadSettingValue("HeroGradePromoteFailureBonusRate", data.Errors, out int failureBonusRate);
+            TryReadSettingValue("HeroGradePromoteFailureBonusMax", data.Errors, out int failureBonusMax);
+            TryReadSettingValue("HeroGradePromoteProtectionItemIndex", data.Errors, out int protectionItemIndex);
+            TryReadSettingValue("HeroGradePromoteProtectionItemCount", data.Errors, out long protectionItemCount);
+            TryReadSettingValue("HeroGradePromoteProtectionConsumeOnFailureOnly", data.Errors, out bool protectionConsumeOnFailureOnly);
+
+            ValidateHeroGradePromotePreviewInputs(
+                heroMaxGrade,
+                baseGoldCost,
+                goldCostMultiplier,
+                costGrowthRate,
+                itemIndex,
+                baseItemCount,
+                currencyIndex,
+                baseCurrencyAmount,
+                eventCostRate,
+                eventSuccessBonus,
+                failureBonusRate,
+                failureBonusMax,
+                protectionItemIndex,
+                protectionItemCount,
+                data.Errors);
+
+            if (!HeroGradePromoteEventPresetParser.TryParse(eventPresets, out List<HeroGradePromoteEventPreset> parsedPresets, out List<string> presetErrors))
+                data.Errors.AddRange(presetErrors.Select(x => $"HeroGradePromoteEventPresets: {x}"));
+
+            if (data.Errors.Count > 0)
+                return data;
+
+            int maxGrade = Math.Max(0, Math.Min(4, heroMaxGrade));
+            int growthRate = HeroGradePromoteCostCalculator.ClampCostGrowthRate(costGrowthRate);
+            int costRate = HeroGradePromoteCostCalculator.ClampCostRate(eventCostRate);
+            int successBonus = HeroGradePromoteCostCalculator.ClampSuccessBonus(eventSuccessBonus);
+            int failureBonus = HeroGradePromoteCostCalculator.ClampSuccessBonus(failureBonusRate);
+            int failureBonusLimit = HeroGradePromoteCostCalculator.ClampSuccessBonus(failureBonusMax);
+            string eventEndText = FormatHeroGradePromoteEventEnd(eventEnd, eventSaveOnExpire);
+            string materialName = GetHeroPromoteItemText(itemIndex);
+            string currencyName = GetHeroPromoteCurrencyText(currencyIndex);
+            string protectionName = GetHeroPromoteItemText(protectionItemIndex);
+            string protectionMode = protectionConsumeOnFailureOnly ? "失败时才消耗" : "启用保护即消耗";
+
+            data.MaxGrade = maxGrade;
+            data.MaterialName = materialName;
+            data.CurrencyName = currencyName;
+            data.Summary = $"{(enabled ? "开启" : "关闭，仅试算")}；最高品质 {HeroGradeName((byte)maxGrade)}；金币倍率 {goldCostMultiplier}%；消耗成长率 {growthRate}%；活动消耗倍率 {costRate}%；活动成功 +{successBonus}%；活动结束 {eventEndText}；活动模板 {parsedPresets.Count}个；失败补偿每次 +{failureBonus}%(上限 +{failureBonusLimit}%)";
+            data.MaterialSummary = itemIndex <= 0 || baseItemCount <= 0 ? "材料: 无" : $"材料: {materialName}，基础数量 {baseItemCount:#,##0}";
+            data.CurrencySummary = currencyIndex <= 0 || baseCurrencyAmount <= 0 ? "货币: 无" : $"货币: {currencyName}，基础金额 {baseCurrencyAmount:#,##0}";
+            data.ProtectionSummary = protectionItemIndex <= 0 || protectionItemCount <= 0 ? "保护: 未配置" : $"保护: {protectionName} x{protectionItemCount:#,##0}，{protectionMode}";
+
+            long totalGoldCost = 0;
+            long totalMaterialCount = 0;
+            long totalCurrencyAmount = 0;
+
+            for (int current = 0; current < maxGrade; current++)
+            {
+                byte currentGrade = (byte)current;
+                byte nextGrade = (byte)(current + 1);
+                decimal growthMultiplier = HeroGradePromoteCostCalculator.GetCostGrowthMultiplier(currentGrade, growthRate);
+                long goldCost = HeroGradePromoteCostCalculator.GetGoldCost(currentGrade, baseGoldCost, goldCostMultiplier, growthRate, costRate);
+                long materialCount = itemIndex <= 0 ? 0 : HeroGradePromoteCostCalculator.GetScaledCost(currentGrade, baseItemCount, growthRate, costRate);
+                long currencyAmount = currencyIndex <= 0 ? 0 : HeroGradePromoteCostCalculator.GetScaledCost(currentGrade, baseCurrencyAmount, growthRate, costRate);
+                totalGoldCost = AddCapped(totalGoldCost, goldCost);
+                totalMaterialCount = AddCapped(totalMaterialCount, materialCount);
+                totalCurrencyAmount = AddCapped(totalCurrencyAmount, currencyAmount);
+
+                data.Rows.Add(new HeroGradePromoteCostPreviewRow
+                {
+                    Grade = $"{HeroGradeName(currentGrade)} -> {HeroGradeName(nextGrade)}",
+                    GrowthMultiplier = $"x{growthMultiplier:0.##}",
+                    Gold = FormatCost(goldCost),
+                    TotalGold = FormatCost(totalGoldCost),
+                    GoldCost = goldCost,
+                    Material = FormatNamedCost(materialName, materialCount),
+                    TotalMaterial = FormatNamedCost(materialName, totalMaterialCount),
+                    MaterialCount = materialCount,
+                    Currency = FormatNamedCost(currencyName, currencyAmount),
+                    TotalCurrency = FormatNamedCost(currencyName, totalCurrencyAmount),
+                    CurrencyAmount = currencyAmount,
+                    CurrentGrade = currentGrade,
+                    NextGrade = nextGrade,
+                    Protection = protectionItemIndex <= 0 || protectionItemCount <= 0 ? "未配置" : $"{protectionName} x{protectionItemCount:#,##0} ({protectionMode})"
+                });
+            }
+
+            if (maxGrade <= 0)
+            {
+                data.Rows.Add(new HeroGradePromoteCostPreviewRow
+                {
+                    Grade = "无可培养档位",
+                    GrowthMultiplier = "x1",
+                    Gold = "无",
+                    TotalGold = "无",
+                    Material = "无",
+                    TotalMaterial = "无",
+                    Currency = "无",
+                    TotalCurrency = "无",
+                    CurrentGrade = 0,
+                    NextGrade = 0,
+                    Protection = data.ProtectionSummary.Replace("保护: ", string.Empty)
+                });
+            }
+
+            return data;
+        }
+
+        private static void ValidateHeroGradePromotePreviewInputs(
+            int heroMaxGrade,
+            long baseGoldCost,
+            int goldCostMultiplier,
+            int costGrowthRate,
+            int itemIndex,
+            long baseItemCount,
+            int currencyIndex,
+            long baseCurrencyAmount,
+            int eventCostRate,
+            int eventSuccessBonus,
+            int failureBonusRate,
+            int failureBonusMax,
+            int protectionItemIndex,
+            long protectionItemCount,
+            List<string> errors)
+        {
+            if (heroMaxGrade < 0 || heroMaxGrade > 4)
+                errors.Add("HeroMaxGrade: 英雄最高品质必须在 0 到 4 之间。");
+            if (baseGoldCost < 0)
+                errors.Add("HeroGradePromoteBaseGoldCost: 英雄品质提升基础金币消耗不能小于 0。");
+            if (goldCostMultiplier < 0 || goldCostMultiplier > 1000)
+                errors.Add("HeroGradePromoteGoldCostMultiplier: 英雄品质提升金币倍率建议在 0 到 1000 之间。");
+            if (costGrowthRate < 0 || costGrowthRate > 1000)
+                errors.Add("HeroGradePromoteCostGrowthRate: 英雄品质提升消耗成长率建议在 0 到 1000 之间。");
+            if (itemIndex < 0)
+                errors.Add("HeroGradePromoteItemIndex: 英雄品质提升材料物品索引不能小于 0。");
+            if (baseItemCount < 0)
+                errors.Add("HeroGradePromoteBaseItemCount: 英雄品质提升基础材料数量不能小于 0。");
+            if (currencyIndex < 0)
+                errors.Add("HeroGradePromoteCurrencyIndex: 英雄品质提升货币索引不能小于 0。");
+            if (baseCurrencyAmount < 0)
+                errors.Add("HeroGradePromoteBaseCurrencyAmount: 英雄品质提升基础货币数量不能小于 0。");
+            if (eventCostRate < 0 || eventCostRate > 1000)
+                errors.Add("HeroGradePromoteEventCostRate: 英雄品质培养活动消耗倍率建议在 0 到 1000 之间。");
+            if (eventSuccessBonus < 0 || eventSuccessBonus > 100)
+                errors.Add("HeroGradePromoteEventSuccessBonus: 英雄品质培养活动成功率加成必须在 0 到 100 之间。");
+            if (failureBonusRate < 0 || failureBonusRate > 100)
+                errors.Add("HeroGradePromoteFailureBonusRate: 英雄品质培养每次失败补偿成功率必须在 0 到 100 之间。");
+            if (failureBonusMax < 0 || failureBonusMax > 100)
+                errors.Add("HeroGradePromoteFailureBonusMax: 英雄品质培养失败补偿总上限必须在 0 到 100 之间。");
+            if (protectionItemIndex < 0)
+                errors.Add("HeroGradePromoteProtectionItemIndex: 英雄品质保护材料物品索引不能小于 0。");
+            if (protectionItemCount < 0)
+                errors.Add("HeroGradePromoteProtectionItemCount: 英雄品质保护材料数量不能小于 0。");
+        }
+
+        private static string FormatCost(long amount)
+        {
+            return amount <= 0 ? "无" : amount.ToString("#,##0", CultureInfo.InvariantCulture);
+        }
+
+        private static long AddCapped(long current, long amount)
+        {
+            if (amount <= 0) return current;
+            if (current >= long.MaxValue - amount) return long.MaxValue;
+
+            return current + amount;
+        }
+
+        private static string FormatNamedCost(string name, long amount)
+        {
+            return amount <= 0 ? "无" : $"{name} x{amount:#,##0}";
+        }
+
+        private static string FormatHeroGradePromoteEventEnd(DateTime eventEnd, bool saveOnExpire)
+        {
+            if (eventEnd == DateTime.MinValue)
+                return "不自动到期";
+
+            TimeSpan remaining = eventEnd - DateTime.UtcNow;
+            string state = remaining <= TimeSpan.Zero ? "已过期，服务端会自动恢复" : $"剩余 {FormatDuration(remaining)}";
+            string saveText = saveOnExpire ? "，到期写回配置" : "，到期只恢复内存";
+
+            return $"{eventEnd:yyyy-MM-dd HH:mm:ss} UTC({state}{saveText})";
+        }
+
+        private static string FormatDuration(TimeSpan duration)
+        {
+            if (duration.TotalDays >= 1)
+                return $"{Math.Ceiling(duration.TotalDays)}天";
+
+            if (duration.TotalHours >= 1)
+                return $"{Math.Ceiling(duration.TotalHours)}小时";
+
+            if (duration.TotalMinutes >= 1)
+                return $"{Math.Ceiling(duration.TotalMinutes)}分钟";
+
+            return $"{Math.Ceiling(Math.Max(0, duration.TotalSeconds))}秒";
+        }
+
+        private static string GetHeroPromoteItemText(int itemIndex)
+        {
+            if (itemIndex <= 0) return "未配置";
+
+            try
+            {
+                var item = SEnvir.ItemInfoList?.Binding?.FirstOrDefault(x => x.Index == itemIndex);
+                if (item != null)
+                    return $"{item.ItemName}(#{itemIndex})";
+            }
+            catch
+            {
+            }
+
+            return $"物品索引 {itemIndex}";
+        }
+
+        private static string GetHeroPromoteCurrencyText(int currencyIndex)
+        {
+            if (currencyIndex <= 0) return "未配置";
+
+            try
+            {
+                var currency = SEnvir.CurrencyInfoList?.Binding?.FirstOrDefault(x => x.Index == currencyIndex);
+                if (currency != null)
+                    return $"{currency.Name}(#{currencyIndex})";
+            }
+            catch
+            {
+            }
+
+            return $"货币索引 {currencyIndex}";
+        }
+
+        private static string HeroGradeName(byte value)
+        {
+            return value switch
+            {
+                0 => "普通",
+                1 => "优秀",
+                2 => "精良",
+                3 => "卓越",
+                4 => "传说",
+                _ => $"品质{value}"
+            };
         }
 
         private void SelectFileProperty(string propertyName, string title)
@@ -1190,6 +1493,23 @@ namespace Server.WinForms
             return false;
         }
 
+        private bool TryReadSettingValue<T>(string propertyName, List<string> errors, out T value)
+        {
+            value = default;
+
+            if (!TryReadSettingValue(propertyName, errors, out object rawValue))
+                return false;
+
+            if (rawValue is T typedValue)
+            {
+                value = typedValue;
+                return true;
+            }
+
+            errors.Add($"{propertyName}: 配置类型不是 {typeof(T).Name}。");
+            return false;
+        }
+
         private bool TryReadSettingValue(string propertyName, List<string> errors, out object value)
         {
             value = null;
@@ -1573,6 +1893,321 @@ namespace Server.WinForms
                     return false;
 
             return true;
+        }
+
+        private sealed class HeroGradePromoteCostPreviewForm : Form
+        {
+            private readonly Func<HeroGradePromoteCostPreviewData> _loadData;
+            private readonly DataGridView _grid = new DataGridView();
+            private readonly Label _summaryLabel = new Label();
+            private readonly ToolStripComboBox _startGradeBox = new ToolStripComboBox();
+            private readonly ToolStripComboBox _targetGradeBox = new ToolStripComboBox();
+            private bool _updatingGradeBoxes;
+            private HeroGradePromoteCostPreviewData _data;
+
+            public HeroGradePromoteCostPreviewForm(Func<HeroGradePromoteCostPreviewData> loadData)
+            {
+                _loadData = loadData;
+
+                Text = "品质培养试算";
+                Width = 1120;
+                Height = 460;
+                StartPosition = FormStartPosition.CenterParent;
+
+                ToolStrip toolStrip = new ToolStrip();
+                ToolStripButton refreshButton = new ToolStripButton("刷新");
+                refreshButton.Click += (_, _) => RefreshData();
+                toolStrip.Items.Add(refreshButton);
+
+                ToolStripButton copyButton = new ToolStripButton("复制");
+                copyButton.Click += (_, _) => CopyData();
+                toolStrip.Items.Add(copyButton);
+
+                toolStrip.Items.Add(new ToolStripSeparator());
+                toolStrip.Items.Add(new ToolStripLabel("起始"));
+                _startGradeBox.DropDownStyle = ComboBoxStyle.DropDownList;
+                _startGradeBox.Width = 90;
+                _startGradeBox.SelectedIndexChanged += (_, _) => ApplyData();
+                toolStrip.Items.Add(_startGradeBox);
+
+                toolStrip.Items.Add(new ToolStripLabel("目标"));
+                _targetGradeBox.DropDownStyle = ComboBoxStyle.DropDownList;
+                _targetGradeBox.Width = 90;
+                _targetGradeBox.SelectedIndexChanged += (_, _) => ApplyData();
+                toolStrip.Items.Add(_targetGradeBox);
+
+                _summaryLabel.Dock = DockStyle.Top;
+                _summaryLabel.AutoSize = false;
+                _summaryLabel.Height = 88;
+                _summaryLabel.Padding = new Padding(8);
+
+                _grid.Dock = DockStyle.Fill;
+                _grid.AllowUserToAddRows = false;
+                _grid.AllowUserToDeleteRows = false;
+                _grid.AutoGenerateColumns = false;
+                _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+                _grid.BackgroundColor = SystemColors.Window;
+                _grid.BorderStyle = BorderStyle.None;
+                _grid.ReadOnly = true;
+                _grid.RowHeadersVisible = false;
+                _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+
+                AddPreviewColumn("档位", nameof(HeroGradePromoteCostPreviewRow.Grade), 130);
+                AddPreviewColumn("成长倍率", nameof(HeroGradePromoteCostPreviewRow.GrowthMultiplier), 90);
+                AddPreviewColumn("金币", nameof(HeroGradePromoteCostPreviewRow.Gold), 120);
+                AddPreviewColumn("累计金币", nameof(HeroGradePromoteCostPreviewRow.TotalGold), 120);
+                AddPreviewColumn("材料", nameof(HeroGradePromoteCostPreviewRow.Material), 160);
+                AddPreviewColumn("累计材料", nameof(HeroGradePromoteCostPreviewRow.TotalMaterial), 160);
+                AddPreviewColumn("货币", nameof(HeroGradePromoteCostPreviewRow.Currency), 160);
+                AddPreviewColumn("累计货币", nameof(HeroGradePromoteCostPreviewRow.TotalCurrency), 160);
+                AddPreviewColumn("保护", nameof(HeroGradePromoteCostPreviewRow.Protection), 200);
+
+                Controls.Add(_grid);
+                Controls.Add(_summaryLabel);
+                Controls.Add(toolStrip);
+                toolStrip.Dock = DockStyle.Top;
+
+                RefreshData();
+            }
+
+            private void AddPreviewColumn(string header, string propertyName, int width)
+            {
+                _grid.Columns.Add(new DataGridViewTextBoxColumn
+                {
+                    HeaderText = header,
+                    DataPropertyName = propertyName,
+                    SortMode = DataGridViewColumnSortMode.NotSortable,
+                    Width = width
+                });
+            }
+
+            private void RefreshData()
+            {
+                _data = _loadData();
+
+                if (_data.Errors.Count > 0)
+                {
+                    _summaryLabel.Text = "配置存在错误，无法试算。";
+                    _grid.DataSource = Array.Empty<HeroGradePromoteCostPreviewRow>();
+                    SetGradeBoxesEnabled(false);
+                    MessageBox.Show(this, string.Join("\r\n", _data.Errors.Take(20)), "品质培养试算", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                PopulateGradeBoxes();
+                ApplyData();
+            }
+
+            private void PopulateGradeBoxes()
+            {
+                int previousStart = GetSelectedGrade(_startGradeBox, 0);
+                int previousTarget = GetSelectedGrade(_targetGradeBox, _data.MaxGrade);
+
+                _updatingGradeBoxes = true;
+                try
+                {
+                    _startGradeBox.Items.Clear();
+                    _targetGradeBox.Items.Clear();
+
+                    if (_data.MaxGrade <= 0)
+                    {
+                        SetGradeBoxesEnabled(false);
+                        return;
+                    }
+
+                    for (int i = 0; i < _data.MaxGrade; i++)
+                        _startGradeBox.Items.Add(new GradeOption(i));
+
+                    for (int i = 1; i <= _data.MaxGrade; i++)
+                        _targetGradeBox.Items.Add(new GradeOption(i));
+
+                    int start = Math.Max(0, Math.Min(_data.MaxGrade - 1, previousStart));
+                    int target = previousTarget <= 0 ? _data.MaxGrade : Math.Max(start + 1, Math.Min(_data.MaxGrade, previousTarget));
+
+                    SelectGrade(_startGradeBox, start);
+                    SelectGrade(_targetGradeBox, target);
+                    SetGradeBoxesEnabled(true);
+                }
+                finally
+                {
+                    _updatingGradeBoxes = false;
+                }
+            }
+
+            private void ApplyData()
+            {
+                if (_updatingGradeBoxes || _data == null || _data.Errors.Count > 0) return;
+
+                if (_data.MaxGrade <= 0)
+                {
+                    _summaryLabel.Text = $"{_data.Summary}\r\n{_data.MaterialSummary}\r\n{_data.CurrencySummary}；{_data.ProtectionSummary}";
+                    _grid.DataSource = _data.Rows.ToList();
+                    return;
+                }
+
+                int start = GetSelectedGrade(_startGradeBox, 0);
+                int target = GetSelectedGrade(_targetGradeBox, _data.MaxGrade);
+                if (target <= start)
+                {
+                    target = Math.Min(_data.MaxGrade, start + 1);
+                    _updatingGradeBoxes = true;
+                    try
+                    {
+                        SelectGrade(_targetGradeBox, target);
+                    }
+                    finally
+                    {
+                        _updatingGradeBoxes = false;
+                    }
+                }
+
+                long totalGoldCost = 0;
+                long totalMaterialCount = 0;
+                long totalCurrencyAmount = 0;
+                List<HeroGradePromoteCostPreviewRow> rows = new List<HeroGradePromoteCostPreviewRow>();
+
+                foreach (HeroGradePromoteCostPreviewRow source in _data.Rows.Where(x => x.CurrentGrade >= start && x.NextGrade <= target))
+                {
+                    totalGoldCost = AddCapped(totalGoldCost, source.GoldCost);
+                    totalMaterialCount = AddCapped(totalMaterialCount, source.MaterialCount);
+                    totalCurrencyAmount = AddCapped(totalCurrencyAmount, source.CurrencyAmount);
+
+                    rows.Add(new HeroGradePromoteCostPreviewRow
+                    {
+                        Grade = source.Grade,
+                        GrowthMultiplier = source.GrowthMultiplier,
+                        Gold = source.Gold,
+                        TotalGold = FormatCost(totalGoldCost),
+                        GoldCost = source.GoldCost,
+                        Material = source.Material,
+                        TotalMaterial = FormatNamedCost(_data.MaterialName, totalMaterialCount),
+                        MaterialCount = source.MaterialCount,
+                        Currency = source.Currency,
+                        TotalCurrency = FormatNamedCost(_data.CurrencyName, totalCurrencyAmount),
+                        CurrencyAmount = source.CurrencyAmount,
+                        CurrentGrade = source.CurrentGrade,
+                        NextGrade = source.NextGrade,
+                        Protection = source.Protection
+                    });
+                }
+
+                if (rows.Count == 0)
+                {
+                    rows.Add(new HeroGradePromoteCostPreviewRow
+                    {
+                        Grade = "无可培养区间",
+                        GrowthMultiplier = "x1",
+                        Gold = "无",
+                        TotalGold = "无",
+                        Material = "无",
+                        TotalMaterial = "无",
+                        Currency = "无",
+                        TotalCurrency = "无",
+                        Protection = _data.ProtectionSummary.Replace("保护: ", string.Empty)
+                    });
+                }
+
+                _summaryLabel.Text = $"{_data.Summary}\r\n试算区间 {HeroGradeName((byte)start)} -> {HeroGradeName((byte)target)}\r\n{_data.MaterialSummary}\r\n{_data.CurrencySummary}；{_data.ProtectionSummary}";
+                _grid.DataSource = rows;
+            }
+
+            private void SetGradeBoxesEnabled(bool enabled)
+            {
+                _startGradeBox.Enabled = enabled;
+                _targetGradeBox.Enabled = enabled;
+            }
+
+            private static int GetSelectedGrade(ToolStripComboBox box, int fallback)
+            {
+                return box.SelectedItem is GradeOption option ? option.Grade : fallback;
+            }
+
+            private static void SelectGrade(ToolStripComboBox box, int grade)
+            {
+                for (int i = 0; i < box.Items.Count; i++)
+                {
+                    if (box.Items[i] is GradeOption option && option.Grade == grade)
+                    {
+                        box.SelectedIndex = i;
+                        return;
+                    }
+                }
+            }
+
+            private void CopyData()
+            {
+                if (_data == null || _data.Errors.Count > 0) return;
+
+                StringBuilder builder = new StringBuilder();
+                builder.AppendLine(_summaryLabel.Text.Replace("\r\n", " / ").Replace("\n", " / "));
+                builder.AppendLine("档位\t成长倍率\t金币\t累计金币\t材料\t累计材料\t货币\t累计货币\t保护");
+
+                foreach (HeroGradePromoteCostPreviewRow row in (_grid.DataSource as IEnumerable<HeroGradePromoteCostPreviewRow>) ?? Enumerable.Empty<HeroGradePromoteCostPreviewRow>())
+                    builder.AppendLine($"{row.Grade}\t{row.GrowthMultiplier}\t{row.Gold}\t{row.TotalGold}\t{row.Material}\t{row.TotalMaterial}\t{row.Currency}\t{row.TotalCurrency}\t{row.Protection}");
+
+                Clipboard.SetText(builder.ToString());
+            }
+
+            private sealed class GradeOption
+            {
+                public GradeOption(int grade)
+                {
+                    Grade = grade;
+                }
+
+                public int Grade { get; }
+
+                public override string ToString()
+                {
+                    return HeroGradeName((byte)Grade);
+                }
+            }
+        }
+
+        private sealed class HeroGradePromoteCostPreviewData
+        {
+            public readonly List<string> Errors = new List<string>();
+            public readonly List<HeroGradePromoteCostPreviewRow> Rows = new List<HeroGradePromoteCostPreviewRow>();
+            public int MaxGrade { get; set; }
+            public string MaterialName { get; set; } = string.Empty;
+            public string CurrencyName { get; set; } = string.Empty;
+            public string Summary { get; set; } = string.Empty;
+            public string MaterialSummary { get; set; } = string.Empty;
+            public string CurrencySummary { get; set; } = string.Empty;
+            public string ProtectionSummary { get; set; } = string.Empty;
+
+            public string ToClipboardText()
+            {
+                StringBuilder builder = new StringBuilder();
+                builder.AppendLine(Summary);
+                builder.AppendLine(MaterialSummary);
+                builder.AppendLine(CurrencySummary);
+                builder.AppendLine(ProtectionSummary);
+                builder.AppendLine("档位\t成长倍率\t金币\t累计金币\t材料\t累计材料\t货币\t累计货币\t保护");
+
+                foreach (HeroGradePromoteCostPreviewRow row in Rows)
+                    builder.AppendLine($"{row.Grade}\t{row.GrowthMultiplier}\t{row.Gold}\t{row.TotalGold}\t{row.Material}\t{row.TotalMaterial}\t{row.Currency}\t{row.TotalCurrency}\t{row.Protection}");
+
+                return builder.ToString();
+            }
+        }
+
+        private sealed class HeroGradePromoteCostPreviewRow
+        {
+            public string Grade { get; set; }
+            public string GrowthMultiplier { get; set; }
+            public string Gold { get; set; }
+            public string TotalGold { get; set; }
+            public long GoldCost { get; set; }
+            public string Material { get; set; }
+            public string TotalMaterial { get; set; }
+            public long MaterialCount { get; set; }
+            public string Currency { get; set; }
+            public string TotalCurrency { get; set; }
+            public long CurrencyAmount { get; set; }
+            public int CurrentGrade { get; set; }
+            public int NextGrade { get; set; }
+            public string Protection { get; set; }
         }
 
         private sealed class ConfigSetting

@@ -700,6 +700,8 @@ namespace Server.WinForms
             _connectionsGrid.Columns.Add(CreateCheckColumn(nameof(ConnectionCapabilityRow.HeroItemSyncIndex), "英雄同步索引"));
             _connectionsGrid.Columns.Add(CreateCheckColumn(nameof(ConnectionCapabilityRow.HeroMultiInspectCache), "多查看缓存"));
             _connectionsGrid.Columns.Add(CreateCheckColumn(nameof(ConnectionCapabilityRow.HeroItemRequestIndex), "请求目标索引"));
+            _connectionsGrid.Columns.Add(CreateCheckColumn(nameof(ConnectionCapabilityRow.HeroGradePromotePreview), "品质培养预览"));
+            _connectionsGrid.Columns.Add(CreateTextColumn(nameof(ConnectionCapabilityRow.MissingHeroCapabilityNames), "缺失能力", DataGridViewAutoSizeColumnMode.DisplayedCells));
             _connectionsGrid.Columns.Add(CreateTextColumn(nameof(ConnectionCapabilityRow.Summary), "摘要", DataGridViewAutoSizeColumnMode.Fill));
         }
 
@@ -732,7 +734,8 @@ namespace Server.WinForms
             private const ServerCapabilities HeroCapabilities =
                 ServerCapabilities.HeroItemSyncIndex |
                 ServerCapabilities.HeroMultiInspectCache |
-                ServerCapabilities.HeroItemRequestIndex;
+                ServerCapabilities.HeroItemRequestIndex |
+                ServerCapabilities.HeroGradePromotePreview;
 
             public int SessionID { get; }
             public string IPAddress { get; }
@@ -745,6 +748,8 @@ namespace Server.WinForms
             public bool HeroItemSyncIndex { get; }
             public bool HeroMultiInspectCache { get; }
             public bool HeroItemRequestIndex { get; }
+            public bool HeroGradePromotePreview { get; }
+            public string MissingHeroCapabilityNames { get; }
             public string Summary { get; }
 
             public ConnectionCapabilityRow(SConnection connection)
@@ -760,6 +765,8 @@ namespace Server.WinForms
                 HeroItemSyncIndex = connection.SupportsClientCapability(ServerCapabilities.HeroItemSyncIndex);
                 HeroMultiInspectCache = connection.SupportsClientCapability(ServerCapabilities.HeroMultiInspectCache);
                 HeroItemRequestIndex = connection.SupportsClientCapability(ServerCapabilities.HeroItemRequestIndex);
+                HeroGradePromotePreview = connection.SupportsClientCapability(ServerCapabilities.HeroGradePromotePreview);
+                MissingHeroCapabilityNames = connection.GetMissingHeroCapabilitiesSummary();
                 Summary = connection.GetCapabilitiesSummary();
             }
         }

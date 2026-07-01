@@ -1727,6 +1727,7 @@ namespace Server.Envir
             DateTime DBTime = Now + Config.DBSaveDelay;
 
             StartEnvir();
+            ProcessHeroGradePromoteEventExpiry();
             StartNetwork();
 
             WebServer.StartWebServer();
@@ -1933,6 +1934,8 @@ namespace Server.Envir
 
                         if (Config.ProcessGameGold)
                             ProcessGameGold();
+
+                        ProcessHeroGradePromoteEventExpiry();
 
                         nextCount = Now.AddSeconds(1);
 
@@ -2151,6 +2154,43 @@ namespace Server.Envir
 
                 SEnvir.Log($"[Game Gold Purchase] Character: {character.CharacterName}, Amount: {payment.GameGoldAmount}.");
                 WebServer.AddPaymentMessage(message);
+            }
+        }
+
+        private static void ProcessHeroGradePromoteEventExpiry()
+        {
+            if (Config.HeroGradePromoteEventEnd == DateTime.MinValue) return;
+            if (Config.HeroGradePromoteEventEnd > Now) return;
+
+            int previousCostRate = Config.HeroGradePromoteEventCostRate;
+            int previousSuccessBonus = Config.HeroGradePromoteEventSuccessBonus;
+            bool saveOnExpire = Config.HeroGradePromoteEventSaveOnExpire;
+
+            Config.HeroGradePromoteEventCostRate = 100;
+            Config.HeroGradePromoteEventSuccessBonus = 0;
+            Config.HeroGradePromoteEventEnd = DateTime.MinValue;
+            Config.HeroGradePromoteEventSaveOnExpire = false;
+
+            string message = $"英雄品质培养活动已到期，消耗倍率恢复 100%，成功率加成恢复 +0%。";
+
+            if (Started)
+            {
+                Broadcast(new S.Chat { Text = message, Type = MessageType.Announcement });
+                BroadcastHeroGradePromoteEventState();
+            }
+
+            Log($"[HeroGradeEvent] expired, previous costRate:{previousCostRate}, successBonus:{previousSuccessBonus}, saveOnExpire:{saveOnExpire}.", true);
+
+            if (!saveOnExpire) return;
+
+            try
+            {
+                ConfigReader.Save(typeof(Config).Assembly);
+                Log("[HeroGradeEvent] expired event reset saved to Server.ini.", true);
+            }
+            catch (Exception ex)
+            {
+                Log("[HeroGradeEvent] failed to save expired event reset: " + ex, true);
             }
         }
 
@@ -4485,6 +4525,21 @@ namespace Server.Envir
             foreach (PlayerObject player in Players)
                 player.Enqueue(p);
         }
+
+        public static void BroadcastHeroGradePromoteEventState()
+        {
+            foreach (PlayerObject player in Players)
+            {
+                HeroInfo hero = player.Character?.CurrentHero;
+                if (hero == null || hero.Deleted) continue;
+
+                player.Enqueue(new S.HeroInformation
+                {
+                    Hero = player.Hero?.ToClientHero() ?? hero.ToClientHero()
+                });
+            }
+        }
+
         public static S.Rankings GetRanks(C.RankRequest p, bool isGM)
         {
             S.Rankings result = new S.Rankings
