@@ -45,6 +45,7 @@ namespace Server.WinForms
             "HeroGradePromoteEnabled",
             "HeroGradePromoteBaseGoldCost",
             "HeroGradePromoteGoldCostMultiplier",
+            "HeroGradePromoteCostGrowthRate",
             "HeroGradePromoteItemIndex",
             "HeroGradePromoteBaseItemCount",
             "HeroGradePromoteCurrencyIndex",
@@ -560,6 +561,10 @@ namespace Server.WinForms
             if (TryGetConfigValue(values, "HeroGradePromoteGoldCostMultiplier", out int heroGradePromoteGoldCostMultiplier) &&
                 (heroGradePromoteGoldCostMultiplier < 0 || heroGradePromoteGoldCostMultiplier > 1000))
                 errors.Add("HeroGradePromoteGoldCostMultiplier: 英雄品质提升金币倍率建议在 0 到 1000 之间。");
+
+            if (TryGetConfigValue(values, "HeroGradePromoteCostGrowthRate", out int heroGradePromoteCostGrowthRate) &&
+                (heroGradePromoteCostGrowthRate < 0 || heroGradePromoteCostGrowthRate > 1000))
+                errors.Add("HeroGradePromoteCostGrowthRate: 英雄品质提升消耗成长率建议在 0 到 1000 之间。");
 
             if (TryGetConfigValue(values, "HeroGradePromoteItemIndex", out int heroGradePromoteItemIndex) &&
                 heroGradePromoteItemIndex < 0)

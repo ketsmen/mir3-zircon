@@ -3873,12 +3873,36 @@ namespace Server.Models
 
         private static decimal ApplyHeroGradePromoteCostGrowth(byte currentGrade, decimal cost)
         {
-            decimal rate = Math.Max(0, Config.HeroGradePromoteCostGrowthRate) / 100M;
+            decimal multiplier = GetHeroGradePromoteCostGrowthMultiplier(currentGrade);
+
+            return cost * multiplier;
+        }
+
+        private static decimal GetHeroGradePromoteCostGrowthMultiplier(byte currentGrade)
+        {
+            decimal rate = 1M + GetHeroGradePromoteCostGrowthRate() / 100M;
+            decimal multiplier = 1M;
 
             for (int i = 0; i < currentGrade; i++)
-                cost *= rate;
+                multiplier *= rate;
 
-            return cost;
+            return multiplier;
+        }
+
+        private static string GetHeroGradePromoteCostGrowthText(byte currentGrade)
+        {
+            int growthRate = GetHeroGradePromoteCostGrowthRate();
+            decimal multiplier = GetHeroGradePromoteCostGrowthMultiplier(currentGrade);
+
+            if (growthRate <= 0)
+                return "消耗成长率 0%，本档成长倍率 x1";
+
+            return $"消耗成长率 {growthRate}%，本档成长倍率 x{multiplier:0.##}";
+        }
+
+        private static int GetHeroGradePromoteCostGrowthRate()
+        {
+            return Math.Max(0, Math.Min(1000, Config.HeroGradePromoteCostGrowthRate));
         }
 
         public void PreviewHeroGradePromote()
@@ -3945,6 +3969,7 @@ namespace Server.Models
 
             bool useProtection = protectionCount > 0 && protectionAvailable >= protectionCount;
             int successRate = Math.Max(0, Math.Min(100, Config.HeroGradePromoteSuccessRate));
+            string growthText = GetHeroGradePromoteCostGrowthText(info.Grade);
 
             List<string> costs = new List<string>();
             if (cost > 0)
@@ -3963,7 +3988,7 @@ namespace Server.Models
                 : $"保护: {protection.ItemName} x{protectionCount:#,##0}，可用 {protectionAvailable:#,##0}，{(useProtection ? "本次将自动使用并保底成功" : "不足，本次不启用保护")}";
             string warning = successRate <= 0 && !useProtection ? "；当前成功率为 0 且无保护材料，无法培养" : string.Empty;
 
-            Connection.ReceiveChat($"{info.Name}品质培养预览：{HeroGradeName(info.Grade)} -> {HeroGradeName((byte)(info.Grade + 1))}；成功率 {successRate}%；{costText}；{protectionText}{warning}。", MessageType.System);
+            Connection.ReceiveChat($"{info.Name}品质培养预览：{HeroGradeName(info.Grade)} -> {HeroGradeName((byte)(info.Grade + 1))}；成功率 {successRate}%；{growthText}；{costText}；{protectionText}{warning}。", MessageType.System);
         }
 
         public void PromoteHeroGrade()
@@ -3989,9 +4014,10 @@ namespace Server.Models
             }
 
             long cost = GetHeroGradePromoteCost(info.Grade);
+            string growthText = GetHeroGradePromoteCostGrowthText(info.Grade);
             if (Gold.Amount < cost)
             {
-                Connection.ReceiveChat($"金币不足，提升{info.Name}品质需要 {cost:#,##0} 金币。", MessageType.System);
+                Connection.ReceiveChat($"金币不足，提升{info.Name}品质需要 {cost:#,##0} 金币（{growthText}）。", MessageType.System);
                 return;
             }
 
@@ -4008,7 +4034,7 @@ namespace Server.Models
 
             if (materialCount > 0 && GetItemCount(material) < materialCount)
             {
-                Connection.ReceiveChat($"材料不足，提升{info.Name}品质需要 {material.ItemName} x{materialCount:#,##0}。", MessageType.System);
+                Connection.ReceiveChat($"材料不足，提升{info.Name}品质需要 {material.ItemName} x{materialCount:#,##0}（{growthText}）。", MessageType.System);
                 return;
             }
 
@@ -4026,7 +4052,7 @@ namespace Server.Models
 
             if (currencyAmount > 0 && currency.Amount < currencyAmount)
             {
-                Connection.ReceiveChat($"货币不足，提升{info.Name}品质需要 {currencyInfo.Name} x{currencyAmount:#,##0}。", MessageType.System);
+                Connection.ReceiveChat($"货币不足，提升{info.Name}品质需要 {currencyInfo.Name} x{currencyAmount:#,##0}（{growthText}）。", MessageType.System);
                 return;
             }
 
@@ -4050,7 +4076,7 @@ namespace Server.Models
 
             if (successRate <= 0 && !useProtection)
             {
-                Connection.ReceiveChat("英雄品质培养成功率为 0，且没有足够的保护材料。", MessageType.System);
+                Connection.ReceiveChat($"英雄品质培养成功率为 0，且没有足够的保护材料（{growthText}）。", MessageType.System);
                 return;
             }
 
@@ -4079,7 +4105,7 @@ namespace Server.Models
                 TakeItem(protection, protectionCount);
 
             bool success = useProtection || successRate >= 100 || SEnvir.Random.Next(100) < successRate;
-            string costText = costs.Count == 0 ? "未消耗资源" : $"消耗{string.Join("、", costs)}";
+            string costText = costs.Count == 0 ? $"未消耗资源（{growthText}）" : $"消耗{string.Join("、", costs)}（{growthText}）";
 
             if (!success)
             {
