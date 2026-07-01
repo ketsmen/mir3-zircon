@@ -1728,6 +1728,7 @@ namespace Server.Envir
 
             StartEnvir();
             ProcessHeroGradePromoteEventExpiry();
+            AuditHeroGradePromoteConfig("Startup");
             StartNetwork();
 
             WebServer.StartWebServer();
@@ -2180,6 +2181,7 @@ namespace Server.Envir
             }
 
             Log($"[HeroGradeEvent] expired, previous costRate:{previousCostRate}, successBonus:{previousSuccessBonus}, saveOnExpire:{saveOnExpire}.", true);
+            AuditHeroGradePromoteConfig("HeroGradeEventExpired");
 
             if (!saveOnExpire) return;
 
@@ -2192,6 +2194,108 @@ namespace Server.Envir
             {
                 Log("[HeroGradeEvent] failed to save expired event reset: " + ex, true);
             }
+        }
+
+        public static void AuditHeroGradePromoteConfig(string stage)
+        {
+            List<string> warnings = new List<string>();
+
+            if (ItemInfoList == null || CurrencyInfoList == null)
+            {
+                Log($"[HeroGradeConfig] stage:{stage}, skipped: database collections are not loaded.", true);
+                return;
+            }
+
+            if (Config.HeroMaxGrade < 0 || Config.HeroMaxGrade > 4)
+                warnings.Add($"HeroMaxGrade={Config.HeroMaxGrade} 超出 0-4。");
+
+            if (Config.HeroGradeStatBonusRate < 0 || Config.HeroGradeStatBonusRate > 20)
+                warnings.Add($"HeroGradeStatBonusRate={Config.HeroGradeStatBonusRate} 超出 0-20。");
+
+            if (Config.HeroGradePromoteBaseGoldCost < 0)
+                warnings.Add($"HeroGradePromoteBaseGoldCost={Config.HeroGradePromoteBaseGoldCost} 小于 0。");
+
+            if (Config.HeroGradePromoteGoldCostMultiplier < 0 || Config.HeroGradePromoteGoldCostMultiplier > 1000)
+                warnings.Add($"HeroGradePromoteGoldCostMultiplier={Config.HeroGradePromoteGoldCostMultiplier} 超出 0-1000。");
+
+            if (Config.HeroGradePromoteCostGrowthRate < 0 || Config.HeroGradePromoteCostGrowthRate > 1000)
+                warnings.Add($"HeroGradePromoteCostGrowthRate={Config.HeroGradePromoteCostGrowthRate} 超出 0-1000。");
+
+            if (Config.HeroGradePromoteItemIndex < 0)
+                warnings.Add($"HeroGradePromoteItemIndex={Config.HeroGradePromoteItemIndex} 小于 0。");
+            else if (Config.HeroGradePromoteItemIndex > 0 && FindHeroGradePromoteItem(Config.HeroGradePromoteItemIndex) == null)
+                warnings.Add($"HeroGradePromoteItemIndex={Config.HeroGradePromoteItemIndex} 找不到对应物品。");
+
+            if (Config.HeroGradePromoteBaseItemCount < 0)
+                warnings.Add($"HeroGradePromoteBaseItemCount={Config.HeroGradePromoteBaseItemCount} 小于 0。");
+
+            if (Config.HeroGradePromoteCurrencyIndex < 0)
+                warnings.Add($"HeroGradePromoteCurrencyIndex={Config.HeroGradePromoteCurrencyIndex} 小于 0。");
+            else if (Config.HeroGradePromoteCurrencyIndex > 0 && FindHeroGradePromoteCurrency(Config.HeroGradePromoteCurrencyIndex) == null)
+                warnings.Add($"HeroGradePromoteCurrencyIndex={Config.HeroGradePromoteCurrencyIndex} 找不到对应货币。");
+
+            if (Config.HeroGradePromoteBaseCurrencyAmount < 0)
+                warnings.Add($"HeroGradePromoteBaseCurrencyAmount={Config.HeroGradePromoteBaseCurrencyAmount} 小于 0。");
+
+            if (Config.HeroGradePromoteSuccessRate < 0 || Config.HeroGradePromoteSuccessRate > 100)
+                warnings.Add($"HeroGradePromoteSuccessRate={Config.HeroGradePromoteSuccessRate} 超出 0-100。");
+
+            if (Config.HeroGradePromoteEventCostRate < 0 || Config.HeroGradePromoteEventCostRate > 1000)
+                warnings.Add($"HeroGradePromoteEventCostRate={Config.HeroGradePromoteEventCostRate} 超出 0-1000。");
+
+            if (Config.HeroGradePromoteEventSuccessBonus < 0 || Config.HeroGradePromoteEventSuccessBonus > 100)
+                warnings.Add($"HeroGradePromoteEventSuccessBonus={Config.HeroGradePromoteEventSuccessBonus} 超出 0-100。");
+
+            if (!HeroGradePromoteEventPresetParser.TryParse(Config.HeroGradePromoteEventPresets, out List<HeroGradePromoteEventPreset> presets, out List<string> presetErrors))
+                warnings.AddRange(presetErrors.Select(error => $"HeroGradePromoteEventPresets: {error}"));
+
+            if (Config.HeroGradePromoteFailureBonusRate < 0 || Config.HeroGradePromoteFailureBonusRate > 100)
+                warnings.Add($"HeroGradePromoteFailureBonusRate={Config.HeroGradePromoteFailureBonusRate} 超出 0-100。");
+
+            if (Config.HeroGradePromoteFailureBonusMax < 0 || Config.HeroGradePromoteFailureBonusMax > 100)
+                warnings.Add($"HeroGradePromoteFailureBonusMax={Config.HeroGradePromoteFailureBonusMax} 超出 0-100。");
+
+            if (Config.HeroGradePromoteProtectionItemIndex < 0)
+                warnings.Add($"HeroGradePromoteProtectionItemIndex={Config.HeroGradePromoteProtectionItemIndex} 小于 0。");
+            else if (Config.HeroGradePromoteProtectionItemIndex > 0 && FindHeroGradePromoteItem(Config.HeroGradePromoteProtectionItemIndex) == null)
+                warnings.Add($"HeroGradePromoteProtectionItemIndex={Config.HeroGradePromoteProtectionItemIndex} 找不到对应物品。");
+
+            if (Config.HeroGradePromoteProtectionItemCount < 0)
+                warnings.Add($"HeroGradePromoteProtectionItemCount={Config.HeroGradePromoteProtectionItemCount} 小于 0。");
+
+            string summary =
+                $"[HeroGradeConfig] stage:{stage}, enabled:{Config.HeroGradePromoteEnabled}, maxGrade:{Config.HeroMaxGrade}, success:{Config.HeroGradePromoteSuccessRate}%, event:{Config.HeroGradePromoteEventCostRate}%/+{Config.HeroGradePromoteEventSuccessBonus}%, material:{FormatHeroGradePromoteItem(Config.HeroGradePromoteItemIndex)}, currency:{FormatHeroGradePromoteCurrency(Config.HeroGradePromoteCurrencyIndex)}, protection:{FormatHeroGradePromoteItem(Config.HeroGradePromoteProtectionItemIndex)}, presets:{(presets == null ? 0 : presets.Count)}, warnings:{warnings.Count}.";
+
+            Log(summary, true);
+
+            foreach (string warning in warnings)
+                Log($"[HeroGradeConfig] warning stage:{stage}, {warning}", true);
+        }
+
+        private static ItemInfo FindHeroGradePromoteItem(int index)
+        {
+            return ItemInfoList?.Binding?.FirstOrDefault(x => x.Index == index);
+        }
+
+        private static CurrencyInfo FindHeroGradePromoteCurrency(int index)
+        {
+            return CurrencyInfoList?.Binding?.FirstOrDefault(x => x.Index == index);
+        }
+
+        private static string FormatHeroGradePromoteItem(int index)
+        {
+            if (index <= 0) return "None";
+
+            ItemInfo item = FindHeroGradePromoteItem(index);
+            return item == null ? $"Invalid({index})" : $"{item.ItemName}(#{index})";
+        }
+
+        private static string FormatHeroGradePromoteCurrency(int index)
+        {
+            if (index <= 0) return "None";
+
+            CurrencyInfo currency = FindHeroGradePromoteCurrency(index);
+            return currency == null ? $"Invalid({index})" : $"{currency.Name}(#{index})";
         }
 
         private static void Save()

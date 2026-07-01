@@ -618,6 +618,7 @@ namespace Server.Envir
             {
                 if (p.Confirm)
                 {
+                    LogHeroGradePromoteProtocolReject("MissingCapabilityConfirm", p, null);
                     Player.Connection.ReceiveChat("当前连接未声明结构化品质培养能力，已拒绝本次确认；请使用 @PROMOTEHEROGRADE 聊天命令确认培养。", MessageType.System);
                     return;
                 }
@@ -636,12 +637,14 @@ namespace Server.Envir
 
             if (p.HeroIndex <= 0)
             {
+                LogHeroGradePromoteProtocolReject("MissingHeroIndex", p, currentHero);
                 Player.Connection.ReceiveChat("结构化品质培养请求缺少英雄索引，请重新打开英雄页后再尝试。", MessageType.System);
                 return;
             }
 
             if (currentHero.Index != p.HeroIndex)
             {
+                LogHeroGradePromoteProtocolReject("HeroIndexMismatch", p, currentHero);
                 Player.Connection.ReceiveChat("当前英雄已变化，请重新预览后再确认培养。", MessageType.System);
                 return;
             }
@@ -653,6 +656,13 @@ namespace Server.Envir
             }
 
             Player.SendHeroGradePromotePreview(true, p.RequestConfirmation);
+        }
+
+        private void LogHeroGradePromoteProtocolReject(string reason, C.ZZHeroGradePromoteRequest p, HeroInfo currentHero)
+        {
+            SEnvir.Log(
+                $"[HeroGradePromoteProtocol] reject reason:{reason}, session:{SessionID}, ip:{IPAddress}, player:{Player?.Name}, clientCaps:{ClientCapabilities}, requestConfirm:{p.RequestConfirmation}, confirm:{p.Confirm}, requestHeroIndex:{p.HeroIndex}, currentHeroIndex:{currentHero?.Index ?? 0}.",
+                true);
         }
 
         public void Process(C.NPCCall p)

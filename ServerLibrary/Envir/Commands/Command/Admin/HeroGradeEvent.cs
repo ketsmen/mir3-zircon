@@ -180,6 +180,7 @@ namespace Server.Envir.Commands.Command.Admin
             SEnvir.Broadcast(new S.Chat { Text = message, Type = MessageType.Announcement });
             SEnvir.BroadcastHeroGradePromoteEventState();
             SEnvir.Log($"[HeroGradeEvent] {player.Name} set costRate:{Config.HeroGradePromoteEventCostRate}, successBonus:{Config.HeroGradePromoteEventSuccessBonus}, end:{Config.HeroGradePromoteEventEnd:o}, saveOnExpire:{Config.HeroGradePromoteEventSaveOnExpire}, reset:{reset}, saveNow:{saveNow}.", true);
+            SEnvir.AuditHeroGradePromoteConfig("HeroGradeEventCommand");
 
             if (saveNow)
                 SaveConfig(player);

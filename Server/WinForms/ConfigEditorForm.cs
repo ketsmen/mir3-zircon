@@ -471,6 +471,7 @@ namespace Server.WinForms
                 {
                     ConfigReader.Save(_configAssembly);
                     Config.LoadVersion();
+                    SEnvir.AuditHeroGradePromoteConfig("ConfigEditorSave");
                 }
                 catch (Exception ex)
                 {

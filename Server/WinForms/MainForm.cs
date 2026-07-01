@@ -1367,6 +1367,7 @@ namespace Server.WinForms
             try
             {
                 ConfigReader.Save(typeof(Config).Assembly);
+                SEnvir.AuditHeroGradePromoteConfig("MainFormSave");
                 if (showSuccess)
                     SetStatusText(_statusLabel, "配置已保存。");
 
