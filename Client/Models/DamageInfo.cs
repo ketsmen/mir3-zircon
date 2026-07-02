@@ -117,6 +117,7 @@ namespace Client.Models
         public event EventHandler<EventArgs> ValueChanged;
         public virtual void OnValueChanged(int oValue, int nValue)
         {
+            _digitCacheValid = false;
             ValueChanged?.Invoke(this, EventArgs.Empty);
         }
 
@@ -216,6 +217,9 @@ namespace Client.Models
         public bool Visible = true;
         public int Bottom => DrawY - 20;
         public float Opacity;
+        private string _digitText;
+        private int[] _digitIndexes;
+        private bool _digitCacheValid;
 
         public void Process(DamageInfo previous)
         {
@@ -298,9 +302,7 @@ namespace Client.Models
             }
             else
             {
-                string text = Value.ToString("+#0;-#0");
-
-
+                EnsureDigitCache();
 
                 int index;
                 int width;
@@ -334,7 +336,7 @@ namespace Client.Models
                     index = BlueIndex;
                     width = BlueWidth;
                 }
-                drawX -= width * text.Length / 2;
+                drawX -= width * _digitText.Length / 2;
 
                 if (Critical && Value < 0)
                 {
@@ -347,18 +349,10 @@ namespace Client.Models
 
                 size = Library.GetSize(index);
 
-                for (int i = 0; i < text.Length; i++)
+                for (int i = 0; i < _digitIndexes.Length; i++)
                 {
-                    int number;
-
-                    if (!int.TryParse(text[i].ToString(), out number))
-                    {
-                        if (text[i] == '+')
-                            number = 10;
-                        else if (text[i] == '-')
-                            number = 11;
-                        else continue;
-                    }
+                    int number = _digitIndexes[i];
+                    if (number < 0) continue;
 
 
                     Library.Draw(index, drawX, drawY, Color.White, new Rectangle(width * number, 0, Math.Min(size.Width - width * number, width), size.Height), Opacity, ImageType.Image);
@@ -368,6 +362,32 @@ namespace Client.Models
             }
 
 
+        }
+
+        private void EnsureDigitCache()
+        {
+            if (_digitCacheValid) return;
+
+            _digitText = Value.ToString("+#0;-#0");
+
+            if (_digitIndexes == null || _digitIndexes.Length != _digitText.Length)
+                _digitIndexes = new int[_digitText.Length];
+
+            for (int i = 0; i < _digitText.Length; i++)
+            {
+                char c = _digitText[i];
+
+                if (c >= '0' && c <= '9')
+                    _digitIndexes[i] = c - '0';
+                else if (c == '+')
+                    _digitIndexes[i] = 10;
+                else if (c == '-')
+                    _digitIndexes[i] = 11;
+                else
+                    _digitIndexes[i] = -1;
+            }
+
+            _digitCacheValid = true;
         }
 
 

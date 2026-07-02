@@ -378,6 +378,8 @@ namespace Client.Scenes
         private bool _AutoFight;
         private DateTime AutoFightTargetSearchTime, AutoFightPathTime, AutoFightRoamTime, AutoFightHintTime, AutoFightReconsiderTargetTime;
         private readonly Dictionary<uint, DateTime> AutoFightUnreachableTargets = new Dictionary<uint, DateTime>();
+        private readonly List<uint> AutoFightExpiredTargetBuffer = new List<uint>();
+        private readonly List<Point> AutoFightPathCandidateBuffer = new List<Point>();
 
         public bool AutoFight
         {
@@ -1401,8 +1403,16 @@ namespace Client.Scenes
         {
             if (AutoFightUnreachableTargets.Count == 0) return;
 
-            foreach (uint objectID in AutoFightUnreachableTargets.Where(x => x.Value <= CEnvir.Now).Select(x => x.Key).ToList())
-                AutoFightUnreachableTargets.Remove(objectID);
+            AutoFightExpiredTargetBuffer.Clear();
+
+            foreach (KeyValuePair<uint, DateTime> target in AutoFightUnreachableTargets)
+                if (target.Value <= CEnvir.Now)
+                    AutoFightExpiredTargetBuffer.Add(target.Key);
+
+            for (int i = 0; i < AutoFightExpiredTargetBuffer.Count; i++)
+                AutoFightUnreachableTargets.Remove(AutoFightExpiredTargetBuffer[i]);
+
+            AutoFightExpiredTargetBuffer.Clear();
         }
 
         private MapObject FindAutoFightTarget(int range)
@@ -1683,9 +1693,10 @@ namespace Client.Scenes
             return true;
         }
 
-        private IEnumerable<Point> GetAutoFightPathCandidates(Point targetLocation, int attackRange)
+        private List<Point> GetAutoFightPathCandidates(Point targetLocation, int attackRange)
         {
-            List<Point> candidates = new List<Point>();
+            List<Point> candidates = AutoFightPathCandidateBuffer;
+            candidates.Clear();
 
             int minRange = 1;
             int maxRange = Math.Max(minRange, attackRange);
@@ -1705,11 +1716,18 @@ namespace Client.Scenes
                 }
             }
 
-            return candidates
-                .OrderBy(x => Functions.Distance(User.CurrentLocation, x))
-                .ThenByDescending(x => Functions.Distance(targetLocation, x))
-                .Take(AutoFightPathCandidateLimit)
-                .ToList();
+            candidates.Sort((x, y) =>
+            {
+                int distanceCompare = Functions.Distance(User.CurrentLocation, x).CompareTo(Functions.Distance(User.CurrentLocation, y));
+                if (distanceCompare != 0) return distanceCompare;
+
+                return Functions.Distance(targetLocation, y).CompareTo(Functions.Distance(targetLocation, x));
+            });
+
+            if (candidates.Count > AutoFightPathCandidateLimit)
+                candidates.RemoveRange(AutoFightPathCandidateLimit, candidates.Count - AutoFightPathCandidateLimit);
+
+            return candidates;
         }
 
         private void AddAutoFightPathCandidate(List<Point> candidates, Point location)
@@ -3652,6 +3670,24 @@ namespace Client.Scenes
             ItemLabel.Size = new Size(ItemLabel.Size.Width, ItemLabel.Size.Height + 4);
         }
 
+        private bool HasEquippedMagicRing(int magicInfoIndex)
+        {
+            ClientUserItem[] equipment = Equipment;
+
+            for (int i = 0; i < equipment.Length; i++)
+            {
+                ClientUserItem item = equipment[i];
+
+                if (item == null) continue;
+                if (item.Info.ItemEffect != ItemEffect.MagicRing) continue;
+                if (item.Info.Shape != magicInfoIndex) continue;
+
+                return true;
+            }
+
+            return false;
+        }
+
         public void UseMagic(SpellKey key)
         {
             if (Game.Observer || User == null || User.Horse != HorseType.None || MagicBarBox == null) return;
@@ -3687,9 +3723,7 @@ namespace Client.Scenes
 
             if (magic.ItemRequired)
             {
-                var magicItem = Equipment.FirstOrDefault(x => x != null && x.Info.ItemEffect == ItemEffect.MagicRing && x.Info.Shape == magic.Info.Index);
-
-                if (magicItem == null) return;
+                if (!HasEquippedMagicRing(magic.Info.Index)) return;
             }
             else
             {
@@ -3751,7 +3785,7 @@ namespace Client.Scenes
                     }
                     return;
                 case MagicType.Karma:
-                    if (CEnvir.Now < ToggleTime || CEnvir.Now < magic.NextCast || User.Buffs.All(x => x.Type != BuffType.Cloak)) return;
+                    if (CEnvir.Now < ToggleTime || CEnvir.Now < magic.NextCast || !User.HasBuff(BuffType.Cloak)) return;
 
                     if (User.AttackMagic != magic.Info.Magic)
                     {
@@ -3764,8 +3798,8 @@ namespace Client.Scenes
             }
 
             if (CEnvir.Now < User.NextMagicTime || User.Dead ||
-                User.Buffs.Any(x => x.Type == BuffType.DragonRepulse) ||
-                (User.Buffs.Any(x => x.Type == BuffType.ElementalHurricane) && magic.Info.Magic != MagicType.ElementalHurricane) ||
+                User.HasBuff(BuffType.DragonRepulse) ||
+                (User.HasBuff(BuffType.ElementalHurricane) && magic.Info.Magic != MagicType.ElementalHurricane) ||
                 (User.Poison & PoisonType.Paralysis) == PoisonType.Paralysis ||
                 (User.Poison & PoisonType.Silenced) == PoisonType.Silenced) return;
 
@@ -3990,7 +4024,7 @@ namespace Client.Scenes
                     target = MouseObject ?? User;
                     break;
                 case MagicType.CelestialLight:
-                    if (User.Buffs.All(x => x.Type == BuffType.CelestialLight)) return;
+                    if (User.AllBuffsAre(BuffType.CelestialLight)) return;
                     break;
 
                 case MagicType.Resurrection:
@@ -4039,7 +4073,7 @@ namespace Client.Scenes
                     direction = MirDirection.Down;
                     break;
                 case MagicType.ReflectDamage:
-                    if (User.Buffs.Any(x => x.Type == BuffType.ReflectDamage)) return;
+                    if (User.HasBuff(BuffType.ReflectDamage)) return;
                     direction = MirDirection.Down;
                     break;
                 case MagicType.Endurance:
@@ -4050,13 +4084,13 @@ namespace Client.Scenes
                 case MagicType.StrengthOfFaith:
                     break;
                 case MagicType.MagicShield:
-                    if (User.Buffs.Any(x => x.Type == BuffType.MagicShield || x.Type == BuffType.SuperiorMagicShield)) return;
+                    if (User.HasBuff(BuffType.MagicShield, BuffType.SuperiorMagicShield)) return;
                     break;
                 case MagicType.SuperiorMagicShield:
-                    if (User.Buffs.Any(x => x.Type == BuffType.SuperiorMagicShield)) return;
+                    if (User.HasBuff(BuffType.SuperiorMagicShield)) return;
                     break;
                 case MagicType.FrostBite:
-                    if (User.Buffs.Any(x => x.Type == BuffType.FrostBite)) return;
+                    if (User.HasBuff(BuffType.FrostBite)) return;
                     break;
                 case MagicType.JudgementOfHeaven:
                     break;
@@ -4703,7 +4737,7 @@ namespace Client.Scenes
                     {
                         case 1: //Item Buffs
 
-                            ClientBuffInfo buff = User.Buffs.FirstOrDefault(x => x.Type == BuffType.ItemBuff && x.ItemIndex == item.Info.Index);
+                            ClientBuffInfo buff = User.GetItemBuff(item.Info.Index);
 
                             if (buff != null && buff.RemainingTime == TimeSpan.MaxValue) return false;
                             break;
@@ -4931,18 +4965,53 @@ namespace Client.Scenes
         {
             if (hero?.EquipmentArray == null) return 0;
 
-            return hero.EquipmentArray
-                .Where(x => x != null && x.Info.ItemType != ItemType.Weapon && x.Info.ItemType != ItemType.Torch && x.Info.ItemType != ItemType.Shield)
-                .Sum(x => x.Weight);
+            int weight = 0;
+            ClientUserItem[] equipment = hero.EquipmentArray;
+
+            for (int i = 0; i < equipment.Length; i++)
+            {
+                ClientUserItem item = equipment[i];
+
+                if (item == null) continue;
+
+                switch (item.Info.ItemType)
+                {
+                    case ItemType.Weapon:
+                    case ItemType.Torch:
+                    case ItemType.Shield:
+                        continue;
+                }
+
+                weight += item.Weight;
+            }
+
+            return weight;
         }
 
         private static int HeroHandWeight(ClientUserHero hero)
         {
             if (hero?.EquipmentArray == null) return 0;
 
-            return hero.EquipmentArray
-                .Where(x => x != null && (x.Info.ItemType == ItemType.Weapon || x.Info.ItemType == ItemType.Torch || x.Info.ItemType == ItemType.Shield))
-                .Sum(x => x.Weight);
+            int weight = 0;
+            ClientUserItem[] equipment = hero.EquipmentArray;
+
+            for (int i = 0; i < equipment.Length; i++)
+            {
+                ClientUserItem item = equipment[i];
+
+                if (item == null) continue;
+
+                switch (item.Info.ItemType)
+                {
+                    case ItemType.Weapon:
+                    case ItemType.Torch:
+                    case ItemType.Shield:
+                        weight += item.Weight;
+                        break;
+                }
+            }
+
+            return weight;
         }
         public bool CanCompanionUseItem(ItemInfo info)
         {

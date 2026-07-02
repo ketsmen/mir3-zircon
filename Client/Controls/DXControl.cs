@@ -94,6 +94,9 @@ namespace Client.Controls
         public static DXLabel DebugLabel, HintLabel, PingLabel;
         protected static MirLibrary InterfaceLibrary;
 
+        [ThreadStatic]
+        private static LinePoint[] _drawLineBuffer;
+
         static DXControl()
         {
             DebugLabel = new DXLabel
@@ -1788,11 +1791,11 @@ BorderInformation = new[]
 
             if (clippedLeft > clippedRight) return;
 
-            RenderingPipelineManager.DrawLine(new[]
-            {
-                new LinePoint(clippedLeft, y),
-                new LinePoint(clippedRight, y)
-            }, BorderColour);
+            LinePoint[] points = _drawLineBuffer ??= new LinePoint[2];
+            points[0] = new LinePoint(clippedLeft, y);
+            points[1] = new LinePoint(clippedRight, y);
+
+            RenderingPipelineManager.DrawLine(points, BorderColour);
         }
 
         private void DrawClippedVerticalLine(int x, int top, int bottom, Rectangle clipArea)
@@ -1804,11 +1807,11 @@ BorderInformation = new[]
 
             if (clippedTop > clippedBottom) return;
 
-            RenderingPipelineManager.DrawLine(new[]
-            {
-                new LinePoint(x, clippedTop),
-                new LinePoint(x, clippedBottom)
-            }, BorderColour);
+            LinePoint[] points = _drawLineBuffer ??= new LinePoint[2];
+            points[0] = new LinePoint(x, clippedTop);
+            points[1] = new LinePoint(x, clippedBottom);
+
+            RenderingPipelineManager.DrawLine(points, BorderColour);
         }
 
         protected virtual void DrawChildControls()

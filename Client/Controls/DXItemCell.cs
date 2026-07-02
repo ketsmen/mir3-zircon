@@ -832,9 +832,9 @@ namespace Client.Controls
             if ((GridType == GridType.Belt || GridType == GridType.AutoPotion || GridType == GridType.HeroHPItem || GridType == GridType.HeroMPItem) && QuickInfo != null)
             {
                 if (GridType == GridType.HeroHPItem || GridType == GridType.HeroMPItem)
-                    QuickInfoItem.Count = GameScene.Game.CurrentHero?.InventoryArray.Where(x => x?.Info == QuickInfo).Sum(x => x.Count) ?? 0;
+                    QuickInfoItem.Count = CountItems(GameScene.Game.CurrentHero?.InventoryArray, QuickInfo);
                 else
-                    QuickInfoItem.Count = GameScene.Game.Inventory.Where(x => x?.Info == QuickInfo).Sum(x => x.Count) + (GameScene.Game.Companion?.InventoryArray.Where(x => x?.Info == QuickInfo).Sum(x => x.Count) ?? 0);
+                    QuickInfoItem.Count = CountItems(GameScene.Game.Inventory, QuickInfo) + CountItems(GameScene.Game.Companion?.InventoryArray, QuickInfo);
             }
 
             if (MouseControl == this)
@@ -846,6 +846,23 @@ namespace Client.Controls
             CountLabel.Visible = ShowCountLabel && !Hidden && !LootBoxLocked && Item != null && (!CEnvir.IsCurrencyItem(Item.Info) && Item.Info.ItemEffect != ItemEffect.Experience) && (Item.Info.StackSize > 1 || Item.Count > 1);
             CountLabel.Text = Linked ? LinkedCount.ToString() : Item?.Count.ToString();
         }
+
+        private static long CountItems(ClientUserItem[] items, ItemInfo info)
+        {
+            if (items == null || info == null) return 0;
+
+            long count = 0;
+
+            for (int i = 0; i < items.Length; i++)
+            {
+                ClientUserItem item = items[i];
+                if (item?.Info == info)
+                    count += item.Count;
+            }
+
+            return count;
+        }
+
         public void MoveItem()
         {
             if (SelectedCell == null)

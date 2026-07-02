@@ -173,6 +173,13 @@ namespace Client.Scenes.Views
         private readonly Dictionary<uint, MapObject> ObjectLookup = new Dictionary<uint, MapObject>();
         public List<MirEffect> Effects = new List<MirEffect>();
         public List<Models.Particles.ParticleEmitter> ParticleEffects = new List<Models.Particles.ParticleEmitter>();
+        private List<MapObject>[] DrawRows = Array.Empty<List<MapObject>>();
+        private int DrawRowCount;
+        private List<MirEffect>[] ObjectEffectRows = Array.Empty<List<MirEffect>>();
+        private int ObjectEffectRowCount;
+        private readonly List<MirEffect> UserObjectEffects = new List<MirEffect>();
+        private readonly List<MagicEffect> UserMagicEffectBuffer = new List<MagicEffect>();
+        private readonly List<MapObject> OverlayObjects = new List<MapObject>();
 
         public const int CellWidth = 48, CellHeight = 32;
         public const int ManualHeightOffset = 34;
@@ -258,43 +265,29 @@ namespace Client.Scenes.Views
 
             RenderingPipelineManager.SetBlend(previousBlendEnabled, previousBlendRate, previousBlendMode);
 
-            foreach (MapObject ob in Objects)
+            for (int i = 0; i < OverlayObjects.Count; i++)
             {
+                MapObject ob = OverlayObjects[i];
                 if (ob.Dead) continue;
 
-                switch (ob.Race)
-                {
-                    case ObjectType.Player:
-                        if (!Config.ShowPlayerNames) continue;
-                        break;
-                    case ObjectType.Item:
-                        if (!Config.ShowItemNames || ob.CurrentLocation == MapLocation) continue;
-                        break;
-                    case ObjectType.NPC:
-                        break;
-                    case ObjectType.Spell:
-                        break;
-                    case ObjectType.Monster:
-                        if (!Config.ShowMonsterNames) continue;
-                        break;
-                }
-
-                ob.DrawName();
+                if (ShouldDrawObjectName(ob))
+                    ob.DrawName();
             }
 
             if (MapObject.MouseObject != null && MapObject.MouseObject.Race != ObjectType.Item)
                 MapObject.MouseObject.DrawName();
 
-            foreach (MapObject ob in Objects)
+            for (int i = 0; i < OverlayObjects.Count; i++)
             {
+                MapObject ob = OverlayObjects[i];
                 ob.DrawChat();
                 ob.DrawPoison();
                 ob.DrawHealth();
             }
 
             if (Config.ShowDamageNumbers)
-                foreach (MapObject ob in Objects)
-                    ob.DrawDamage();
+                for (int i = 0; i < OverlayObjects.Count; i++)
+                    OverlayObjects[i].DrawDamage();
 
             if (IsInsideMap(MapLocation))
             {
@@ -340,7 +333,9 @@ namespace Client.Scenes.Views
 
         private void DrawObjects()
         {
-            if (Cells == null || Width <= 0 || Height <= 0 || User == null) return;
+            OverlayObjects.Clear();
+
+            if (Cells == null || Width <= 0 || Height <= 0 || User == null || Objects == null) return;
 
             int width = Math.Min(Width, Cells.GetLength(0));
             int height = Math.Min(Height, Cells.GetLength(1));
@@ -351,6 +346,9 @@ namespace Client.Scenes.Views
             if (maxX < minX || maxY < minY) return;
 
             List<MapObject>[] drawRows = BuildDrawRows(minY, maxY);
+            List<MirEffect>[] objectEffectRows = Config.DrawEffects ? BuildObjectEffectRows(minY, maxY) : null;
+            if (!Config.DrawEffects)
+                UserObjectEffects.Clear();
 
             for (int y = minY; y <= maxY; y++)
             {
@@ -362,16 +360,7 @@ namespace Client.Scenes.Views
 
                     Cell cell = Cells[x, y];
 
-                    if (!cell.LibrariesLoaded)
-                    {
-                        if (Libraries.KROrder.TryGetValue(cell.MiddleFile, out LibraryFile file) && file != LibraryFile.Tilesc)
-                            CEnvir.LibraryList.TryGetValue(file, out cell.MiddleLibrary);
-
-                        if (Libraries.KROrder.TryGetValue(cell.FrontFile, out file) && file != LibraryFile.Tilesc)
-                            CEnvir.LibraryList.TryGetValue(file, out cell.FrontLibrary);
-
-                        cell.LibrariesLoaded = true;
-                    }
+                    EnsureCellLibraries(cell);
 
                     if (cell.MiddleLibrary != null)
                     {
@@ -421,21 +410,10 @@ namespace Client.Scenes.Views
                     for (int i = 0; i < drawObjects.Count; i++)
                         drawObjects[i].Draw();
 
-                if (Config.DrawEffects)
-                {
-                    foreach (MirEffect ob in Effects)
-                    {
-                        if (ob.DrawType != DrawType.Object) continue;
-
-                        if (ob.MapTarget.IsEmpty && ob.Target != null)
-                        {
-                            if (ob.Target.RenderY == y && ob.Target != User)
-                                ob.Draw();
-                        }
-                        else if (ob.MapTarget.Y == y)
-                            ob.Draw();
-                    }
-                }
+                List<MirEffect> rowEffects = objectEffectRows?[y - minY];
+                if (rowEffects != null)
+                    for (int i = 0; i < rowEffects.Count; i++)
+                        rowEffects[i].Draw();
 
             }
 
@@ -459,12 +437,8 @@ namespace Client.Scenes.Views
                     }
                 }
 
-                foreach (MirEffect ob in Effects)
-                {
-                    if (ob.DrawType != DrawType.Object || !ob.MapTarget.IsEmpty || ob.Target != User) continue;
-
-                    ob.Draw();
-                }
+                for (int i = 0; i < UserObjectEffects.Count; i++)
+                    UserObjectEffects[i].Draw();
             }
         }
 
@@ -476,29 +450,135 @@ namespace Client.Scenes.Views
                 library.DrawBlend(index, x, y, Color.White, false, 0.5F, ImageType.Image);
         }
 
+        private static void EnsureBackLibrary(Cell cell)
+        {
+            if (cell.BackLibraryLoaded) return;
+
+            if (Libraries.KROrder.TryGetValue(cell.BackFile, out LibraryFile file))
+                CEnvir.LibraryList.TryGetValue(file, out cell.BackLibrary);
+
+            cell.BackLibraryLoaded = true;
+        }
+
+        private static void EnsureCellLibraries(Cell cell)
+        {
+            if (cell.LibrariesLoaded) return;
+
+            if (Libraries.KROrder.TryGetValue(cell.MiddleFile, out LibraryFile file) && file != LibraryFile.Tilesc)
+                CEnvir.LibraryList.TryGetValue(file, out cell.MiddleLibrary);
+
+            if (Libraries.KROrder.TryGetValue(cell.FrontFile, out file) && file != LibraryFile.Tilesc)
+                CEnvir.LibraryList.TryGetValue(file, out cell.FrontLibrary);
+
+            cell.LibrariesLoaded = true;
+        }
+
         private List<MapObject>[] BuildDrawRows(int minY, int maxY)
         {
-            List<MapObject>[] rows = new List<MapObject>[maxY - minY + 1];
+            int rowCount = maxY - minY + 1;
 
-            foreach (MapObject ob in Objects)
+            if (DrawRows.Length < rowCount)
+                Array.Resize(ref DrawRows, rowCount);
+
+            for (int i = 0; i < rowCount; i++)
+                DrawRows[i]?.Clear();
+
+            for (int i = rowCount; i < DrawRowCount && i < DrawRows.Length; i++)
+                DrawRows[i]?.Clear();
+
+            DrawRowCount = rowCount;
+
+            for (int i = 0; i < Objects.Count; i++)
             {
+                MapObject ob = Objects[i];
                 int renderY = ob.RenderY;
                 if (renderY < minY || renderY > maxY) continue;
 
-                int index = renderY - minY;
-                if (rows[index] == null)
-                    rows[index] = new List<MapObject>();
+                OverlayObjects.Add(ob);
 
-                rows[index].Add(ob);
+                int index = renderY - minY;
+                if (DrawRows[index] == null)
+                    DrawRows[index] = new List<MapObject>();
+
+                DrawRows[index].Add(ob);
             }
 
-            return rows;
+            return DrawRows;
+        }
+
+        private bool ShouldDrawObjectName(MapObject ob)
+        {
+            switch (ob.Race)
+            {
+                case ObjectType.Player:
+                    return Config.ShowPlayerNames;
+                case ObjectType.Item:
+                    return Config.ShowItemNames && ob.CurrentLocation != MapLocation;
+                case ObjectType.Monster:
+                    return Config.ShowMonsterNames;
+                default:
+                    return true;
+            }
+        }
+
+        private List<MirEffect>[] BuildObjectEffectRows(int minY, int maxY)
+        {
+            int rowCount = maxY - minY + 1;
+
+            if (ObjectEffectRows.Length < rowCount)
+                Array.Resize(ref ObjectEffectRows, rowCount);
+
+            for (int i = 0; i < rowCount; i++)
+                ObjectEffectRows[i]?.Clear();
+
+            for (int i = rowCount; i < ObjectEffectRowCount && i < ObjectEffectRows.Length; i++)
+                ObjectEffectRows[i]?.Clear();
+
+            ObjectEffectRowCount = rowCount;
+            UserObjectEffects.Clear();
+
+            if (Effects == null) return ObjectEffectRows;
+
+            for (int i = 0; i < Effects.Count; i++)
+            {
+                MirEffect effect = Effects[i];
+                if (effect.DrawType != DrawType.Object) continue;
+
+                int renderY;
+
+                if (effect.MapTarget.IsEmpty && effect.Target != null)
+                {
+                    if (effect.Target == User)
+                    {
+                        UserObjectEffects.Add(effect);
+                        continue;
+                    }
+
+                    renderY = effect.Target.RenderY;
+                }
+                else
+                {
+                    renderY = effect.MapTarget.Y;
+                }
+
+                if (renderY < minY || renderY > maxY) continue;
+
+                int index = renderY - minY;
+                if (ObjectEffectRows[index] == null)
+                    ObjectEffectRows[index] = new List<MirEffect>();
+
+                ObjectEffectRows[index].Add(effect);
+            }
+
+            return ObjectEffectRows;
         }
 
         private void ClearObjectCells()
         {
-            foreach (MapObject ob in Objects ?? Enumerable.Empty<MapObject>())
-                ob.CurrentCell?.RemoveObject(ob);
+            if (Objects == null) return;
+
+            for (int i = 0; i < Objects.Count; i++)
+                Objects[i].CurrentCell?.RemoveObject(Objects[i]);
         }
 
         private void LoadMap()
@@ -581,10 +661,15 @@ namespace Client.Scenes.Views
                 CEnvir.SaveException(ex);
             }
 
-            foreach (MapObject ob in Objects ?? Enumerable.Empty<MapObject>())
-                if (ob.CurrentLocation.X >= 0 && ob.CurrentLocation.Y >= 0 &&
-                    ob.CurrentLocation.X < Width && ob.CurrentLocation.Y < Height)
-                    Cells[ob.CurrentLocation.X, ob.CurrentLocation.Y].AddObject(ob);
+            if (Objects != null)
+                for (int i = 0; i < Objects.Count; i++)
+                {
+                    MapObject ob = Objects[i];
+
+                    if (ob.CurrentLocation.X >= 0 && ob.CurrentLocation.Y >= 0 &&
+                        ob.CurrentLocation.X < Width && ob.CurrentLocation.Y < Height)
+                        Cells[ob.CurrentLocation.X, ob.CurrentLocation.Y].AddObject(ob);
+                }
         }
 
         private static bool HasExpectedMapDataLength(long length, int width, int height)
@@ -856,6 +941,7 @@ namespace Client.Scenes.Views
                     for (int x = MapLocation.X - d; x <= MapLocation.X + d; x++)
                     {
                         if (x < 0 || x >= width) continue;
+                        if (d > 0 && x > MapLocation.X - d && x < MapLocation.X + d && y > MapLocation.Y - d && y < MapLocation.Y + d) continue;
 
                         List<MapObject> list = Cells[x, y].Objects;
                         if (list == null) continue;
@@ -916,7 +1002,7 @@ namespace Client.Scenes.Views
         {
             if (GameScene.Game.Observer) return;
 
-            if (User.Dead || (User.Poison & PoisonType.Paralysis) == PoisonType.Paralysis || (User.Poison & PoisonType.Containment) == PoisonType.Containment || User.Buffs.Any(x => x.Type == BuffType.DragonRepulse)) return; //Para or Frozen??
+            if (User.Dead || (User.Poison & PoisonType.Paralysis) == PoisonType.Paralysis || (User.Poison & PoisonType.Containment) == PoisonType.Containment || User.HasBuff(BuffType.DragonRepulse)) return; //Para or Frozen??
 
             if (User.MagicAction != null)
             {
@@ -946,12 +1032,10 @@ namespace Client.Scenes.Views
 
             //If  auto run
 
-            MirDirection direction = MouseDirection(), best;
-
             if (GameScene.Game.AutoRun && !haselementalhurricane)
             {
                 if (!GameScene.Game.MoveFrame || (User.Poison & PoisonType.WraithGrip) == PoisonType.WraithGrip) return;
-                Run(direction);
+                Run(MouseDirection());
                 return;
             }
 
@@ -960,6 +1044,8 @@ namespace Client.Scenes.Views
                 switch (MapButtons)
                 {
                     case MouseButtons.Left:
+                    {
+                        MirDirection direction = MouseDirection();
                         Mining = false;
 
                         if (GameScene.Game.AutoFight)
@@ -1037,7 +1123,7 @@ namespace Client.Scenes.Views
 
                         if (!CanMove(direction, 1) || haselementalhurricane)
                         {
-                            best = MouseDirectionBest(direction, 1);
+                            MirDirection best = MouseDirectionBest(direction, 1);
 
                             if (best == direction)
                             {
@@ -1052,7 +1138,10 @@ namespace Client.Scenes.Views
                         if (!haselementalhurricane && GameScene.Game.MoveFrame && (User.Poison & PoisonType.WraithGrip) != PoisonType.WraithGrip)
                             MapObject.User.AttemptAction(new ObjectAction(MirAction.Moving, direction, Functions.Move(MapObject.User.CurrentLocation, direction), 1, MagicType.None));
                         return;
+                    }
                     case MouseButtons.Right:
+                    {
+                        MirDirection direction = MouseDirection();
                         Mining = false;
 
                         if (FishingState != FishingState.None)
@@ -1075,6 +1164,7 @@ namespace Client.Scenes.Views
                         Run(direction);
 
                         return;
+                    }
                 }
             }
 
@@ -1189,23 +1279,23 @@ namespace Client.Scenes.Views
             if (Functions.InRange(MapObject.TargetObject.CurrentLocation, MapObject.User.CurrentLocation, 1)) return;
             if (GameScene.Game.AutoFight && (User.Class == MirClass.Wizard || User.Class == MirClass.Taoist)) return;
 
-            direction = Functions.DirectionFromPoint(MapObject.User.CurrentLocation, MapObject.TargetObject.CurrentLocation);
+            MirDirection targetDirection = Functions.DirectionFromPoint(MapObject.User.CurrentLocation, MapObject.TargetObject.CurrentLocation);
 
-            if (!CanMove(direction, 1) || haselementalhurricane)
+            if (!CanMove(targetDirection, 1) || haselementalhurricane)
             {
-                best = DirectionBest(direction, 1, MapObject.TargetObject.CurrentLocation);
+                MirDirection best = DirectionBest(targetDirection, 1, MapObject.TargetObject.CurrentLocation);
 
-                if (best == direction)
+                if (best == targetDirection)
                 {
-                    if (direction != User.Direction)
-                        MapObject.User.AttemptAction(new ObjectAction(MirAction.Standing, direction, MapObject.User.CurrentLocation));
+                    if (targetDirection != User.Direction)
+                        MapObject.User.AttemptAction(new ObjectAction(MirAction.Standing, targetDirection, MapObject.User.CurrentLocation));
                     return;
                 }
-                direction = best;
+                targetDirection = best;
             }
 
             if (!haselementalhurricane && GameScene.Game.MoveFrame && (User.Poison & PoisonType.WraithGrip) != PoisonType.WraithGrip)
-                MapObject.User.AttemptAction(new ObjectAction(MirAction.Moving, direction, Functions.Move(MapObject.User.CurrentLocation, direction), 1, MagicType.None));
+                MapObject.User.AttemptAction(new ObjectAction(MirAction.Moving, targetDirection, Functions.Move(MapObject.User.CurrentLocation, targetDirection), 1, MagicType.None));
         }
 
         public void Run(MirDirection direction)
@@ -1345,10 +1435,11 @@ namespace Client.Scenes.Views
         {
             Point localMouse = new Point(MouseLocation.X - GameScene.Game.Location.X, MouseLocation.Y - GameScene.Game.Location.Y);
             PointF p = new PointF((localMouse.X - PixelOffsetX) / (float)CellWidth, (localMouse.Y - PixelOffsetY) / (float)CellHeight);
+            Point point = Point.Truncate(p);
 
             //If close proximity then co by co ords 
-            if (Functions.InRange(new Point(OffSetX, OffSetY), Point.Truncate(p), 2))
-                return Functions.DirectionFromPoint(new Point(OffSetX, OffSetY), Point.Truncate(p));
+            if (Functions.InRange(new Point(OffSetX, OffSetY), point, 2))
+                return Functions.DirectionFromPoint(new Point(OffSetX, OffSetY), point);
 
             PointF c = new PointF(OffSetX * CellWidth + PixelOffsetX + CellWidth / 2F, OffSetY * CellHeight + PixelOffsetY + CellHeight / 2F);
             PointF a = new PointF(c.X, 0);
@@ -1435,8 +1526,9 @@ namespace Client.Scenes.Views
             if (GameScene.Game.MonsterBox.Monster != null)
                 GameScene.Game.MonsterBox.Monster = null;
 
-            foreach (MapObject ob in Objects.ToArray())
+            for (int i = Objects.Count - 1; i >= 0; i--)
             {
+                MapObject ob = Objects[i];
                 if (ob == User) continue;
 
                 ob.Remove();
@@ -1444,14 +1536,21 @@ namespace Client.Scenes.Views
 
             if (User != null)
             {
-                foreach (MagicEffect effect in User.MagicEffects.Keys.ToList())
-                    User.EndMagicEffect(effect);
+                UserMagicEffectBuffer.Clear();
+
+                foreach (MagicEffect effect in User.MagicEffects.Keys)
+                    UserMagicEffectBuffer.Add(effect);
+
+                for (int i = 0; i < UserMagicEffectBuffer.Count; i++)
+                    User.EndMagicEffect(UserMagicEffectBuffer[i]);
+
+                UserMagicEffectBuffer.Clear();
 
                 User.Effects.Clear();
             }
 
-            foreach (MirEffect effect in Effects.ToArray())
-                effect.Remove();
+            for (int i = Effects.Count - 1; i >= 0; i--)
+                Effects[i].Remove();
 
             if (ParticleEffects != null)
                 ClearParticleEffects();
@@ -1631,8 +1730,8 @@ namespace Client.Scenes.Views
         {
             if (ParticleEffects == null) return;
 
-            foreach (var effect in ParticleEffects.ToArray())
-                effect.Dispose();
+            for (int i = ParticleEffects.Count - 1; i >= 0; i--)
+                ParticleEffects[i].Dispose();
 
             ParticleEffects.Clear();
         }
@@ -1685,12 +1784,11 @@ namespace Client.Scenes.Views
 
                         if (y % 2 == 0 && x % 2 == 0)
                         {
-                            MirLibrary library;
-                            LibraryFile file;
+                            EnsureBackLibrary(tile);
 
-                            if (!Libraries.KROrder.TryGetValue(tile.BackFile, out file)) continue;
+                            MirLibrary library = tile.BackLibrary;
 
-                            if (!CEnvir.LibraryList.TryGetValue(file, out library)) continue;
+                            if (library == null) continue;
 
                             library.Draw(tile.BackImage, drawX, drawY, Color.White, false, 1F, ImageType.Image);
                         }
@@ -1707,10 +1805,10 @@ namespace Client.Scenes.Views
 
                         Cell cell = map.Cells[x, y];
 
-                        MirLibrary library;
-                        LibraryFile file;
+                        EnsureCellLibraries(cell);
 
-                        if (Libraries.KROrder.TryGetValue(cell.MiddleFile, out file) && file != LibraryFile.Tilesc && CEnvir.LibraryList.TryGetValue(file, out library))
+                        MirLibrary library = cell.MiddleLibrary;
+                        if (library != null)
                         {
                             int index = cell.MiddleImage - 1;
 
@@ -1724,7 +1822,8 @@ namespace Client.Scenes.Views
                         }
 
 
-                        if (Libraries.KROrder.TryGetValue(cell.FrontFile, out file) && file != LibraryFile.Tilesc && CEnvir.LibraryList.TryGetValue(file, out library))
+                        library = cell.FrontLibrary;
+                        if (library != null)
                         {
                             int index = cell.FrontImage - 1;
 
@@ -1853,31 +1952,35 @@ namespace Client.Scenes.Views
                     return;
                 }
 
-                foreach (MapObject ob in map.Objects ?? Enumerable.Empty<MapObject>())
-                {
-                    if (!ShouldDrawObjectLight(ob, user))
-                        continue;
-
-                    float scale = BaseLightSize + ob.Light * 2 * LightScale;
-                    float objectX = (OffSetX + ob.CurrentLocation.X - user.CurrentLocation.X) * CellWidth + PixelOffsetX + ob.MovingOffSet.X - user.MovingOffSet.X + CellWidth / 2F - (lightSize.Width * scale) / 2F;
-                    float objectY = (OffSetY + ob.CurrentLocation.Y - user.CurrentLocation.Y) * CellHeight + PixelOffsetY + ob.MovingOffSet.Y - user.MovingOffSet.Y - (lightSize.Height * scale) / 2F;
-
-                    DrawLight(lightTexture, lightSource, lightSize, objectX, objectY, scale, ob.LightColour);
-                }
-
-                foreach (MirEffect ob in map.Effects ?? Enumerable.Empty<MirEffect>())
-                {
-                    float frameLight = ob.FrameLight;
-
-                    if (frameLight > 0)
+                if (map.Objects != null)
+                    for (int i = 0; i < map.Objects.Count; i++)
                     {
-                        float scale = BaseLightSize + frameLight * 2 * LightScale / EffectLightScaleDivisor;
-                        float effectX = ob.DrawX + CellWidth / 2F - (lightSize.Width * scale) / 2F;
-                        float effectY = ob.DrawY + CellHeight / 2F - (lightSize.Height * scale) / 2F;
+                        MapObject ob = map.Objects[i];
+                        if (!ShouldDrawObjectLight(ob, user))
+                            continue;
 
-                        DrawLight(lightTexture, lightSource, lightSize, effectX, effectY, scale, ob.FrameLightColour);
+                        float scale = BaseLightSize + ob.Light * 2 * LightScale;
+                        float objectX = (OffSetX + ob.CurrentLocation.X - user.CurrentLocation.X) * CellWidth + PixelOffsetX + ob.MovingOffSet.X - user.MovingOffSet.X + CellWidth / 2F - (lightSize.Width * scale) / 2F;
+                        float objectY = (OffSetY + ob.CurrentLocation.Y - user.CurrentLocation.Y) * CellHeight + PixelOffsetY + ob.MovingOffSet.Y - user.MovingOffSet.Y - (lightSize.Height * scale) / 2F;
+
+                        DrawLight(lightTexture, lightSource, lightSize, objectX, objectY, scale, ob.LightColour);
                     }
-                }
+
+                if (map.Effects != null)
+                    for (int i = 0; i < map.Effects.Count; i++)
+                    {
+                        MirEffect ob = map.Effects[i];
+                        float frameLight = ob.FrameLight;
+
+                        if (frameLight > 0)
+                        {
+                            float scale = BaseLightSize + frameLight * 2 * LightScale / EffectLightScaleDivisor;
+                            float effectX = ob.DrawX + CellWidth / 2F - (lightSize.Width * scale) / 2F;
+                            float effectY = ob.DrawY + CellHeight / 2F - (lightSize.Height * scale) / 2F;
+
+                            DrawLight(lightTexture, lightSource, lightSize, effectX, effectY, scale, ob.FrameLightColour);
+                        }
+                    }
 
                 int minX = Math.Max(0, user.CurrentLocation.X - OffSetX - TileLightSearchPadding);
                 int maxX = Math.Min(width - 1, user.CurrentLocation.X + OffSetX + TileLightSearchPadding);
@@ -2020,32 +2123,36 @@ namespace Client.Scenes.Views
                     hash = hash * 31 + user.LightColour.ToArgb();
                     hash = hash * 31 + (int)user.Poison;
 
-                    foreach (MapObject ob in map.Objects ?? Enumerable.Empty<MapObject>())
-                    {
-                        if (!ShouldDrawObjectLight(ob, user))
-                            continue;
+                    if (map.Objects != null)
+                        for (int i = 0; i < map.Objects.Count; i++)
+                        {
+                            MapObject ob = map.Objects[i];
+                            if (!ShouldDrawObjectLight(ob, user))
+                                continue;
 
-                        hash = hash * 31 + ob.ObjectID.GetHashCode();
-                        hash = hash * 31 + ob.CurrentLocation.X;
-                        hash = hash * 31 + ob.CurrentLocation.Y;
-                        hash = hash * 31 + ob.MovingOffSet.X;
-                        hash = hash * 31 + ob.MovingOffSet.Y;
-                        hash = hash * 31 + ob.Light;
-                        hash = hash * 31 + ob.LightColour.ToArgb();
-                        hash = hash * 31 + (ob.Dead ? 1 : 0);
-                    }
+                            hash = hash * 31 + ob.ObjectID.GetHashCode();
+                            hash = hash * 31 + ob.CurrentLocation.X;
+                            hash = hash * 31 + ob.CurrentLocation.Y;
+                            hash = hash * 31 + ob.MovingOffSet.X;
+                            hash = hash * 31 + ob.MovingOffSet.Y;
+                            hash = hash * 31 + ob.Light;
+                            hash = hash * 31 + ob.LightColour.ToArgb();
+                            hash = hash * 31 + (ob.Dead ? 1 : 0);
+                        }
 
-                    foreach (MirEffect effect in map.Effects ?? Enumerable.Empty<MirEffect>())
-                    {
-                        float frameLight = effect.FrameLight;
-                        if (frameLight <= 0)
-                            continue;
+                    if (map.Effects != null)
+                        for (int i = 0; i < map.Effects.Count; i++)
+                        {
+                            MirEffect effect = map.Effects[i];
+                            float frameLight = effect.FrameLight;
+                            if (frameLight <= 0)
+                                continue;
 
-                        hash = hash * 31 + effect.DrawX;
-                        hash = hash * 31 + effect.DrawY;
-                        hash = hash * 31 + (int)(frameLight * 100);
-                        hash = hash * 31 + effect.FrameLightColour.ToArgb();
-                    }
+                            hash = hash * 31 + effect.DrawX;
+                            hash = hash * 31 + effect.DrawY;
+                            hash = hash * 31 + (int)(frameLight * 100);
+                            hash = hash * 31 + effect.FrameLightColour.ToArgb();
+                        }
 
                     return hash;
                 }
@@ -2094,6 +2201,9 @@ namespace Client.Scenes.Views
         public const int MiddleFrameMask = 0x0F; // lower 4 bits = frame count
         public const int MiddleBlendBit = 0x80;  // bit 7 = blend flag
 
+        public MirLibrary BackLibrary;
+        public bool BackLibraryLoaded;
+
         public MirLibrary MiddleLibrary;
         public MirLibrary FrontLibrary;
         public bool LibrariesLoaded;
@@ -2102,10 +2212,12 @@ namespace Client.Scenes.Views
 
         public bool Blocking()
         {
-            if (Objects != null)
+            List<MapObject> objects = Objects;
+
+            if (objects != null)
             {
-                foreach (MapObject ob in Objects)
-                    if (ob.Blocking) return true;
+                for (int i = 0; i < objects.Count; i++)
+                    if (objects[i].Blocking) return true;
             }
 
             return Flag;

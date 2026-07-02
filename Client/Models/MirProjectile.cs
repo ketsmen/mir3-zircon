@@ -66,8 +66,11 @@ namespace Client.Models
             int x1 = (location.X - MapObject.User.CurrentLocation.X + MapObject.OffSetX) * MapObject.CellWidth - MapObject.User.MovingOffSet.X;
             int y1 = (location.Y - MapObject.User.CurrentLocation.Y + MapObject.OffSetY) * MapObject.CellHeight - MapObject.User.MovingOffSet.Y;
 
-            Direction16 = Functions.Direction16(new Point(x, y / 32 * 48), new Point(x1, y1 / 32 * 48));
-            long duration = Functions.Distance(new Point(x, y / 32 * 48), new Point(x1, y1 / 32 * 48)) * (TimeSpan.TicksPerMillisecond);
+            Point originPoint = new Point(x, y / 32 * 48);
+            Point targetPoint = new Point(x1, y1 / 32 * 48);
+
+            Direction16 = Functions.Direction16(originPoint, targetPoint);
+            long duration = Functions.Distance(originPoint, targetPoint) * TimeSpan.TicksPerMillisecond;
 
             if (Delay > 0)
                 duration *= Delay;
@@ -127,7 +130,10 @@ namespace Client.Models
         {
             TimeSpan enlapsed = CEnvir.Now - StartTime;
 
-            enlapsed = TimeSpan.FromTicks(enlapsed.Ticks % TotalDuration.Ticks);
+            long totalTicks = TotalDurationTicks;
+            if (totalTicks <= 0) return FrameCount;
+
+            enlapsed = TimeSpan.FromTicks(enlapsed.Ticks % totalTicks);
 
             for (int i = 0; i < Delays.Length; i++)
             {

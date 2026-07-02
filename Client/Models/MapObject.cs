@@ -19,6 +19,8 @@ namespace Client.Models
     {
         public static SortedDictionary<string, List<DXLabel>> NameLabels = new SortedDictionary<string, List<DXLabel>>();
         public static List<DXLabel> ChatLabels = new List<DXLabel>();
+        private static string HighlightedItemsText = string.Empty;
+        private static string[] HighlightedItemNames = Array.Empty<string>();
 
         public static UserObject User => GameScene.Game.User;
 
@@ -768,17 +770,51 @@ namespace Client.Models
                 return false;
 
             bool created = false;
-            List<CustomSkillEffectInfo> effects = skill.Effects?
-                .Where(x => x != null)
-                .Where(x => effectFilter == null || effectFilter(x))
-                .OrderBy(x => x.Stage)
-                .ThenBy(x => x.Index)
-                .ToList() ?? new List<CustomSkillEffectInfo>();
+            List<CustomSkillEffectInfo> effects = new List<CustomSkillEffectInfo>(skill.Effects?.Count ?? 0);
 
-            CustomSkillEffectInfo hitTriggerProjectile = effects.FirstOrDefault(x => x.Stage == CustomSkillEffectStage.Projectile && TryGetCustomEffectLibrary(x, out _));
-            List<CustomSkillEffectInfo> deferredHitEffects = hitTriggerProjectile == null
-                ? new List<CustomSkillEffectInfo>()
-                : effects.Where(x => x.Stage == CustomSkillEffectStage.Hit).ToList();
+            if (skill.Effects != null)
+            {
+                for (int i = 0; i < skill.Effects.Count; i++)
+                {
+                    CustomSkillEffectInfo effect = skill.Effects[i];
+
+                    if (effect == null) continue;
+                    if (effectFilter != null && !effectFilter(effect)) continue;
+
+                    effects.Add(effect);
+                }
+            }
+
+            if (effects.Count > 1)
+                effects.Sort(CompareCustomSkillEffects);
+
+            CustomSkillEffectInfo hitTriggerProjectile = null;
+
+            for (int i = 0; i < effects.Count; i++)
+            {
+                CustomSkillEffectInfo effect = effects[i];
+
+                if (effect.Stage != CustomSkillEffectStage.Projectile) continue;
+                if (!TryGetCustomEffectLibrary(effect, out _)) continue;
+
+                hitTriggerProjectile = effect;
+                break;
+            }
+
+            List<CustomSkillEffectInfo> deferredHitEffects = null;
+
+            if (hitTriggerProjectile != null)
+            {
+                for (int i = 0; i < effects.Count; i++)
+                {
+                    CustomSkillEffectInfo effect = effects[i];
+
+                    if (effect.Stage != CustomSkillEffectStage.Hit) continue;
+
+                    deferredHitEffects ??= new List<CustomSkillEffectInfo>();
+                    deferredHitEffects.Add(effect);
+                }
+            }
 
             foreach (CustomSkillEffectInfo effect in effects)
             {
@@ -861,6 +897,13 @@ namespace Client.Models
             }
 
             return created || skill.Magic?.Magic == MagicType.Custom;
+        }
+
+        private static int CompareCustomSkillEffects(CustomSkillEffectInfo x, CustomSkillEffectInfo y)
+        {
+            int result = ((int)x.Stage).CompareTo((int)y.Stage);
+
+            return result != 0 ? result : x.Index.CompareTo(y.Index);
         }
 
         private static bool TryGetCustomEffectLibrary(CustomSkillEffectInfo effectInfo, out MirLibrary library)
@@ -5869,18 +5912,9 @@ namespace Client.Models
                     y -= 13;
 
                 NameLabel.Location = new Point(x, y);
-                if (Config.HighlightedItems != string.Empty)
-                {
-                    string[] items = Config.HighlightedItems.Split(',');
-                    for (int i = 0; i < items.Length; i++)
-                    {
-                        if (string.Equals(items[i].Replace(" ", ""), Name.Replace(" ", ""), StringComparison.OrdinalIgnoreCase))
-                        {
-                            NameLabel.ForeColour = Color.OrangeRed;
-                            break;
-                        }
-                    }
-                }
+                if (IsHighlightedItemName(Name))
+                    NameLabel.ForeColour = Color.OrangeRed;
+
                 NameLabel.Draw();
             }
 
@@ -5916,6 +5950,87 @@ namespace Client.Models
                 CaptionLabel.Location = new Point(x, y);
                 CaptionLabel.Draw();
             }
+        }
+
+        private static bool IsHighlightedItemName(string name)
+        {
+            string highlightedItems = Config.HighlightedItems ?? string.Empty;
+
+            if (!string.Equals(HighlightedItemsText, highlightedItems, StringComparison.Ordinal))
+            {
+                HighlightedItemsText = highlightedItems;
+
+                if (string.IsNullOrEmpty(highlightedItems))
+                {
+                    HighlightedItemNames = Array.Empty<string>();
+                }
+                else
+                {
+                    string[] items = highlightedItems.Split(',');
+                    List<string> normalized = new List<string>(items.Length);
+
+                    for (int i = 0; i < items.Length; i++)
+                    {
+                        string item = NormalizeHighlightedItemName(items[i]);
+
+                        if (item.Length > 0)
+                            normalized.Add(item);
+                    }
+
+                    HighlightedItemNames = normalized.ToArray();
+                }
+            }
+
+            if (HighlightedItemNames.Length == 0 || string.IsNullOrEmpty(name)) return false;
+
+            for (int i = 0; i < HighlightedItemNames.Length; i++)
+                if (HighlightedItemNameEquals(HighlightedItemNames[i], name))
+                    return true;
+
+            return false;
+        }
+
+        private static string NormalizeHighlightedItemName(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return string.Empty;
+
+            int spaceCount = 0;
+            for (int i = 0; i < value.Length; i++)
+                if (value[i] == ' ')
+                    spaceCount++;
+
+            if (spaceCount == 0) return value;
+
+            char[] buffer = new char[value.Length - spaceCount];
+            int index = 0;
+
+            for (int i = 0; i < value.Length; i++)
+            {
+                char c = value[i];
+                if (c == ' ') continue;
+
+                buffer[index++] = c;
+            }
+
+            return new string(buffer);
+        }
+
+        private static bool HighlightedItemNameEquals(string highlightedName, string name)
+        {
+            int highlightedIndex = 0;
+
+            for (int i = 0; i < name.Length; i++)
+            {
+                char c = name[i];
+                if (c == ' ') continue;
+
+                if (highlightedIndex >= highlightedName.Length) return false;
+                if (char.ToUpperInvariant(c) != char.ToUpperInvariant(highlightedName[highlightedIndex])) return false;
+
+                highlightedIndex++;
+            }
+
+            return highlightedIndex == highlightedName.Length;
         }
 
         public virtual void DrawDamage()
@@ -6380,8 +6495,12 @@ namespace Client.Models
                             Loop = true,
                         });
 
-                        foreach (MirChainEffect chainEffect in GameScene.Game.MapControl.Effects.OfType<MirChainEffect>().Where(x => x.Target == this))
+                        List<MirEffect> mapEffects = GameScene.Game.MapControl.Effects;
+                        for (int i = 0; i < mapEffects.Count; i++)
                         {
+                            if (mapEffects[i] is not MirChainEffect chainEffect || chainEffect.Target != this)
+                                continue;
+
                             chainEffect.SetOwner(chain);
                             effects.Add(chainEffect);
                         }

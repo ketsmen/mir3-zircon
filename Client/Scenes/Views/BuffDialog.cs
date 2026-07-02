@@ -15,6 +15,7 @@ namespace Client.Scenes.Views
     {
         #region Properties
         private Dictionary<ClientBuffInfo, DXImageControl> Icons = new Dictionary<ClientBuffInfo, DXImageControl>();
+        private readonly List<ClientBuffInfo> BuffBuffer = new List<ClientBuffInfo>();
 
         public override WindowType Type => WindowType.BuffBox;
         public override bool CustomSize => false;
@@ -41,26 +42,33 @@ namespace Client.Scenes.Views
 
             Icons.Clear();
 
-            List<ClientBuffInfo> buffs = MapObject.User.Buffs.ToList();
+            List<ClientBuffInfo> buffs = BuffBuffer;
+            buffs.Clear();
 
             Stats permStats = new Stats();
 
-            for (int i = buffs.Count - 1; i >= 0; i--)
+            List<ClientBuffInfo> source = MapObject.User.Buffs;
+
+            for (int i = 0; i < source.Count; i++)
             {
-                ClientBuffInfo buff = buffs[i];
+                ClientBuffInfo buff = source[i];
 
                 switch (buff.Type)
                 {
                     case BuffType.ItemBuff:
-                        if (buff.RemainingTime != TimeSpan.MaxValue) continue;
+                        if (buff.RemainingTime != TimeSpan.MaxValue)
+                        {
+                            buffs.Add(buff);
+                            continue;
+                        }
 
                         permStats.Add(Globals.ItemInfoList.Binding.First(x => x.Index == buff.ItemIndex).Stats);
-
-                        buffs.Remove(buff);
                         break;
                     case BuffType.Ranking:
                     case BuffType.Developer:
-                        buffs.Remove(buff);
+                        break;
+                    default:
+                        buffs.Add(buff);
                         break;
                 }
             }
@@ -258,6 +266,8 @@ namespace Client.Scenes.Views
 
             for (int i = 0; i < buffs.Count; i++)
                 Icons[buffs[i]].Location = new Point(3 + (i % 6) * 27, 3 + (i / 6) * 27);
+
+            buffs.Clear();
         }
 
         private string GetBuffHint(ClientBuffInfo buff)

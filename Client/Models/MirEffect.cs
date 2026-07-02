@@ -20,6 +20,9 @@ namespace Client.Models
         public int StartIndex;
         public int FrameCount;
         public TimeSpan[] Delays;
+        private readonly long _totalDurationTicks;
+        protected long TotalDurationTicks => _totalDurationTicks;
+        public bool IsRemoved { get; private set; }
 
         public int FrameIndex
         {
@@ -103,10 +106,13 @@ namespace Client.Models
 
                 TimeSpan elapsed = CEnvir.Now - StartTime;
 
-                if (Loop)
-                    elapsed = TimeSpan.FromTicks(elapsed.Ticks % TotalDuration.Ticks);
+                long totalTicks = TotalDurationTicks;
+                if (totalTicks <= 0) return EndLight;
 
-                return StartLight + (EndLight - StartLight) * elapsed.Ticks / TotalDuration.Ticks;
+                if (Loop)
+                    elapsed = TimeSpan.FromTicks(elapsed.Ticks % totalTicks);
+
+                return StartLight + (EndLight - StartLight) * elapsed.Ticks / totalTicks;
             }
         }
         public Color FrameLightColour => LightColours[FrameIndex];
@@ -119,18 +125,7 @@ namespace Client.Models
 
         public Point AdditionalOffSet;
 
-        public TimeSpan TotalDuration
-        {
-            get
-            {
-                TimeSpan temp = TimeSpan.Zero;
-
-                foreach (TimeSpan delay in Delays)
-                    temp += delay;
-
-                return temp;
-            }
-        }
+        public TimeSpan TotalDuration => TimeSpan.FromTicks(TotalDurationTicks);
 
         public MirEffect(int startIndex, int frameCount, TimeSpan frameDelay, LibraryFile file, int startLight, int endLight, Color lightColour)
             : this(startIndex, frameCount, frameDelay, startLight, endLight, lightColour)
@@ -162,6 +157,8 @@ namespace Client.Models
                 //Light[i] = startLight + (endLight - startLight)/frameCount*i;
                 LightColours[i] = lightColour;
             }
+
+            _totalDurationTicks = frameDelay.Ticks * frameCount;
 
             GameScene.Game.MapControl.Effects.Add(this);
         }
@@ -215,10 +212,13 @@ namespace Client.Models
             else
             {
                 // Calculate how many full loops have completed
-                CurrentLoopCount = (int)(elapsed.Ticks / TotalDuration.Ticks);
+                long totalTicks = TotalDurationTicks;
+                if (totalTicks <= 0) return FrameCount;
+
+                CurrentLoopCount = (int)(elapsed.Ticks / totalTicks);
 
                 // Keep elapsed only within the current loop
-                elapsed = TimeSpan.FromTicks(elapsed.Ticks % TotalDuration.Ticks);
+                elapsed = TimeSpan.FromTicks(elapsed.Ticks % totalTicks);
             }
 
             if (Reversed)
@@ -257,6 +257,9 @@ namespace Client.Models
 
         public virtual void Remove()
         {
+            if (IsRemoved) return;
+
+            IsRemoved = true;
             CompleteAction = null;
             FrameAction = null;
             FrameIndexAction = null;

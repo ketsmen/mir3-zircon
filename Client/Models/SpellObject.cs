@@ -4,7 +4,6 @@ using Library;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
 using Frame = Library.Frame;
 using S = Library.Network.ServerPackets;
 
@@ -224,11 +223,19 @@ namespace Client.Models
 
         private static bool ExistingEffects(SpellEffect effect)
         {
-            bool nearby = GameScene.Game.MapControl.Objects.OfType<SpellObject>().Any(s =>
-                s.Effect == effect && !s.Dead &&
-                Functions.InRange(User.CurrentLocation, s.CurrentLocation, 20));
+            List<MapObject> objects = GameScene.Game.MapControl.Objects;
 
-            return nearby;
+            for (int i = 0; i < objects.Count; i++)
+            {
+                if (objects[i] is not SpellObject spell) continue;
+                if (spell.Effect != effect) continue;
+                if (spell.Dead) continue;
+                if (!Functions.InRange(User.CurrentLocation, spell.CurrentLocation, 20)) continue;
+
+                return true;
+            }
+
+            return false;
         }
     }
 }

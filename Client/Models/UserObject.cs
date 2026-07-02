@@ -205,6 +205,72 @@ namespace Client.Models
 
         public List<ClientBuffInfo> Buffs = new List<ClientBuffInfo>();
 
+        public bool HasBuff(BuffType type)
+        {
+            List<ClientBuffInfo> buffs = Buffs;
+
+            for (int i = 0; i < buffs.Count; i++)
+            {
+                if (buffs[i].Type == type) return true;
+            }
+
+            return false;
+        }
+
+        public bool HasBuff(BuffType first, BuffType second)
+        {
+            List<ClientBuffInfo> buffs = Buffs;
+
+            for (int i = 0; i < buffs.Count; i++)
+            {
+                BuffType type = buffs[i].Type;
+
+                if (type == first || type == second) return true;
+            }
+
+            return false;
+        }
+
+        public bool AllBuffsAre(BuffType type)
+        {
+            List<ClientBuffInfo> buffs = Buffs;
+
+            for (int i = 0; i < buffs.Count; i++)
+            {
+                if (buffs[i].Type != type) return false;
+            }
+
+            return true;
+        }
+
+        public ClientBuffInfo GetBuff(BuffType type)
+        {
+            List<ClientBuffInfo> buffs = Buffs;
+
+            for (int i = 0; i < buffs.Count; i++)
+            {
+                ClientBuffInfo buff = buffs[i];
+
+                if (buff.Type == type) return buff;
+            }
+
+            return null;
+        }
+
+        public ClientBuffInfo GetItemBuff(int itemIndex)
+        {
+            List<ClientBuffInfo> buffs = Buffs;
+
+            for (int i = 0; i < buffs.Count; i++)
+            {
+                ClientBuffInfo buff = buffs[i];
+
+                if (buff.Type == BuffType.ItemBuff && buff.ItemIndex == itemIndex) return buff;
+            }
+
+            return null;
+        }
+
         public Dictionary<MagicInfo, ClientUserMagic> Magics = new Dictionary<MagicInfo, ClientUserMagic>();
         public List<ClientUserMilestone> Milestones = new List<ClientUserMilestone>();
 
@@ -460,7 +526,7 @@ namespace Client.Models
 
                             if (AttackMagic == MagicType.Karma)
                             {
-                                if (Stats[Stat.Health] * pair.Value.Cost / 100 > CurrentHP || Buffs.All(x => x.Type != BuffType.Cloak))
+                                if (Stats[Stat.Health] * pair.Value.Cost / 100 > CurrentHP || !HasBuff(BuffType.Cloak))
                                     break;
                             }
                             else

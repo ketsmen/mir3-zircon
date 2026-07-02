@@ -4,7 +4,6 @@ using Library;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
 using System.Numerics;
 
 namespace Client.Models.Particles
@@ -28,7 +27,16 @@ namespace Client.Models.Particles
 
         public bool NoParticles
         {
-            get { return ParticleTypes.All(x => x.Particles.Count == 0); }
+            get
+            {
+                if (ParticleTypes == null) return true;
+
+                for (int i = 0; i < ParticleTypes.Count; i++)
+                    if (ParticleTypes[i].Particles.Count != 0)
+                        return false;
+
+                return true;
+            }
         }
 
         public ParticleEmitter(MirEffect owner)
@@ -73,8 +81,10 @@ namespace Client.Models.Particles
                 }
             }
 
-            foreach (var type in ParticleTypes)
+            for (int typeIndex = 0; typeIndex < ParticleTypes.Count; typeIndex++)
             {
+                ParticleType type = ParticleTypes[typeIndex];
+
                 for (int i = 0; i < type.Particles.Count; i++)
                 {
                     var particle = type.Particles[i];
@@ -98,13 +108,12 @@ namespace Client.Models.Particles
                         }
                     }
                 }
-
-                if (NoParticles && _stopGeneration)
-                {
-                    Remove();
-                }
             }
 
+            if (_stopGeneration && NoParticles)
+            {
+                Remove();
+            }
         }
 
         public void Draw()
@@ -124,7 +133,10 @@ namespace Client.Models.Particles
 
                     if (p.Position.X - centerX > Config.GameSize.Width || p.Position.Y - centerY > Config.GameSize.Height)
                     {
-                        types.Particles.Remove(p);
+                        if (!p.IsDisposed)
+                            p.Dispose();
+
+                        types.Particles.RemoveAt(i);
                         continue;
                     }
 

@@ -51,7 +51,7 @@ namespace Client.Models
         public override void Process()
         {
             // Remove if owner effect no longer exists
-            if (_owner != null && !GameScene.Game.MapControl.Effects.Contains(_owner))
+            if (_owner?.IsRemoved == true)
             {
                 Remove();
                 return;

@@ -1247,7 +1247,16 @@ namespace Client.Models
 
             if (allowOutline && Config.ShowTargetOutline)
             {
-                var isFriendly = GameScene.Game.GroupBox.Members.Any(x => x.ObjectID == ObjectID);
+                bool isFriendly = false;
+
+                for (int i = 0; i < GameScene.Game.GroupBox.Members.Count; i++)
+                {
+                    if (GameScene.Game.GroupBox.Members[i].ObjectID != ObjectID) continue;
+
+                    isFriendly = true;
+                    break;
+                }
+
                 RenderingPipelineManager.EnableOutlineEffect(isFriendly ? Config.TargetPlayerFriendlyColour : Config.TargetPlayerEnemyColour, 2f);
                 outlineEnabled = true;
             }
@@ -1310,13 +1319,15 @@ namespace Client.Models
 
             if (!GameScene.Game.DataDictionary.TryGetValue(ObjectID, out ClientObjectData data)) return;
 
-            if (!GameScene.Game.IsAlly(ObjectID) && User.Buffs.All(x => x.Type != BuffType.Developer)) return;
+            if (!GameScene.Game.IsAlly(ObjectID) && !User.HasBuff(BuffType.Developer)) return;
 
-            if (this == User && User.Buffs.Any(x => x.Type == BuffType.SuperiorMagicShield))
+            ClientBuffInfo superiorMagicShield = this == User ? User.GetBuff(BuffType.SuperiorMagicShield) : null;
+
+            if (superiorMagicShield != null)
             {
                 if (!CEnvir.LibraryList.TryGetValue(LibraryFile.Interface, out MirLibrary library)) return;
 
-                float percent = Math.Min(1, Math.Max(0, User.Buffs.First(x => x.Type == BuffType.SuperiorMagicShield).Stats[Stat.SuperiorMagicShield] / (float)User.MaximumSuperiorMagicShield));
+                float percent = Math.Min(1, Math.Max(0, superiorMagicShield.Stats[Stat.SuperiorMagicShield] / (float)User.MaximumSuperiorMagicShield));
 
                 if (percent == 0) return;
 

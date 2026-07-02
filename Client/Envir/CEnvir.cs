@@ -19,6 +19,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -43,6 +44,9 @@ namespace Client.Envir
         public static bool Shift, Alt, Ctrl;
         public static DateTime Now;
         public static Point MouseLocation;
+        private static Point _lastMouseMoveEventLocation = new Point(int.MinValue, int.MinValue);
+        private static MouseEventArgs _lastMouseMoveEventArgs;
+        private static readonly StringBuilder DebugTextBuilder = new StringBuilder(256);
 
         public static CConnection Connection;
         public static bool WrongVersion;
@@ -505,11 +509,11 @@ namespace Client.Envir
         private static void UpdateGame()
         {
             Now = Time.Now;
-            DXControl.ActiveScene?.OnMouseMove(new MouseEventArgs(MouseButtons.None, 0, MouseLocation.X, MouseLocation.Y, 0));
+            DXControl.ActiveScene?.OnMouseMove(GetMouseMoveEventArgs());
 
-            if (Time.Now >= _FPSTime)
+            if (Now >= _FPSTime)
             {
-                _FPSTime = Time.Now.AddSeconds(1);
+                _FPSTime = Now.AddSeconds(1);
                 FPSCount = FPSCounter;
                 FPSCounter = 0;
                 DPSCount = DPSCounter;
@@ -520,76 +524,7 @@ namespace Client.Envir
             Connection?.Process();
             DXControl.ActiveScene?.Process();
 
-            string debugText = $"FPS: {FPSCount}";
-
-            if (DXControl.MouseControl != null)
-                debugText += $", Mouse Control: {DXControl.MouseControl.GetType().Name}";
-
-            if (DXControl.FocusControl != null)
-                debugText += $", Focus Control: {DXControl.FocusControl.GetType().Name}";
-
-            debugText += $", Mouse: {CEnvir.MouseLocation}";
-
-            if (GameScene.Game != null)
-            {
-                if (DXControl.MouseControl is MapControl)
-                    debugText += $", Co Ords: {GameScene.Game.MapControl.MapLocation}";
-
-                debugText += $", Objects: {GameScene.Game.MapControl.Objects.Count}";
-
-                if (MapObject.MouseObject != null)
-                    debugText += $", Mouse Object: {MapObject.MouseObject.Name}";
-            }
-            debugText += $", DPS: {DPSCount}";
-
-            string connectionText = string.Empty;
-
-            if (Connection != null)
-            {
-                const decimal KB = 1024;
-                const decimal MB = KB * 1024;
-
-                string sent, received;
-
-                if (Connection.TotalBytesSent > MB)
-                    sent = $"{Connection.TotalBytesSent / MB:#,##0.0}MB";
-                else if (Connection.TotalBytesSent > KB)
-                    sent = $"{Connection.TotalBytesSent / KB:#,##0}KB";
-                else
-                    sent = $"{Connection.TotalBytesSent:#,##0}B";
-
-                if (Connection.TotalBytesReceived > MB)
-                    received = $"{Connection.TotalBytesReceived / MB:#,##0.0}MB";
-                else if (Connection.TotalBytesReceived > KB)
-                    received = $"{Connection.TotalBytesReceived / KB:#,##0}KB";
-                else
-                    received = $"{Connection.TotalBytesReceived:#,##0}B";
-
-                connectionText = $"Ping: {Connection.Ping}, Sent: {sent}, Received: {received}, Caps: {Connection.ServerCapabilities}";
-            }
-
-            if (Config.FullScreen || Config.Borderless)
-            {
-                DXControl.DebugLabel.Text = debugText;
-                DXControl.DebugLabel.IsVisible = Config.DebugLabel;
-                DXControl.PingLabel.IsVisible = Config.DebugLabel;
-
-                if (Connection != null)
-                {
-                    DXControl.PingLabel.Text = connectionText;
-                    DXControl.PingLabel.Location = new Point(DXControl.DebugLabel.DisplayArea.Right + 5, DXControl.DebugLabel.DisplayArea.Y);
-                }
-            }
-            else
-            {
-                CEnvir.Target.Text = Config.DebugLabel ? $"{Globals.ClientName} - {debugText} - {connectionText}" : Globals.ClientName;
-
-                DXControl.PingLabel.Text = string.Empty;
-                DXControl.DebugLabel.Text = string.Empty;
-
-                DXControl.DebugLabel.Visible = false;
-                DXControl.PingLabel.Visible = false;
-            }
+            UpdateDebugDisplay();
 
             if (DXControl.MouseControl != null && DXControl.ActiveScene != null)
             {
@@ -639,6 +574,134 @@ namespace Client.Envir
                 DXControl.HintLabel.Text = null;
             }
         }
+
+        private static MouseEventArgs GetMouseMoveEventArgs()
+        {
+            if (_lastMouseMoveEventArgs != null && _lastMouseMoveEventLocation == MouseLocation)
+                return _lastMouseMoveEventArgs;
+
+            _lastMouseMoveEventLocation = MouseLocation;
+            _lastMouseMoveEventArgs = new MouseEventArgs(MouseButtons.None, 0, MouseLocation.X, MouseLocation.Y, 0);
+
+            return _lastMouseMoveEventArgs;
+        }
+
+        private static void UpdateDebugDisplay()
+        {
+            if (!Config.DebugLabel)
+            {
+                SetDebugLabelsVisible(false);
+
+                if (!Config.FullScreen && !Config.Borderless)
+                    SetTargetTitle(Globals.ClientName);
+
+                return;
+            }
+
+            string debugText = BuildDebugText();
+            string connectionText = BuildConnectionText();
+
+            if (Config.FullScreen || Config.Borderless)
+            {
+                DXControl.DebugLabel.Text = debugText;
+                DXControl.DebugLabel.IsVisible = true;
+                DXControl.PingLabel.IsVisible = true;
+
+                if (Connection != null)
+                {
+                    DXControl.PingLabel.Text = connectionText;
+                    DXControl.PingLabel.Location = new Point(DXControl.DebugLabel.DisplayArea.Right + 5, DXControl.DebugLabel.DisplayArea.Y);
+                }
+                else
+                {
+                    DXControl.PingLabel.Text = string.Empty;
+                }
+
+                return;
+            }
+
+            SetTargetTitle($"{Globals.ClientName} - {debugText} - {connectionText}");
+            SetDebugLabelsVisible(false);
+        }
+
+        private static string BuildDebugText()
+        {
+            StringBuilder builder = DebugTextBuilder;
+            builder.Clear();
+            builder.Append("FPS: ").Append(FPSCount);
+
+            if (DXControl.MouseControl != null)
+                builder.Append(", Mouse Control: ").Append(DXControl.MouseControl.GetType().Name);
+
+            if (DXControl.FocusControl != null)
+                builder.Append(", Focus Control: ").Append(DXControl.FocusControl.GetType().Name);
+
+            builder.Append(", Mouse: ").Append(MouseLocation);
+
+            if (GameScene.Game != null)
+            {
+                if (DXControl.MouseControl is MapControl)
+                    builder.Append(", Co Ords: ").Append(GameScene.Game.MapControl.MapLocation);
+
+                builder.Append(", Objects: ").Append(GameScene.Game.MapControl.Objects.Count);
+
+                if (MapObject.MouseObject != null)
+                    builder.Append(", Mouse Object: ").Append(MapObject.MouseObject.Name);
+            }
+
+            builder.Append(", DPS: ").Append(DPSCount);
+
+            return builder.ToString();
+        }
+
+        private static string BuildConnectionText()
+        {
+            if (Connection == null)
+                return string.Empty;
+
+            return $"Ping: {Connection.Ping}, Sent: {FormatByteCount(Connection.TotalBytesSent)}, Received: {FormatByteCount(Connection.TotalBytesReceived)}, Caps: {Connection.ServerCapabilities}";
+        }
+
+        private static string FormatByteCount(decimal bytes)
+        {
+            const decimal KB = 1024;
+            const decimal MB = KB * 1024;
+
+            if (bytes > MB)
+                return $"{bytes / MB:#,##0.0}MB";
+
+            if (bytes > KB)
+                return $"{bytes / KB:#,##0}KB";
+
+            return $"{bytes:#,##0}B";
+        }
+
+        private static void SetDebugLabelsVisible(bool visible)
+        {
+            if (!visible)
+            {
+                DXControl.PingLabel.Text = string.Empty;
+                DXControl.DebugLabel.Text = string.Empty;
+            }
+
+            if (Config.FullScreen || Config.Borderless)
+            {
+                DXControl.DebugLabel.IsVisible = visible;
+                DXControl.PingLabel.IsVisible = visible;
+                return;
+            }
+
+            DXControl.DebugLabel.Visible = visible;
+            DXControl.PingLabel.Visible = visible;
+        }
+
+        private static void SetTargetTitle(string title)
+        {
+            if (Target == null || Target.Text == title) return;
+
+            Target.Text = title;
+        }
+
         private static void RenderGame()
         {
             if (Target.ClientSize.Width == 0 || Target.ClientSize.Height == 0)
@@ -1412,22 +1475,43 @@ namespace Client.Envir
 
         public static bool IsCurrencyItem(ItemInfo info)
         {
-            return Globals.CurrencyInfoList.Binding.FirstOrDefault(x => x.DropItem == info) != null;
+            if (info == null || Globals.CurrencyInfoList?.Binding == null) return false;
+
+            foreach (CurrencyInfo currency in Globals.CurrencyInfoList.Binding)
+                if (currency.DropItem == info)
+                    return true;
+
+            return false;
         }
 
         public static int CurrencyImage(ItemInfo info, long count)
         {
-            var currency = Globals.CurrencyInfoList.Binding.FirstOrDefault(x => x.DropItem == info);
+            if (info == null || Globals.CurrencyInfoList?.Binding == null) return 0;
+
+            CurrencyInfo currency = null;
+
+            foreach (CurrencyInfo candidate in Globals.CurrencyInfoList.Binding)
+            {
+                if (candidate.DropItem != info) continue;
+
+                currency = candidate;
+                break;
+            }
 
             if (currency == null)
                 return 0;
 
-            var image = currency.Images.OrderByDescending(x => x.Amount).FirstOrDefault(x => x.Amount <= count);
+            CurrencyInfoImage image = null;
 
-            if (image != null)
-                return image.Image;
-            else
-                return currency.DropItem.Image;
+            foreach (CurrencyInfoImage candidate in currency.Images)
+            {
+                if (candidate.Amount > count) continue;
+
+                if (image == null || candidate.Amount > image.Amount)
+                    image = candidate;
+            }
+
+            return image?.Image ?? currency.DropItem.Image;
         }
     }
 }
