@@ -277,17 +277,31 @@ namespace Client.Scenes.Views
             if (MapObject.MouseObject != null && MapObject.MouseObject.Race != ObjectType.Item)
                 MapObject.MouseObject.DrawName();
 
+            DateTime now = CEnvir.Now;
+
             for (int i = 0; i < OverlayObjects.Count; i++)
             {
                 MapObject ob = OverlayObjects[i];
-                ob.DrawChat();
-                ob.DrawPoison();
-                ob.DrawHealth();
+
+                if (ob.ChatLabel != null && !ob.ChatLabel.IsDisposed && now <= ob.ChatTime)
+                    ob.DrawChat();
+
+                if (!ob.Dead && ob.Poison != PoisonType.None)
+                    ob.DrawPoison();
+
+                if (ShouldDrawObjectHealth(ob))
+                    ob.DrawHealth();
             }
 
             if (Config.ShowDamageNumbers)
                 for (int i = 0; i < OverlayObjects.Count; i++)
-                    OverlayObjects[i].DrawDamage();
+                {
+                    MapObject ob = OverlayObjects[i];
+
+                    if (ob.DamageList.Count == 0) continue;
+
+                    ob.DrawDamage();
+                }
 
             if (IsInsideMap(MapLocation))
             {
@@ -519,6 +533,11 @@ namespace Client.Scenes.Views
                 default:
                     return true;
             }
+        }
+
+        private static bool ShouldDrawObjectHealth(MapObject ob)
+        {
+            return ob.Race == ObjectType.Player || ob.Race == ObjectType.Hero || ob.Race == ObjectType.Monster;
         }
 
         private List<MirEffect>[] BuildObjectEffectRows(int minY, int maxY)

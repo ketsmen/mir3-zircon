@@ -6035,8 +6035,8 @@ namespace Client.Models
 
         public virtual void DrawDamage()
         {
-            foreach (DamageInfo damageInfo in DamageList)
-                damageInfo.Draw(DrawX, DrawY);
+            for (int i = 0; i < DamageList.Count; i++)
+                DamageList[i].Draw(DrawX, DrawY);
         }
 
         public void DrawChat()
@@ -6078,7 +6078,7 @@ namespace Client.Models
 
         public void DrawPoison()
         {
-            if (Dead) return;
+            if (Dead || Poison == PoisonType.None) return;
 
             RenderTexture poisonTexture = RenderingPipelineManager.GetPoisonTexture();
             Size poisonSize = RenderingPipelineManager.GetPoisonTextureSize();
@@ -6114,7 +6114,7 @@ namespace Client.Models
                 count++;
             }
 
-            if (Poison.HasFlag(PoisonType.Burn) || Poison.HasFlag(PoisonType.HellFire))
+            if ((Poison & (PoisonType.Burn | PoisonType.HellFire)) != PoisonType.None)
             {
                 RectangleF destination = new RectangleF(DrawX + count * 5, DrawY - 50, poisonSize.Width, poisonSize.Height);
                 RenderingPipelineManager.DrawTexture(poisonTexture, sourceRectangle, destination, Color.OrangeRed);

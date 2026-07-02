@@ -1816,8 +1816,10 @@ BorderInformation = new[]
 
         protected virtual void DrawChildControls()
         {
-            foreach (DXControl control in Controls)
+            for (int i = 0; i < Controls.Count; i++)
             {
+                DXControl control = Controls[i];
+
                 if (!control.IsVisible || control.DisplayArea.Width <= 0 || control.DisplayArea.Height <= 0)
                     continue;
 

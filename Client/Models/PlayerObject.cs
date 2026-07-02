@@ -1322,53 +1322,44 @@ namespace Client.Models
             if (!GameScene.Game.IsAlly(ObjectID) && !User.HasBuff(BuffType.Developer)) return;
 
             ClientBuffInfo superiorMagicShield = this == User ? User.GetBuff(BuffType.SuperiorMagicShield) : null;
+            float superiorPercent = 0F;
 
             if (superiorMagicShield != null)
+                superiorPercent = Math.Min(1, Math.Max(0, superiorMagicShield.Stats[Stat.SuperiorMagicShield] / (float)User.MaximumSuperiorMagicShield));
+
+            float healthPercent = data.MaxHealth > 0 ? Math.Min(1, Math.Max(0, data.Health / (float)data.MaxHealth)) : 0F;
+            float manaPercent = data.MaxMana > 0 ? Math.Min(1, Math.Max(0, data.Mana / (float)data.MaxMana)) : 0F;
+
+            if (superiorMagicShield != null && superiorPercent == 0F) return;
+            if (data.MaxHealth > 0 && healthPercent == 0F) return;
+            if (superiorPercent == 0F && healthPercent == 0F && manaPercent == 0F) return;
+
+            if (!CEnvir.LibraryList.TryGetValue(LibraryFile.Interface, out MirLibrary library)) return;
+
+            Size size = library.GetSize(79);
+
+            if (superiorPercent > 0F)
             {
-                if (!CEnvir.LibraryList.TryGetValue(LibraryFile.Interface, out MirLibrary library)) return;
-
-                float percent = Math.Min(1, Math.Max(0, superiorMagicShield.Stats[Stat.SuperiorMagicShield] / (float)User.MaximumSuperiorMagicShield));
-
-                if (percent == 0) return;
-
-                Size size = library.GetSize(79);
-
                 Color color = Color.Goldenrod;
 
                 library.Draw(80, DrawX, DrawY - 59, Color.White, false, 1F, ImageType.Image);
-                library.Draw(79, DrawX + 1, DrawY - 59 + 1, color, new Rectangle(0, 0, (int)(size.Width * percent), size.Height), 1F, ImageType.Image);
+                library.Draw(79, DrawX + 1, DrawY - 59 + 1, color, new Rectangle(0, 0, (int)(size.Width * superiorPercent), size.Height), 1F, ImageType.Image);
             }
 
-            if (data.MaxHealth > 0)
+            if (healthPercent > 0F)
             {
-                if (!CEnvir.LibraryList.TryGetValue(LibraryFile.Interface, out MirLibrary library)) return;
-
-                float percent = Math.Min(1, Math.Max(0, data.Health / (float)data.MaxHealth));
-
-                if (percent == 0) return;
-
-                Size size = library.GetSize(79);
-
                 Color color = Color.OrangeRed;
 
                 library.Draw(80, DrawX, DrawY - 55, Color.White, false, 1F, ImageType.Image);
-                library.Draw(79, DrawX + 1, DrawY - 55 + 1, color, new Rectangle(0, 0, (int)(size.Width * percent), size.Height), 1F, ImageType.Image);
+                library.Draw(79, DrawX + 1, DrawY - 55 + 1, color, new Rectangle(0, 0, (int)(size.Width * healthPercent), size.Height), 1F, ImageType.Image);
             }
 
-            if (data.MaxMana > 0)
+            if (manaPercent > 0F)
             {
-                if (!CEnvir.LibraryList.TryGetValue(LibraryFile.Interface, out MirLibrary library)) return;
-
-                float percent = Math.Min(1, Math.Max(0, data.Mana / (float)data.MaxMana));
-
-                if (percent == 0) return;
-
-                Size size = library.GetSize(79);
-
                 Color color = Color.DodgerBlue;
 
                 library.Draw(80, DrawX, DrawY - 51, Color.White, false, 1F, ImageType.Image);
-                library.Draw(79, DrawX + 1, DrawY - 51 + 1, color, new Rectangle(0, 0, (int)(size.Width * percent), size.Height), 1F, ImageType.Image);
+                library.Draw(79, DrawX + 1, DrawY - 51 + 1, color, new Rectangle(0, 0, (int)(size.Width * manaPercent), size.Height), 1F, ImageType.Image);
             }
         }
 
