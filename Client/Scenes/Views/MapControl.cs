@@ -185,6 +185,7 @@ namespace Client.Scenes.Views
 
         public const int CellWidth = 48, CellHeight = 32;
         public const int ManualHeightOffset = 34;
+        private const int ObjectDrawBoundsPadding = 4;
 
         public int ViewRangeX = 12, ViewRangeY = 24;
 
@@ -448,10 +449,10 @@ namespace Client.Scenes.Views
                 return false;
             }
 
-            BuildDrawRows(minY, maxY);
+            BuildDrawRows(minX, maxX, minY, maxY);
 
             if (Config.DrawEffects)
-                BuildEffectDrawLists(minY, maxY);
+                BuildEffectDrawLists(minX, maxX, minY, maxY);
             else
                 ClearEffectDrawLists();
 
@@ -507,7 +508,7 @@ namespace Client.Scenes.Views
             cell.LibrariesLoaded = true;
         }
 
-        private List<MapObject>[] BuildDrawRows(int minY, int maxY)
+        private List<MapObject>[] BuildDrawRows(int minX, int maxX, int minY, int maxY)
         {
             int rowCount = maxY - minY + 1;
 
@@ -525,8 +526,7 @@ namespace Client.Scenes.Views
             for (int i = 0; i < Objects.Count; i++)
             {
                 MapObject ob = Objects[i];
-                int renderY = ob.RenderY;
-                if (renderY < minY || renderY > maxY) continue;
+                if (!IsObjectInsideDrawBounds(ob, minX, maxX, minY, maxY, out int renderY)) continue;
 
                 OverlayObjects.Add(ob);
 
@@ -538,6 +538,15 @@ namespace Client.Scenes.Views
             }
 
             return DrawRows;
+        }
+
+        private static bool IsObjectInsideDrawBounds(MapObject ob, int minX, int maxX, int minY, int maxY, out int renderY)
+        {
+            renderY = ob.RenderY;
+            if (renderY < minY || renderY > maxY) return false;
+
+            int renderX = ob.CurrentLocation.X;
+            return renderX >= minX - ObjectDrawBoundsPadding && renderX <= maxX + ObjectDrawBoundsPadding;
         }
 
         private bool ShouldDrawObjectName(MapObject ob)
@@ -572,7 +581,7 @@ namespace Client.Scenes.Views
             ObjectEffectRowCount = 0;
         }
 
-        private void BuildEffectDrawLists(int minY, int maxY)
+        private void BuildEffectDrawLists(int minX, int maxX, int minY, int maxY)
         {
             int rowCount = maxY - minY + 1;
 
@@ -610,24 +619,19 @@ namespace Client.Scenes.Views
                         continue;
                 }
 
-                int renderY;
-
-                if (effect.MapTarget.IsEmpty && effect.Target != null)
+                if (effect.MapTarget.IsEmpty && effect.Target == User)
                 {
-                    if (effect.Target == User)
-                    {
-                        UserObjectEffects.Add(effect);
-                        continue;
-                    }
-
-                    renderY = effect.Target.RenderY;
-                }
-                else
-                {
-                    renderY = effect.MapTarget.Y;
+                    UserObjectEffects.Add(effect);
+                    continue;
                 }
 
-                if (renderY < minY || renderY > maxY) continue;
+                if (!TryGetObjectEffectRenderLocation(effect, out int renderX, out int renderY)) continue;
+
+                if (renderX < minX - ObjectDrawBoundsPadding ||
+                    renderX > maxX + ObjectDrawBoundsPadding ||
+                    renderY < minY ||
+                    renderY > maxY)
+                    continue;
 
                 int index = renderY - minY;
                 if (ObjectEffectRows[index] == null)
@@ -635,6 +639,27 @@ namespace Client.Scenes.Views
 
                 ObjectEffectRows[index].Add(effect);
             }
+        }
+
+        private static bool TryGetObjectEffectRenderLocation(MirEffect effect, out int renderX, out int renderY)
+        {
+            if (effect.MapTarget.IsEmpty && effect.Target != null)
+            {
+                renderX = effect.Target.CurrentLocation.X;
+                renderY = effect.Target.RenderY;
+                return true;
+            }
+
+            if (!effect.MapTarget.IsEmpty)
+            {
+                renderX = effect.MapTarget.X;
+                renderY = effect.MapTarget.Y;
+                return true;
+            }
+
+            renderX = 0;
+            renderY = 0;
+            return false;
         }
 
         private void ClearObjectCells()
@@ -1980,6 +2005,7 @@ namespace Client.Scenes.Views
                 int width = Math.Min(map.Width, map.Cells.GetLength(0));
                 int height = Math.Min(map.Height, map.Cells.GetLength(1));
                 if (width <= 0 || height <= 0) return;
+                if (!TryGetLightBounds(user, width, height, out int minX, out int maxX, out int minY, out int maxY)) return;
 
                 if (user.Dead)
                 {
@@ -2036,6 +2062,8 @@ namespace Client.Scenes.Views
                         MapObject ob = map.Objects[i];
                         if (!ShouldDrawObjectLight(ob, user))
                             continue;
+                        if (!IsPointInsideBounds(ob.CurrentLocation, minX, maxX, minY, maxY))
+                            continue;
 
                         float scale = BaseLightSize + ob.Light * 2 * LightScale;
                         float objectX = (OffSetX + ob.CurrentLocation.X - user.CurrentLocation.X) * CellWidth + PixelOffsetX + ob.MovingOffSet.X - user.MovingOffSet.X + CellWidth / 2F - (lightSize.Width * scale) / 2F;
@@ -2048,6 +2076,9 @@ namespace Client.Scenes.Views
                     for (int i = 0; i < map.Effects.Count; i++)
                     {
                         MirEffect ob = map.Effects[i];
+                        if (!IsPointInsideBounds(ob.CurrentLocation, minX, maxX, minY, maxY))
+                            continue;
+
                         float frameLight = ob.FrameLight;
 
                         if (frameLight > 0)
@@ -2059,11 +2090,6 @@ namespace Client.Scenes.Views
                             DrawLight(lightTexture, lightSource, lightSize, effectX, effectY, scale, ob.FrameLightColour);
                         }
                     }
-
-                int minX = Math.Max(0, user.CurrentLocation.X - OffSetX - TileLightSearchPadding);
-                int maxX = Math.Min(width - 1, user.CurrentLocation.X + OffSetX + TileLightSearchPadding);
-                int minY = Math.Max(0, user.CurrentLocation.Y - OffSetY - TileLightSearchPadding);
-                int maxY = Math.Min(height - 1, user.CurrentLocation.Y + OffSetY + TileLightSearchPadding);
 
                 for (int y = minY; y <= maxY; y++)
                 {
@@ -2111,6 +2137,22 @@ namespace Client.Scenes.Views
             private static bool ShouldDrawObjectLight(MapObject ob, UserObject user)
             {
                 return ob.Light > 0 && (!ob.Dead || ob == user || ob.Race == ObjectType.Spell);
+            }
+
+            private static bool TryGetLightBounds(UserObject user, int width, int height, out int minX, out int maxX, out int minY, out int maxY)
+            {
+                minX = Math.Max(0, user.CurrentLocation.X - OffSetX - TileLightSearchPadding);
+                maxX = Math.Min(width - 1, user.CurrentLocation.X + OffSetX + TileLightSearchPadding);
+                minY = Math.Max(0, user.CurrentLocation.Y - OffSetY - TileLightSearchPadding);
+                maxY = Math.Min(height - 1, user.CurrentLocation.Y + OffSetY + TileLightSearchPadding);
+
+                return maxX >= minX && maxY >= minY;
+            }
+
+            private static bool IsPointInsideBounds(Point location, int minX, int maxX, int minY, int maxY)
+            {
+                return location.X >= minX && location.X <= maxX &&
+                       location.Y >= minY && location.Y <= maxY;
             }
 
             public void UpdateLights()
@@ -2187,8 +2229,17 @@ namespace Client.Scenes.Views
                     if (map?.Cells == null || map.MapInfo == null || user == null)
                         return 0;
 
+                    int width = Math.Min(map.Width, map.Cells.GetLength(0));
+                    int height = Math.Min(map.Height, map.Cells.GetLength(1));
+                    if (width <= 0 || height <= 0) return 0;
+                    if (!TryGetLightBounds(user, width, height, out int minX, out int maxX, out int minY, out int maxY)) return 0;
+
                     hash = hash * 31 + map.Size.Width;
                     hash = hash * 31 + map.Size.Height;
+                    hash = hash * 31 + minX;
+                    hash = hash * 31 + maxX;
+                    hash = hash * 31 + minY;
+                    hash = hash * 31 + maxY;
                     hash = hash * 31 + (int)map.MapInfo.Light;
                     hash = hash * 31 + map.LLayer.BackColour.ToArgb();
                     hash = hash * 31 + user.CurrentLocation.X;
@@ -2207,6 +2258,8 @@ namespace Client.Scenes.Views
                             MapObject ob = map.Objects[i];
                             if (!ShouldDrawObjectLight(ob, user))
                                 continue;
+                            if (!IsPointInsideBounds(ob.CurrentLocation, minX, maxX, minY, maxY))
+                                continue;
 
                             hash = hash * 31 + ob.ObjectID.GetHashCode();
                             hash = hash * 31 + ob.CurrentLocation.X;
@@ -2222,6 +2275,9 @@ namespace Client.Scenes.Views
                         for (int i = 0; i < map.Effects.Count; i++)
                         {
                             MirEffect effect = map.Effects[i];
+                            if (!IsPointInsideBounds(effect.CurrentLocation, minX, maxX, minY, maxY))
+                                continue;
+
                             float frameLight = effect.FrameLight;
                             if (frameLight <= 0)
                                 continue;

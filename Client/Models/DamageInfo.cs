@@ -223,9 +223,14 @@ namespace Client.Models
 
         public void Process(DamageInfo previous)
         {
+            Process(previous, CEnvir.Now);
+        }
+
+        public void Process(DamageInfo previous, DateTime now)
+        {
             if (Library == null) return;
 
-            TimeSpan visibleTime = CEnvir.Now - StartTime;
+            TimeSpan visibleTime = now - StartTime;
 
             int oldY = DrawY;
 

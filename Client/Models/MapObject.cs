@@ -335,29 +335,36 @@ namespace Client.Models
 
         public virtual void Process()
         {
+            DateTime now = CEnvir.Now;
+            UserObject user = User;
+            List<DamageInfo> damageList = DamageList;
+
             DamageInfo previous = null;
-            for (int index = 0; index < DamageList.Count; index++)
+            int damageCount = damageList.Count;
+            for (int index = 0; index < damageCount; index++)
             {
-                DamageInfo damageInfo = DamageList[index];
-                if (DamageList.Count - index > 3 && CEnvir.Now - damageInfo.StartTime > damageInfo.AppearDelay && CEnvir.Now - damageInfo.StartTime < damageInfo.AppearDelay + damageInfo.ShowDelay)
+                DamageInfo damageInfo = damageList[index];
+                TimeSpan elapsed = now - damageInfo.StartTime;
+
+                if (damageCount - index > 3 && elapsed > damageInfo.AppearDelay && elapsed < damageInfo.AppearDelay + damageInfo.ShowDelay)
                 {
-                    damageInfo.StartTime = CEnvir.Now - damageInfo.AppearDelay - damageInfo.ShowDelay;
+                    damageInfo.StartTime = now - damageInfo.AppearDelay - damageInfo.ShowDelay;
                 }
 
-                damageInfo.Process(previous);
+                damageInfo.Process(previous, now);
 
                 previous = damageInfo;
             }
 
-            for (int i = DamageList.Count - 1; i >= 0; i--)
+            for (int i = damageList.Count - 1; i >= 0; i--)
             {
-                if (!DamageList[i].Visible)
-                    DamageList.RemoveAt(i);
+                if (!damageList[i].Visible)
+                    damageList.RemoveAt(i);
             }
-            UpdateFrame();
+            UpdateFrame(now);
 
-            DrawX = CurrentLocation.X - User.CurrentLocation.X + MapControl.OffSetX;
-            DrawY = CurrentLocation.Y - User.CurrentLocation.Y + MapControl.OffSetY;
+            DrawX = CurrentLocation.X - user.CurrentLocation.X + MapControl.OffSetX;
+            DrawY = CurrentLocation.Y - user.CurrentLocation.Y + MapControl.OffSetY;
 
             DrawX *= MapControl.CellWidth;
             DrawY *= MapControl.CellHeight;
@@ -366,30 +373,32 @@ namespace Client.Models
 
             //if (this != User)
             {
-                DrawX += MovingOffSet.X - User.MovingOffSet.X - User.ShakeScreenOffset.X;
-                DrawY += MovingOffSet.Y - User.MovingOffSet.Y - User.ShakeScreenOffset.Y;
+                DrawX += MovingOffSet.X - user.MovingOffSet.X - user.ShakeScreenOffset.X;
+                DrawY += MovingOffSet.Y - user.MovingOffSet.Y - user.ShakeScreenOffset.Y;
             }
 
             DrawColour = DefaultColour;
+            PoisonType poison = Poison;
+            Dictionary<BuffType, int> visibleBuffs = VisibleBuffs;
 
-            if ((Poison & PoisonType.Red) == PoisonType.Red)
+            if ((poison & PoisonType.Red) == PoisonType.Red)
                 DrawColour = Color.IndianRed;
 
-            if ((Poison & PoisonType.Green) == PoisonType.Green)
+            if ((poison & PoisonType.Green) == PoisonType.Green)
                 DrawColour = Color.SeaGreen;
 
-            if ((Poison & PoisonType.Slow) == PoisonType.Slow)
+            if ((poison & PoisonType.Slow) == PoisonType.Slow)
                 DrawColour = Color.CornflowerBlue;
 
-            if ((Poison & PoisonType.Paralysis) == PoisonType.Paralysis)
+            if ((poison & PoisonType.Paralysis) == PoisonType.Paralysis)
                 DrawColour = Color.DimGray;
 
-            if (Stats?[Stat.ClearRing] > 0 || VisibleBuffs.ContainsKey(BuffType.Invisibility) || VisibleBuffs.ContainsKey(BuffType.Cloak) || VisibleBuffs.ContainsKey(BuffType.Transparency))
+            if (Stats?[Stat.ClearRing] > 0 || visibleBuffs.ContainsKey(BuffType.Invisibility) || visibleBuffs.ContainsKey(BuffType.Cloak) || visibleBuffs.ContainsKey(BuffType.Transparency))
                 Opacity = 0.5f;
             else
                 Opacity = 1f;
 
-            if ((Poison & PoisonType.WraithGrip) == PoisonType.WraithGrip)
+            if ((poison & PoisonType.WraithGrip) == PoisonType.WraithGrip)
             {
                 if (CanShowWraithGrip)
                     CreateMagicEffect(MagicEffect.WraithGrip);
@@ -399,7 +408,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.WraithGrip);
             }
 
-            if ((Poison & PoisonType.Silenced) == PoisonType.Silenced)
+            if ((poison & PoisonType.Silenced) == PoisonType.Silenced)
             {
                 CreateMagicEffect(MagicEffect.Silence);
             }
@@ -408,7 +417,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.Silence);
             }
 
-            if ((Poison & PoisonType.Fear) == PoisonType.Fear)
+            if ((poison & PoisonType.Fear) == PoisonType.Fear)
             {
                 CreateMagicEffect(MagicEffect.Fear);
             }
@@ -417,7 +426,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.Fear);
             }
 
-            if ((Poison & PoisonType.Abyss) == PoisonType.Abyss)
+            if ((poison & PoisonType.Abyss) == PoisonType.Abyss)
             {
                 CreateMagicEffect(MagicEffect.Blind);
             }
@@ -426,7 +435,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.Blind);
             }
 
-            if ((Poison & PoisonType.Parasite) == PoisonType.Parasite)
+            if ((poison & PoisonType.Parasite) == PoisonType.Parasite)
             {
                 CreateMagicEffect(MagicEffect.Parasite);
             }
@@ -435,7 +444,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.Parasite);
             }
 
-            if (Poison.HasFlag(PoisonType.Burn) || Poison.HasFlag(PoisonType.HellFire))
+            if ((poison & (PoisonType.Burn | PoisonType.HellFire)) != 0)
             {
                 CreateMagicEffect(MagicEffect.Burn);
             }
@@ -444,7 +453,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.Burn);
             }
 
-            if ((Poison & PoisonType.Containment) == PoisonType.Containment)
+            if ((poison & PoisonType.Containment) == PoisonType.Containment)
             {
                 CreateMagicEffect(MagicEffect.Containment);
             }
@@ -453,7 +462,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.Containment);
             }
 
-            if ((Poison & PoisonType.Chain) == PoisonType.Chain)
+            if ((poison & PoisonType.Chain) == PoisonType.Chain)
             {
                 CreateMagicEffect(MagicEffect.Chain);
             }
@@ -462,7 +471,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.Chain);
             }
 
-            if ((Poison & PoisonType.Hemorrhage) == PoisonType.Hemorrhage)
+            if ((poison & PoisonType.Hemorrhage) == PoisonType.Hemorrhage)
             {
                 CreateMagicEffect(MagicEffect.Hemorrhage);
             }
@@ -471,7 +480,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.Hemorrhage);
             }
 
-            if ((Poison & PoisonType.Neutralize) == PoisonType.Neutralize)
+            if ((poison & PoisonType.Neutralize) == PoisonType.Neutralize)
             {
                 CreateMagicEffect(MagicEffect.Neutralize);
             }
@@ -480,7 +489,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.Neutralize);
             }
 
-            if (VisibleBuffs.ContainsKey(BuffType.MagicShield))
+            if (visibleBuffs.ContainsKey(BuffType.MagicShield))
             {
                 CreateMagicEffect(MagicEffect.MagicShield);
             }
@@ -489,7 +498,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.MagicShield);
             }
 
-            if (VisibleBuffs.ContainsKey(BuffType.SuperiorMagicShield))
+            if (visibleBuffs.ContainsKey(BuffType.SuperiorMagicShield))
             {
                 CreateMagicEffect(MagicEffect.SuperiorMagicShield);
             }
@@ -498,7 +507,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.SuperiorMagicShield);
             }
 
-            if (VisibleBuffs.ContainsKey(BuffType.Developer))
+            if (visibleBuffs.ContainsKey(BuffType.Developer))
             {
                 EndMagicEffect(MagicEffect.Ranking);
 
@@ -508,7 +517,7 @@ namespace Client.Models
             {
                 EndMagicEffect(MagicEffect.Developer);
 
-                if (VisibleBuffs.ContainsKey(BuffType.Ranking))
+                if (visibleBuffs.ContainsKey(BuffType.Ranking))
                 {
                     CreateMagicEffect(MagicEffect.Ranking);
                 }
@@ -518,7 +527,7 @@ namespace Client.Models
                 }
             }
 
-            if (VisibleBuffs.ContainsKey(BuffType.ReflectDamage))
+            if (visibleBuffs.ContainsKey(BuffType.ReflectDamage))
             {
                 CreateMagicEffect(MagicEffect.ReflectDamage);
             }
@@ -527,7 +536,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.ReflectDamage);
             }
 
-            if (VisibleBuffs.ContainsKey(BuffType.LifeSteal))
+            if (visibleBuffs.ContainsKey(BuffType.LifeSteal))
             {
                 CreateMagicEffect(MagicEffect.LifeSteal);
             }
@@ -536,7 +545,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.LifeSteal);
             }
 
-            if (VisibleBuffs.ContainsKey(BuffType.CelestialLight))
+            if (visibleBuffs.ContainsKey(BuffType.CelestialLight))
             {
                 CreateMagicEffect(MagicEffect.CelestialLight);
             }
@@ -545,7 +554,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.CelestialLight);
             }
 
-            if (VisibleBuffs.ContainsKey(BuffType.FrostBite))
+            if (visibleBuffs.ContainsKey(BuffType.FrostBite))
             {
                 CreateMagicEffect(MagicEffect.FrostBite);
             }
@@ -554,7 +563,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.FrostBite);
             }
 
-            if (VisibleBuffs.ContainsKey(BuffType.ElementalSwords))
+            if (visibleBuffs.ContainsKey(BuffType.ElementalSwords))
             {
                 CreateMagicEffect(MagicEffect.ElementalSwords);
             }
@@ -563,7 +572,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.ElementalSwords);
             }
 
-            if (VisibleBuffs.ContainsKey(BuffType.DefensiveBlow))
+            if (visibleBuffs.ContainsKey(BuffType.DefensiveBlow))
             {
                 CreateMagicEffect(MagicEffect.DefensiveBlow);
             }
@@ -572,7 +581,7 @@ namespace Client.Models
                 EndMagicEffect(MagicEffect.DefensiveBlow);
             }
 
-            if ((Poison & PoisonType.Binding) == PoisonType.Binding)
+            if ((poison & PoisonType.Binding) == PoisonType.Binding)
             {
                 CreateMagicEffect(MagicEffect.Binding);
             }
@@ -585,6 +594,11 @@ namespace Client.Models
 
         public virtual void UpdateFrame()
         {
+            UpdateFrame(CEnvir.Now);
+        }
+
+        protected void UpdateFrame(DateTime now)
+        {
             if (Frames == null || CurrentFrame == null) return;
 
             switch (CurrentAction)
@@ -595,12 +609,12 @@ namespace Client.Models
                     break;
             }
 
-            int frame = CurrentFrame.GetFrame(FrameStart, CEnvir.Now, (this != User || GameScene.Game.Observer) && ActionQueue.Count > 1);
+            int frame = CurrentFrame.GetFrame(FrameStart, now, (this != User || GameScene.Game.Observer) && ActionQueue.Count > 1);
 
             if (frame == CurrentFrame.FrameCount || (Interupt && ActionQueue.Count > 0))
             {
                 DoNextAction();
-                frame = CurrentFrame.GetFrame(FrameStart, CEnvir.Now, (this != User || GameScene.Game.Observer) && ActionQueue.Count > 1);
+                frame = CurrentFrame.GetFrame(FrameStart, now, (this != User || GameScene.Game.Observer) && ActionQueue.Count > 1);
                 if (frame == CurrentFrame.FrameCount)
                     frame -= 1;
             }
@@ -655,35 +669,35 @@ namespace Client.Models
                         {
                             case MirDirection.Up:
                                 x = 0;
-                                y = (int)(((CellHeight * MoveDistance) / sum) * (sum - Math.Min((CEnvir.Now - FrameStart).TotalMilliseconds, sum)));
+                                y = (int)(((CellHeight * MoveDistance) / sum) * (sum - Math.Min((now - FrameStart).TotalMilliseconds, sum)));
                                 break;
                             case MirDirection.UpRight:
-                                x = -(int)(((CellWidth * MoveDistance) / sum) * (sum - Math.Min((CEnvir.Now - FrameStart).TotalMilliseconds, sum)));
-                                y = (int)(((CellHeight * MoveDistance) / sum) * (sum - Math.Min((CEnvir.Now - FrameStart).TotalMilliseconds, sum)));
+                                x = -(int)(((CellWidth * MoveDistance) / sum) * (sum - Math.Min((now - FrameStart).TotalMilliseconds, sum)));
+                                y = (int)(((CellHeight * MoveDistance) / sum) * (sum - Math.Min((now - FrameStart).TotalMilliseconds, sum)));
                                 break;
                             case MirDirection.Right:
-                                x = -(int)(((CellWidth * MoveDistance) / sum) * (sum - Math.Min((CEnvir.Now - FrameStart).TotalMilliseconds, sum)));
+                                x = -(int)(((CellWidth * MoveDistance) / sum) * (sum - Math.Min((now - FrameStart).TotalMilliseconds, sum)));
                                 y = 0;
                                 break;
                             case MirDirection.DownRight:
-                                x = -(int)(((CellWidth * MoveDistance) / sum) * (sum - Math.Min((CEnvir.Now - FrameStart).TotalMilliseconds, sum)));
-                                y = -(int)(((CellHeight * MoveDistance) / sum) * (sum - Math.Min((CEnvir.Now - FrameStart).TotalMilliseconds, sum)));
+                                x = -(int)(((CellWidth * MoveDistance) / sum) * (sum - Math.Min((now - FrameStart).TotalMilliseconds, sum)));
+                                y = -(int)(((CellHeight * MoveDistance) / sum) * (sum - Math.Min((now - FrameStart).TotalMilliseconds, sum)));
                                 break;
                             case MirDirection.Down:
                                 x = 0;
-                                y = -(int)(((CellHeight * MoveDistance) / sum) * (sum - Math.Min((CEnvir.Now - FrameStart).TotalMilliseconds, sum)));
+                                y = -(int)(((CellHeight * MoveDistance) / sum) * (sum - Math.Min((now - FrameStart).TotalMilliseconds, sum)));
                                 break;
                             case MirDirection.DownLeft:
-                                x = (int)(((CellWidth * MoveDistance) / sum) * (sum - Math.Min((CEnvir.Now - FrameStart).TotalMilliseconds, sum)));
-                                y = -(int)(((CellHeight * MoveDistance) / sum) * (sum - Math.Min((CEnvir.Now - FrameStart).TotalMilliseconds, sum)));
+                                x = (int)(((CellWidth * MoveDistance) / sum) * (sum - Math.Min((now - FrameStart).TotalMilliseconds, sum)));
+                                y = -(int)(((CellHeight * MoveDistance) / sum) * (sum - Math.Min((now - FrameStart).TotalMilliseconds, sum)));
                                 break;
                             case MirDirection.Left:
-                                x = (int)(((CellWidth * MoveDistance) / sum) * (sum - Math.Min((CEnvir.Now - FrameStart).TotalMilliseconds, sum)));
+                                x = (int)(((CellWidth * MoveDistance) / sum) * (sum - Math.Min((now - FrameStart).TotalMilliseconds, sum)));
                                 y = 0;
                                 break;
                             case MirDirection.UpLeft:
-                                x = (int)(((CellWidth * MoveDistance) / sum) * (sum - Math.Min((CEnvir.Now - FrameStart).TotalMilliseconds, sum)));
-                                y = (int)(((CellHeight * MoveDistance) / sum) * (sum - Math.Min((CEnvir.Now - FrameStart).TotalMilliseconds, sum)));
+                                x = (int)(((CellWidth * MoveDistance) / sum) * (sum - Math.Min((now - FrameStart).TotalMilliseconds, sum)));
+                                y = (int)(((CellHeight * MoveDistance) / sum) * (sum - Math.Min((now - FrameStart).TotalMilliseconds, sum)));
                                 break;
                         }
                     }
