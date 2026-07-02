@@ -177,6 +177,8 @@ namespace Client.Scenes.Views
         private int DrawRowCount;
         private List<MirEffect>[] ObjectEffectRows = Array.Empty<List<MirEffect>>();
         private int ObjectEffectRowCount;
+        private readonly List<MirEffect> FloorEffects = new List<MirEffect>();
+        private readonly List<MirEffect> FinalEffects = new List<MirEffect>();
         private readonly List<MirEffect> UserObjectEffects = new List<MirEffect>();
         private readonly List<MagicEffect> UserMagicEffectBuffer = new List<MagicEffect>();
         private readonly List<MapObject> OverlayObjects = new List<MapObject>();
@@ -222,29 +224,23 @@ namespace Client.Scenes.Views
                 RenderingPipelineManager.DrawTexture(floorTexture, floorSource, floorDestination, Color.White);
             }
 
+            bool hasDrawBounds = PrepareFrameDrawLists(out int minX, out int maxX, out int minY, out int maxY);
+
             if (Config.DrawEffects)
             {
-                foreach (MirEffect ob in Effects)
-                {
-                    if (ob.DrawType != DrawType.Floor) continue;
-
-                    ob.Draw();
-                }
+                for (int i = 0; i < FloorEffects.Count; i++)
+                    FloorEffects[i].Draw();
             }
 
-            DrawObjects();
+            DrawObjects(hasDrawBounds, minX, maxX, minY, maxY);
 
             if (MapObject.MouseObject != null) // && MapObject.MouseObject != MapObject.TargetObject)
                 MapObject.MouseObject.DrawBlend();
 
             if (Config.DrawEffects)
             {
-                foreach (MirEffect ob in Effects)
-                {
-                    if (ob.DrawType != DrawType.Final) continue;
-
-                    ob.Draw();
-                }
+                for (int i = 0; i < FinalEffects.Count; i++)
+                    FinalEffects[i].Draw();
             }
 
             RenderingPipelineManager.FlushSprite();
@@ -345,24 +341,12 @@ namespace Client.Scenes.Views
             PresentTexture(texture, sourceRectangle, Parent, DisplayArea, Color.White, this, 0, 0, 1F);
         }
 
-        private void DrawObjects()
+        private void DrawObjects(bool hasDrawBounds, int minX, int maxX, int minY, int maxY)
         {
-            OverlayObjects.Clear();
+            if (!hasDrawBounds) return;
 
-            if (Cells == null || Width <= 0 || Height <= 0 || User == null || Objects == null) return;
-
-            int width = Math.Min(Width, Cells.GetLength(0));
-            int height = Math.Min(Height, Cells.GetLength(1));
-            if (width <= 0 || height <= 0) return;
-
-            int minX = Math.Max(0, User.CurrentLocation.X - OffSetX - 4), maxX = Math.Min(width - 1, User.CurrentLocation.X + OffSetX + 4);
-            int minY = Math.Max(0, User.CurrentLocation.Y - OffSetY - 4), maxY = Math.Min(height - 1, User.CurrentLocation.Y + OffSetY + 25);
-            if (maxX < minX || maxY < minY) return;
-
-            List<MapObject>[] drawRows = BuildDrawRows(minY, maxY);
-            List<MirEffect>[] objectEffectRows = Config.DrawEffects ? BuildObjectEffectRows(minY, maxY) : null;
-            if (!Config.DrawEffects)
-                UserObjectEffects.Clear();
+            List<MapObject>[] drawRows = DrawRows;
+            List<MirEffect>[] objectEffectRows = Config.DrawEffects ? ObjectEffectRows : null;
 
             for (int y = minY; y <= maxY; y++)
             {
@@ -445,15 +429,51 @@ namespace Client.Scenes.Views
             {
                 if (Config.DrawParticles)
                 {
-                    foreach (var ob in ParticleEffects)
-                    {
-                        ob.Draw();
-                    }
+                    for (int i = 0; i < ParticleEffects.Count; i++)
+                        ParticleEffects[i].Draw();
                 }
 
                 for (int i = 0; i < UserObjectEffects.Count; i++)
                     UserObjectEffects[i].Draw();
             }
+        }
+
+        private bool PrepareFrameDrawLists(out int minX, out int maxX, out int minY, out int maxY)
+        {
+            OverlayObjects.Clear();
+
+            if (!TryGetDrawBounds(out minX, out maxX, out minY, out maxY))
+            {
+                ClearEffectDrawLists();
+                return false;
+            }
+
+            BuildDrawRows(minY, maxY);
+
+            if (Config.DrawEffects)
+                BuildEffectDrawLists(minY, maxY);
+            else
+                ClearEffectDrawLists();
+
+            return true;
+        }
+
+        private bool TryGetDrawBounds(out int minX, out int maxX, out int minY, out int maxY)
+        {
+            minX = maxX = minY = maxY = 0;
+
+            if (Cells == null || Width <= 0 || Height <= 0 || User == null || Objects == null) return false;
+
+            int width = Math.Min(Width, Cells.GetLength(0));
+            int height = Math.Min(Height, Cells.GetLength(1));
+            if (width <= 0 || height <= 0) return false;
+
+            minX = Math.Max(0, User.CurrentLocation.X - OffSetX - 4);
+            maxX = Math.Min(width - 1, User.CurrentLocation.X + OffSetX + 4);
+            minY = Math.Max(0, User.CurrentLocation.Y - OffSetY - 4);
+            maxY = Math.Min(height - 1, User.CurrentLocation.Y + OffSetY + 25);
+
+            return maxX >= minX && maxY >= minY;
         }
 
         private static void DrawMapLayer(MirLibrary library, int index, int x, int y, bool blend)
@@ -540,7 +560,19 @@ namespace Client.Scenes.Views
             return ob.Race == ObjectType.Player || ob.Race == ObjectType.Hero || ob.Race == ObjectType.Monster;
         }
 
-        private List<MirEffect>[] BuildObjectEffectRows(int minY, int maxY)
+        private void ClearEffectDrawLists()
+        {
+            FloorEffects.Clear();
+            FinalEffects.Clear();
+            UserObjectEffects.Clear();
+
+            for (int i = 0; i < ObjectEffectRowCount && i < ObjectEffectRows.Length; i++)
+                ObjectEffectRows[i]?.Clear();
+
+            ObjectEffectRowCount = 0;
+        }
+
+        private void BuildEffectDrawLists(int minY, int maxY)
         {
             int rowCount = maxY - minY + 1;
 
@@ -554,14 +586,29 @@ namespace Client.Scenes.Views
                 ObjectEffectRows[i]?.Clear();
 
             ObjectEffectRowCount = rowCount;
+            FloorEffects.Clear();
+            FinalEffects.Clear();
             UserObjectEffects.Clear();
 
-            if (Effects == null) return ObjectEffectRows;
+            if (Effects == null) return;
 
             for (int i = 0; i < Effects.Count; i++)
             {
                 MirEffect effect = Effects[i];
-                if (effect.DrawType != DrawType.Object) continue;
+
+                switch (effect.DrawType)
+                {
+                    case DrawType.Floor:
+                        FloorEffects.Add(effect);
+                        continue;
+                    case DrawType.Final:
+                        FinalEffects.Add(effect);
+                        continue;
+                    case DrawType.Object:
+                        break;
+                    default:
+                        continue;
+                }
 
                 int renderY;
 
@@ -588,8 +635,6 @@ namespace Client.Scenes.Views
 
                 ObjectEffectRows[index].Add(effect);
             }
-
-            return ObjectEffectRows;
         }
 
         private void ClearObjectCells()
@@ -700,40 +745,39 @@ namespace Client.Scenes.Views
             return length >= expectedLength;
         }
 
-        private void UpdateWeather()
+        public void UpdateWeather()
         {
             ClearParticleEffects();
 
             if (MapInfo == null) return;
 
-            if (Config.DrawWeather)
+            if (!Config.DrawWeather || !Config.DrawParticles || !Config.DrawEffects) return;
+
+            var point = new Point((Size.Width) / 2, (Size.Height) / 2);
+            Weather weather = MapInfo.Weather;
+
+            if ((weather & Weather.Rain) == Weather.Rain)
             {
-                var point = new Point((Size.Width) / 2, (Size.Height) / 2);
-                Weather weather = MapInfo.Weather;
+                var emitter = (ParticleEmitter)Activator.CreateInstance(typeof(Rain), point);
+                ParticleEffects.Add(emitter);
+            }
 
-                if (weather.HasFlag(Weather.Rain))
-                {
-                    var emitter = (ParticleEmitter)Activator.CreateInstance(typeof(Rain), point);
-                    ParticleEffects.Add(emitter);
-                }
+            if ((weather & Weather.Snow) == Weather.Snow)
+            {
+                var emitter = (ParticleEmitter)Activator.CreateInstance(typeof(Snow), point);
+                ParticleEffects.Add(emitter);
+            }
 
-                if (weather.HasFlag(Weather.Snow))
-                {
-                    var emitter = (ParticleEmitter)Activator.CreateInstance(typeof(Snow), point);
-                    ParticleEffects.Add(emitter);
-                }
+            if ((weather & Weather.Fog) == Weather.Fog)
+            {
+                var emitter = (ParticleEmitter)Activator.CreateInstance(typeof(Fog), point);
+                ParticleEffects.Add(emitter);
+            }
 
-                if (weather.HasFlag(Weather.Fog))
-                {
-                    var emitter = (ParticleEmitter)Activator.CreateInstance(typeof(Fog), point);
-                    ParticleEffects.Add(emitter);
-                }
-
-                if (weather.HasFlag(Weather.Lightning))
-                {
-                    var emitter = (ParticleEmitter)Activator.CreateInstance(typeof(Lightning), point);
-                    ParticleEffects.Add(emitter);
-                }
+            if ((weather & Weather.Lightning) == Weather.Lightning)
+            {
+                var emitter = (ParticleEmitter)Activator.CreateInstance(typeof(Lightning), point);
+                ParticleEffects.Add(emitter);
             }
         }
 
@@ -1745,7 +1789,22 @@ namespace Client.Scenes.Views
             }
         }
 
-        private void ClearParticleEffects()
+        public void ClearVisualEffects()
+        {
+            if (Effects == null) return;
+
+            for (int i = Effects.Count - 1; i >= 0; i--)
+                Effects[i].Remove();
+
+            ClearEffectDrawLists();
+
+            if (LLayer != null)
+                LLayer.TextureValid = false;
+
+            TextureValid = false;
+        }
+
+        public void ClearParticleEffects()
         {
             if (ParticleEffects == null) return;
 

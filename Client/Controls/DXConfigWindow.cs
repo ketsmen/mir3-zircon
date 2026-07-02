@@ -559,21 +559,33 @@ namespace Client.Controls
             {
                 Label = { Text = CEnvir.Language.CommonControlConfigWindowGraphicsTabDrawParticlesLabel },
             };
-            DrawParticlesCheckBox.CheckedChanged += (o, e) => Config.DrawParticles = DrawParticlesCheckBox.Checked;
+            DrawParticlesCheckBox.CheckedChanged += (o, e) =>
+            {
+                Config.DrawParticles = DrawParticlesCheckBox.Checked;
+                GameScene.Game?.MapControl?.UpdateWeather();
+            };
             displayEffectsSection.AddControl("", DrawParticlesCheckBox);
 
             DrawEffectsCheckBox = new DXCheckBox
             {
                 Label = { Text = CEnvir.Language.CommonControlConfigWindowGraphicsTabDrawEffectsLabel },
             };
-            DrawEffectsCheckBox.CheckedChanged += (o, e) => Config.DrawEffects = DrawEffectsCheckBox.Checked;
+            DrawEffectsCheckBox.CheckedChanged += (o, e) =>
+            {
+                Config.DrawEffects = DrawEffectsCheckBox.Checked;
+                GameScene.Game?.MapControl?.UpdateWeather();
+            };
             displayEffectsSection.AddControl("", DrawEffectsCheckBox);
 
             DrawWeatherCheckBox = new DXCheckBox
             {
                 Label = { Text = CEnvir.Language.CommonControlConfigWindowGraphicsTabDrawWeatherLabel },
             };
-            DrawWeatherCheckBox.CheckedChanged += (o, e) => Config.DrawWeather = DrawWeatherCheckBox.Checked;
+            DrawWeatherCheckBox.CheckedChanged += (o, e) =>
+            {
+                Config.DrawWeather = DrawWeatherCheckBox.Checked;
+                GameScene.Game?.MapControl?.UpdateWeather();
+            };
             displayEffectsSection.AddControl("", DrawWeatherCheckBox);
 
             DisplayHelmetCheckBox = new DXCheckBox

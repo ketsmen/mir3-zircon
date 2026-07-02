@@ -1204,34 +1204,13 @@ namespace Client.Scenes
 
             if (!User.InSafeZone)
             {
-                foreach (ClientUserItem item in Equipment)
-                {
-                    if ((item?.Flags & UserItemFlags.Expirable) != UserItemFlags.Expirable) continue;
-
-                    item.ExpireTime -= ticks;
-                }
-
-                foreach (ClientUserItem item in Inventory)
-                {
-                    if ((item?.Flags & UserItemFlags.Expirable) != UserItemFlags.Expirable) continue;
-
-                    item.ExpireTime -= ticks;
-                }
+                ProcessExpirableItems(Equipment, ticks);
+                ProcessExpirableItems(Inventory, ticks);
 
                 if (Companion != null)
                 {
-                    foreach (ClientUserItem item in Companion.InventoryArray)
-                    {
-                        if ((item?.Flags & UserItemFlags.Expirable) != UserItemFlags.Expirable) continue;
-
-                        item.ExpireTime -= ticks;
-                    }
-                    foreach (ClientUserItem item in Companion.EquipmentArray)
-                    {
-                        if ((item?.Flags & UserItemFlags.Expirable) != UserItemFlags.Expirable) continue;
-
-                        item.ExpireTime -= ticks;
-                    }
+                    ProcessExpirableItems(Companion.InventoryArray, ticks);
+                    ProcessExpirableItems(Companion.EquipmentArray, ticks);
                 }
             }
 
@@ -1244,14 +1223,28 @@ namespace Client.Scenes
 
             MapControl.ProcessInput();
 
-            foreach (MapObject ob in MapControl.Objects)
-                ob.Process();
+            for (int i = 0; i < MapControl.Objects.Count; i++)
+                MapControl.Objects[i].Process();
 
-            for (int i = MapControl.Effects.Count - 1; i >= 0; i--)
-                MapControl.Effects[i].Process();
+            if (Config.DrawEffects)
+            {
+                for (int i = MapControl.Effects.Count - 1; i >= 0; i--)
+                    MapControl.Effects[i].Process();
+            }
+            else if (MapControl.Effects.Count > 0)
+            {
+                MapControl.ClearVisualEffects();
+            }
 
-            for (int i = MapControl.ParticleEffects.Count - 1; i >= 0; i--)
-                MapControl.ParticleEffects[i].Process();
+            if (Config.DrawEffects && Config.DrawParticles)
+            {
+                for (int i = MapControl.ParticleEffects.Count - 1; i >= 0; i--)
+                    MapControl.ParticleEffects[i].Process();
+            }
+            else if (MapControl.ParticleEffects.Count > 0)
+            {
+                MapControl.ClearParticleEffects();
+            }
 
             if (ItemLabel != null && !ItemLabel.IsDisposed)
             {
@@ -1319,6 +1312,20 @@ namespace Client.Scenes
                 mob = FocusObject as MonsterObject;
                 if (mob != null && mob.CompanionObject == null && !FocusObject.Dead)
                     MonsterBox.Monster = mob;
+            }
+        }
+
+        private static void ProcessExpirableItems(ClientUserItem[] items, TimeSpan ticks)
+        {
+            if (items == null) return;
+
+            for (int i = 0; i < items.Length; i++)
+            {
+                ClientUserItem item = items[i];
+
+                if ((item?.Flags & UserItemFlags.Expirable) != UserItemFlags.Expirable) continue;
+
+                item.ExpireTime -= ticks;
             }
         }
 
