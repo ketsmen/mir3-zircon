@@ -458,9 +458,9 @@ namespace Server.WinForms
                 return false;
             }
 
-            List<ConfigValue> originalValues = saveFile
-                ? values.Select(value => new ConfigValue(value.Property, value.Property.GetValue(null))).ToList()
-                : null;
+            List<ConfigValue> originalValues = values
+                .Select(value => new ConfigValue(value.Property, value.Property.GetValue(null)))
+                .ToList();
 
             foreach (ConfigValue value in values)
                 value.Property.SetValue(null, value.Value);
@@ -484,11 +484,13 @@ namespace Server.WinForms
                 if (SEnvir.Started)
                     SEnvir.ServerBuffChanged = true;
 
+                BroadcastHeroGradePromoteEventStateIfChanged(originalValues, values);
                 UpdateOriginalValues();
                 _statusLabel.Text = $"配置已保存。{GetConfigPathText()}";
             }
             else
             {
+                BroadcastHeroGradePromoteEventStateIfChanged(originalValues, values);
                 _statusLabel.Text = "配置已应用到当前管理端内存，尚未写入 Server.ini。";
             }
 
@@ -502,6 +504,24 @@ namespace Server.WinForms
 
             foreach (ConfigValue value in values)
                 value.Property.SetValue(null, value.Value);
+        }
+
+        private static void BroadcastHeroGradePromoteEventStateIfChanged(List<ConfigValue> originalValues, List<ConfigValue> currentValues)
+        {
+            if (!SEnvir.Started) return;
+
+            if (HasConfigValueChanged(originalValues, currentValues, "HeroGradePromoteEventCostRate") ||
+                HasConfigValueChanged(originalValues, currentValues, "HeroGradePromoteEventSuccessBonus") ||
+                HasConfigValueChanged(originalValues, currentValues, "HeroGradePromoteEventEnd"))
+                SEnvir.BroadcastHeroGradePromoteEventState();
+        }
+
+        private static bool HasConfigValueChanged(List<ConfigValue> originalValues, List<ConfigValue> currentValues, string propertyName)
+        {
+            if (!TryGetConfigValue(originalValues, propertyName, out object originalValue)) return false;
+            if (!TryGetConfigValue(currentValues, propertyName, out object currentValue)) return false;
+
+            return !object.Equals(originalValue, currentValue);
         }
 
         private static void ValidateConfigValues(List<ConfigValue> values, List<string> errors)

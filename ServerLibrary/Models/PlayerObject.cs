@@ -3879,6 +3879,13 @@ namespace Server.Models
                 Config.HeroGradePromoteEventCostRate);
         }
 
+        private UserCurrency GetHeroGradePromoteCurrency(CurrencyInfo currencyInfo)
+        {
+            if (currencyInfo == null) return null;
+
+            return Character?.Account?.Currencies?.FirstOrDefault(x => x.Info == currencyInfo);
+        }
+
         private ClientHeroGradePromotePreview BuildHeroGradePromotePreview(HeroInfo targetHero = null)
         {
             ClientHeroGradePromotePreview preview = new ClientHeroGradePromotePreview
@@ -3944,7 +3951,7 @@ namespace Server.Models
             CurrencyInfo currencyInfo = Config.HeroGradePromoteCurrencyIndex > 0
                 ? SEnvir.CurrencyInfoList.Binding.FirstOrDefault(x => x.Index == Config.HeroGradePromoteCurrencyIndex)
                 : null;
-            UserCurrency currency = currencyInfo == null ? null : GetCurrency(currencyInfo);
+            UserCurrency currency = GetHeroGradePromoteCurrency(currencyInfo);
             long currencyAmount = currencyInfo == null ? 0 : GetHeroGradePromoteScaledCost(info.Grade, Config.HeroGradePromoteBaseCurrencyAmount);
 
             if (Config.HeroGradePromoteCurrencyIndex > 0 && currencyInfo == null)
@@ -4225,7 +4232,7 @@ namespace Server.Models
             CurrencyInfo currencyInfo = Config.HeroGradePromoteCurrencyIndex > 0
                 ? SEnvir.CurrencyInfoList.Binding.FirstOrDefault(x => x.Index == Config.HeroGradePromoteCurrencyIndex)
                 : null;
-            UserCurrency currency = currencyInfo == null ? null : GetCurrency(currencyInfo);
+            UserCurrency currency = GetHeroGradePromoteCurrency(currencyInfo);
             long currencyAmount = currencyInfo == null ? 0 : GetHeroGradePromoteScaledCost(info.Grade, Config.HeroGradePromoteBaseCurrencyAmount);
 
             if (Config.HeroGradePromoteCurrencyIndex > 0 && currencyInfo == null)
@@ -4234,9 +4241,10 @@ namespace Server.Models
                 return;
             }
 
-            if (currencyAmount > 0 && currency.Amount < currencyAmount)
+            long currencyAvailable = currency?.Amount ?? 0;
+            if (currencyAmount > 0 && currencyAvailable < currencyAmount)
             {
-                Connection.ReceiveChat($"货币不足，提升{info.Name}品质需要 {currencyInfo.Name} x{currencyAmount:#,##0}（{growthText}）。下一步建议: 补足 {currencyInfo.Name} x{FormatHeroGradePromoteMissing(currencyAmount, currency.Amount)} 后再培养。", MessageType.System);
+                Connection.ReceiveChat($"货币不足，提升{info.Name}品质需要 {currencyInfo.Name} x{currencyAmount:#,##0}（{growthText}）。下一步建议: 补足 {currencyInfo.Name} x{FormatHeroGradePromoteMissing(currencyAmount, currencyAvailable)} 后再培养。", MessageType.System);
                 return;
             }
 
