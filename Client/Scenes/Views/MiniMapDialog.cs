@@ -7,7 +7,6 @@ using Library.SystemModels;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
 
 namespace Client.Scenes.Views
 {
@@ -20,6 +19,9 @@ namespace Client.Scenes.Views
         public DXControl Panel;
 
         public DXImageControl TimeOfDayImage;
+        private int _timeOfDayHintMinute = -1;
+        private string _timeOfDayHintTemplate = string.Empty;
+        private string _timeOfDayHint = string.Empty;
 
         public Dictionary<object, DXControl> MapInfoObjects = new Dictionary<object, DXControl>();
 
@@ -226,13 +228,13 @@ namespace Client.Scenes.Views
 
             if (GameScene.Game.MapControl.InstanceInfo != null)
             {
-                if (!GameScene.Game.MapControl.InstanceInfo.Maps.Any(m => m.Map == ob.SourceRegion.Map) && ob.NeedInstance == null)
+                if (!InstanceContainsMap(GameScene.Game.MapControl.InstanceInfo, ob.SourceRegion.Map) && ob.NeedInstance == null)
                 {
                     Remove(ob);
                     return;
                 }
 
-                if (!GameScene.Game.MapControl.InstanceInfo.Maps.Any(m => m.Map == ob.DestinationRegion?.Map) && ob.NeedInstance == null)
+                if (!InstanceContainsMap(GameScene.Game.MapControl.InstanceInfo, ob.DestinationRegion?.Map) && ob.NeedInstance == null)
                 {
                     Remove(ob);
                     return;
@@ -319,7 +321,7 @@ namespace Client.Scenes.Views
             Size size = new Size(3, 3);
             Color colour = Color.White;
             string name = ob.Name;
-            bool isGroupMember = GameScene.Game.GroupBox.Members.Any(x => x.ObjectID == ob.ObjectID);
+            bool isGroupMember = IsGroupMember(ob.ObjectID);
             if (control is DXMapInfoControl mapInfoControl)
                 mapInfoControl.Hollow = false;
 
@@ -436,7 +438,7 @@ namespace Client.Scenes.Views
                 {
                     colour = Color.DeepPink;
                 }
-                else if (GameScene.Game.GuildBox.GuildInfo != null && GameScene.Game.GuildBox.GuildInfo.Members.Any(x => x.ObjectID == ob.ObjectID))
+                else if (IsGuildMember(ob.ObjectID))
                 {
                     colour = Color.DeepSkyBlue;
                 }
@@ -511,14 +513,18 @@ namespace Client.Scenes.Views
 
         public void PlayLocatorAnim(uint objectID)
         {
-            if (MapInfoObjects.Keys
-                .OfType<ClientObjectData>()
-                .FirstOrDefault(info => info.ObjectID == objectID)
-                is not { } ob)
-                return;
+            DXControl control = null;
 
-            if (!MapInfoObjects.TryGetValue(ob, out var control))
-                return;
+            foreach (KeyValuePair<object, DXControl> pair in MapInfoObjects)
+            {
+                ClientObjectData info = pair.Key as ClientObjectData;
+                if (info == null || info.ObjectID != objectID) continue;
+
+                control = pair.Value;
+                break;
+            }
+
+            if (control == null) return;
 
             DXMapInfoControl.GetOverlay(control)?.PlayBorderAnimation(Color.Lime);
         }
@@ -541,6 +547,41 @@ namespace Client.Scenes.Views
                    map.Height > 0 &&
                    map.Cells.GetLength(0) >= map.Width &&
                    map.Cells.GetLength(1) >= map.Height;
+        }
+
+        private static bool InstanceContainsMap(InstanceInfo instance, MapInfo map)
+        {
+            if (instance?.Maps == null || map == null) return false;
+
+            for (int i = 0; i < instance.Maps.Count; i++)
+                if (instance.Maps[i].Map == map)
+                    return true;
+
+            return false;
+        }
+
+        private static bool IsGroupMember(uint objectID)
+        {
+            var members = GameScene.Game?.GroupBox?.Members;
+            if (members == null) return false;
+
+            for (int i = 0; i < members.Count; i++)
+                if (members[i].ObjectID == objectID)
+                    return true;
+
+            return false;
+        }
+
+        private static bool IsGuildMember(uint objectID)
+        {
+            var members = GameScene.Game?.GuildBox?.GuildInfo?.Members;
+            if (members == null) return false;
+
+            for (int i = 0; i < members.Count; i++)
+                if (members[i].ObjectID == objectID)
+                    return true;
+
+            return false;
         }
 
         public void Remove(object ob)
@@ -570,31 +611,51 @@ namespace Client.Scenes.Views
 
         private void DrawTimeOfDay()
         {
-            int index = 0;
+            int index = GetTimeOfDayImageIndex(GameScene.Game.TimeOfDay);
 
-            switch (GameScene.Game.TimeOfDay)
-            {
-                case TimeOfDay.Dawn:
-                    index = 215;
-                    break;
-                case TimeOfDay.Day:
-                    index = 216;
-                    break;
-                case TimeOfDay.Dusk:
-                    index = 217;
-                    break;
-                case TimeOfDay.Night:
-                    index = 218;
-                    break;
-            }
+            if (TimeOfDayImage.Index != index)
+                TimeOfDayImage.Index = index;
 
-            TimeOfDayImage.Index = index;
-            TimeOfDayImage.Location = new Point(3, Size.Height - 28 - 1);
-            TimeOfDayImage.Hint = TimeOfDayLabel;
+            Point location = new Point(3, Size.Height - 29);
+            if (TimeOfDayImage.Location != location)
+                TimeOfDayImage.Location = location;
+
+            TimeOfDayImage.Hint = GetTimeOfDayHint();
             TimeOfDayImage.Draw();
         }
 
-        private static string TimeOfDayLabel => GameScene.Game.TimeOfDayLabel.Replace("##GAME_TIME##", CEnvir.Now.ToShortTimeString());
+        private static int GetTimeOfDayImageIndex(TimeOfDay timeOfDay)
+        {
+            switch (timeOfDay)
+            {
+                case TimeOfDay.Dawn:
+                    return 215;
+                case TimeOfDay.Day:
+                    return 216;
+                case TimeOfDay.Dusk:
+                    return 217;
+                case TimeOfDay.Night:
+                    return 218;
+                default:
+                    return 0;
+            }
+        }
+
+        private string GetTimeOfDayHint()
+        {
+            DateTime now = CEnvir.Now;
+            int minute = now.Hour * 60 + now.Minute;
+            string template = GameScene.Game.TimeOfDayLabel ?? string.Empty;
+
+            if (_timeOfDayHintMinute == minute && _timeOfDayHintTemplate == template)
+                return _timeOfDayHint;
+
+            _timeOfDayHintMinute = minute;
+            _timeOfDayHintTemplate = template;
+            _timeOfDayHint = template.Replace("##GAME_TIME##", now.ToShortTimeString());
+
+            return _timeOfDayHint;
+        }
 
         #endregion
 

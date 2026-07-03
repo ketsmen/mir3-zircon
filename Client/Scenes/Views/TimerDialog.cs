@@ -4,7 +4,6 @@ using Library;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
 using S = Library.Network.ServerPackets;
 
 namespace Client.Scenes.Views
@@ -108,6 +107,7 @@ namespace Client.Scenes.Views
         {
             base.Process();
 
+            DateTime now = CEnvir.Now;
             var timer = GetBestTimer();
 
             if (timer != null)
@@ -118,17 +118,17 @@ namespace Client.Scenes.Views
                     CurrentTimer.Refresh = false;
 
                     _timerStarted = true;
-                    _timerTime = CEnvir.Now.AddSeconds(1);
-                    _timerCounter = (int)(CurrentTimer.RelativeTime - CEnvir.Now).TotalSeconds;
+                    _timerTime = now.AddSeconds(1);
+                    _timerCounter = (int)(CurrentTimer.RelativeTime - now).TotalSeconds;
 
                     UpdateTimeGraphic();
                 }
             }
 
-            if (CurrentTimer == null || _timerStarted == false || CEnvir.Now < _timerTime) return;
+            if (CurrentTimer == null || _timerStarted == false || now < _timerTime) return;
 
             _timerCounter--;
-            _timerTime = CEnvir.Now.AddSeconds(1);
+            _timerTime = now.AddSeconds(1);
 
             if (_timerCounter < 0 && _eggTimer != null)
             {
@@ -146,12 +146,29 @@ namespace Client.Scenes.Views
 
         private ClientTimer GetBestTimer()
         {
-            return ActiveTimers.OrderBy(x => x.RelativeTime).FirstOrDefault();
+            ClientTimer best = null;
+
+            for (int i = 0; i < ActiveTimers.Count; i++)
+            {
+                ClientTimer timer = ActiveTimers[i];
+                if (best != null && timer.RelativeTime >= best.RelativeTime) continue;
+
+                best = timer;
+            }
+
+            return best;
         }
 
         public ClientTimer GetTimer(string key)
         {
-            return ActiveTimers.FirstOrDefault(x => x.Key == key);
+            for (int i = 0; i < ActiveTimers.Count; i++)
+            {
+                ClientTimer timer = ActiveTimers[i];
+                if (timer.Key == key)
+                    return timer;
+            }
+
+            return null;
         }
 
         public void AddTimer(S.SetTimer p)
@@ -175,7 +192,7 @@ namespace Client.Scenes.Views
 
         public void ExpireTimer(string key)
         {
-            var timer = ActiveTimers.FirstOrDefault(x => x.Key == key);
+            var timer = GetTimer(key);
 
             if (timer != null)
             {

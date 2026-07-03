@@ -6,7 +6,6 @@ using Library;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using C = Library.Network.ClientPackets;
@@ -15,6 +14,8 @@ namespace Client.Scenes.Views
 {
     public sealed class ChatTab : DXTab
     {
+        private static readonly Regex DuplicateSpaceRegex = new Regex("[ ]{2,}", RegexOptions.Compiled);
+
         #region Properties
         public static List<ChatTab> Tabs = new List<ChatTab>();
 
@@ -166,35 +167,33 @@ namespace Client.Scenes.Views
         {
             base.Process();
 
-            FadeOutChatHistory();
-            CleanUpChat();
+            DateTime now = CEnvir.Now;
+
+            FadeOutChatHistory(now);
+            CleanUpChat(now);
         }
 
         //TODO - Make more efficient
-        private void FadeOutChatHistory()
+        private void FadeOutChatHistory(DateTime now)
         {
             if (!Panel.FadeOutCheckBox.Checked && chatFade == 1F)
             {
                 return;
             }
 
-            if (HideChat && nextFadeCheck < CEnvir.Now && chatFade > 0F)
+            if (HideChat && nextFadeCheck < now && chatFade > 0F)
             {
                 chatFade -= 0.2F;
 
                 chatFade = Math.Max(0F, chatFade);
 
-                foreach (var item in History)
-                {
-                    item.Label.Opacity = chatFade;
-                }
+                for (int i = 0; i < History.Count; i++)
+                    History[i].Label.Opacity = chatFade;
 
-                foreach (var label in ItemLabels)
-                {
-                    label.Opacity = chatFade;
-                }
+                for (int i = 0; i < ItemLabels.Count; i++)
+                    ItemLabels[i].Opacity = chatFade;
 
-                nextFadeCheck = CEnvir.Now.AddMilliseconds(100);
+                nextFadeCheck = now.AddMilliseconds(100);
                 return;
             }
 
@@ -206,9 +205,9 @@ namespace Client.Scenes.Views
                 GameScene.Game.ChatTextBox.TextBox != DXTextBox.ActiveTextBox &&
                 Panel.FadeOutCheckBox.Checked && Panel.TransparentCheckBox.Checked)
             {
-                var newest = History.LastOrDefault();
+                ChatHistory newest = History.Count == 0 ? null : History[History.Count - 1];
 
-                if (newest != null && newest.SentDate < CEnvir.Now.AddSeconds(-10))
+                if (newest != null && newest.SentDate < now.AddSeconds(-10))
                 {
                     hideChat = true;
                 }
@@ -217,46 +216,46 @@ namespace Client.Scenes.Views
             HideChat = hideChat;
         }
 
-        private void CleanUpChat()
+        private void CleanUpChat(DateTime now)
         {
-            if (nextCleanUpCheck < CEnvir.Now)
+            if (nextCleanUpCheck >= now) return;
+
+            if (Panel.CleanUpCheckBox.Checked)
             {
-                if (Panel.CleanUpCheckBox.Checked)
+                bool chatCleaned = false;
+                for (int i = History.Count - 1; i >= 0; i--)
                 {
-                    bool chatCleaned = false;
-                    for (int i = History.Count - 1; i >= 0; i--)
+                    ChatHistory history = History[i];
+
+                    TimeSpan timeDifference = now - history.SentDate;
+
+                    if (timeDifference > TimeSpan.FromSeconds(5) && history.Action == MessageAction.None)
                     {
-                        var history = History[i];
+                        history.Dispose();
 
-                        TimeSpan timeDifference = CEnvir.Now - History[i].SentDate;
+                        if (History.Contains(history))
+                            History.RemoveAt(i);
 
-                        if (timeDifference > TimeSpan.FromSeconds(5) && history.Action == MessageAction.None)
-                        {
-                            history.Dispose();
-
-                            if (History.Contains(history))
-                                History.RemoveAt(i);
-
-                            chatCleaned = true;
-                        }
-                    }
-
-                    if (chatCleaned)
-                    {
-                        UpdateItems();
+                        chatCleaned = true;
                     }
                 }
 
-                nextCleanUpCheck = DateTime.UtcNow.AddSeconds(1);
+                if (chatCleaned)
+                {
+                    UpdateItems();
+                }
             }
+
+            nextCleanUpCheck = now.AddSeconds(1);
         }
 
         public void ResizeChat()
         {
             if (!IsResizing)
             {
-                foreach (DXLabel label in History.Select(x => x.Label))
+                for (int i = 0; i < History.Count; i++)
                 {
+                    DXLabel label = History[i].Label;
                     if (label.Size.Width == TextPanel.Size.Width) continue;
 
                     Size size = DXLabel.GetHeight(label, TextPanel.Size.Width);
@@ -315,8 +314,11 @@ namespace Client.Scenes.Views
 
             _historyHeight = 0;
 
-            foreach (DXLabel control in History.Select(x => x.Label))
+            for (int i = 0; i < History.Count; i++)
+            {
+                DXLabel control = History[i].Label;
                 _historyHeight += control.Size.Height;
+            }
 
             ScrollBar.MaxValue = _historyHeight;
         }
@@ -483,8 +485,8 @@ namespace Client.Scenes.Views
         }
         public void UpdateColours()
         {
-            foreach (DXLabel label in History.Select(x => x.Label))
-                UpdateColours(label);
+            for (int i = 0; i < History.Count; i++)
+                UpdateColours(History[i].Label);
         }
         private void UpdateColours(DXLabel label)
         {
@@ -569,8 +571,8 @@ namespace Client.Scenes.Views
                 foreach (DXButton button in CurrentTabControl.TabButtons)
                     button.Opacity = opacity;
 
-            foreach (DXLabel label in History.Select(x => x.Label))
-                UpdateColours(label);
+            for (int i = 0; i < History.Count; i++)
+                UpdateColours(History[i].Label);
 
             ScrollBar.Visible = !transparent;
             DrawTexture = !transparent;
@@ -593,8 +595,9 @@ namespace Client.Scenes.Views
 
         public void ProcessLinkedItems()
         {
-            foreach (DXLabel label in ItemLabels)
+            for (int i = 0; i < ItemLabels.Count; i++)
             {
+                DXLabel label = ItemLabels[i];
                 if (!label.IsDisposed)
                     label.Dispose();
             }
@@ -637,10 +640,8 @@ namespace Client.Scenes.Views
             label.Text = Globals.LinkedItemRegex.Replace(message, @" [${Text}] ");
             message = Globals.LinkedItemRegex.Replace(message, @" [${Text}:${ID}] ");
 
-            RegexOptions options = RegexOptions.None;
-            Regex regex = new Regex("[ ]{2,}", options);
-            message = regex.Replace(message, " ");
-            label.Text = regex.Replace(label.Text, " ");
+            message = DuplicateSpaceRegex.Replace(message, " ");
+            label.Text = DuplicateSpaceRegex.Replace(label.Text, " ");
             //label.AutoSize = true;
 
             Size size = DXLabel.GetHeight(label, TextPanel.Size.Width);
@@ -659,7 +660,7 @@ namespace Client.Scenes.Views
             for (int i = 0; i < ranges.Count; i++)
             {
                 if (!int.TryParse(matches[i].Groups["ID"].Value, out int index)) continue;
-                ClientUserItem item = items.FirstOrDefault(e => e.Index == index);
+                ClientUserItem item = FindLinkedItem(items, index);
                 if (item == null) continue;
 
                 List<ButtonInfo> buttons = DrawTextExtensions.GetWordRegionsNew(label.Text, label.Font, label.DrawFormat, label.Size.Width, ranges[i].First, ranges[i].Length);
@@ -706,6 +707,17 @@ namespace Client.Scenes.Views
                     ItemLabels.Add(newlabel);
                 }
             }
+        }
+
+        private static ClientUserItem FindLinkedItem(List<ClientUserItem> items, int index)
+        {
+            if (items == null) return null;
+
+            for (int i = 0; i < items.Count; i++)
+                if (items[i].Index == index)
+                    return items[i];
+
+            return null;
         }
 
         #endregion
