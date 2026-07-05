@@ -9,7 +9,6 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
-using System.Linq;
 using System.Windows.Forms;
 using C = Library.Network.ClientPackets;
 
@@ -40,10 +39,8 @@ namespace Client.Scenes.Views
         {
             SelectedInfoChanged?.Invoke(this, EventArgs.Empty);
 
-            foreach (DXControl control in MapInfoObjects.Values)
-                control.Dispose();
-
-            MapInfoObjects.Clear();
+            ClearMapInfoObjects();
+            ClearInstanceMapCache();
 
             if (SelectedInfo == null) return;
 
@@ -210,6 +207,11 @@ namespace Client.Scenes.Views
         public static float ScaleX, ScaleY;
 
         public Dictionary<object, DXControl> MapInfoObjects = new Dictionary<object, DXControl>();
+        private readonly Dictionary<long, DXControl> LocatorObjectControls = new Dictionary<long, DXControl>();
+        private readonly Dictionary<long, DXControl> LocatorNpcControls = new Dictionary<long, DXControl>();
+        private readonly HashSet<MapInfo> InstanceMapCache = new HashSet<MapInfo>();
+        private InstanceInfo CachedInstanceInfo;
+        private int CachedInstanceMapCount = -1;
 
         public override void OnClientAreaChanged(Rectangle oValue, Rectangle nValue)
         {
@@ -414,8 +416,7 @@ namespace Client.Scenes.Views
             {
                 if (onSelectedMap && (CurrentQuest)control.Tag == ob.CurrentQuest) return;
 
-                control.Dispose();
-                MapInfoObjects.Remove(ob);
+                Remove(ob);
             }
 
             if (!onSelectedMap) return;
@@ -423,7 +424,7 @@ namespace Client.Scenes.Views
             control = GameScene.Game.GetNPCControl(ob);
             control.Parent = Image;
             control.Opacity = Opacity;
-            MapInfoObjects[ob] = control;
+            RegisterMapInfoObject(ob, control);
 
             if (ob.Region.PointList == null)
                 ob.Region.CreatePoints(size.Width);
@@ -460,13 +461,15 @@ namespace Client.Scenes.Views
 
             if (GameScene.Game.MapControl.InstanceInfo != null)
             {
-                if (!GameScene.Game.MapControl.InstanceInfo.Maps.Any(m => m.Map == ob.SourceRegion.Map) && ob.NeedInstance == null)
+                InstanceInfo instance = GameScene.Game.MapControl.InstanceInfo;
+
+                if (!InstanceContainsMap(instance, ob.SourceRegion.Map) && ob.NeedInstance == null)
                 {
                     Remove(ob);
                     return;
                 }
 
-                if (!GameScene.Game.MapControl.InstanceInfo.Maps.Any(m => m.Map == ob.DestinationRegion?.Map) && ob.NeedInstance == null)
+                if (!InstanceContainsMap(instance, ob.DestinationRegion?.Map) && ob.NeedInstance == null)
                 {
                     Remove(ob);
                     return;
@@ -506,7 +509,7 @@ namespace Client.Scenes.Views
                 if (control == null)
                 {
                     existing.Dispose();
-                    MapInfoObjects.Remove(ob);
+                    UnregisterMapInfoObject(ob);
                 }
             }
 
@@ -528,7 +531,7 @@ namespace Client.Scenes.Views
                     SelectedInfo = ob.DestinationRegion.Map;
                 };
 
-                MapInfoObjects[ob] = control;
+                RegisterMapInfoObject(ob, control);
             }
 
             control.Opacity = Opacity;
@@ -552,13 +555,12 @@ namespace Client.Scenes.Views
                 if (ob.MonsterInfo != null && (ob.Dead || ob.MonsterInfo.Image == MonsterImage.None)) return;
 
                 DXControl created = CreateMapInfoObject();
-                MapInfoObjects[ob] = created;
+                RegisterMapInfoObject(ob, created);
                 existing = created;
             }
             else if (ob.MapIndex != SelectedInfo.Index || (ob.MonsterInfo != null && ob.Dead) || (ob.ItemInfo != null && ob.ItemInfo.Rarity == Rarity.Common))
             {
-                existing.Dispose();
-                MapInfoObjects.Remove(ob);
+                Remove(ob);
                 return;
             }
 
@@ -568,14 +570,14 @@ namespace Client.Scenes.Views
                 existing.Dispose();
 
                 DXControl created = CreateMapInfoObject();
-                MapInfoObjects[ob] = created;
+                RegisterMapInfoObject(ob, created);
                 control = created;
             }
 
             Size size = new Size(3, 3);
             Color colour = Color.White;
             string name = ob.Name;
-            bool isGroupMember = GameScene.Game.GroupBox.Members.Any(x => x.ObjectID == ob.ObjectID);
+            bool isGroupMember = IsGroupMember(ob.ObjectID);
             if (control is DXMapInfoControl mapInfoControl)
                 mapInfoControl.Hollow = false;
 
@@ -694,7 +696,7 @@ namespace Client.Scenes.Views
                 {
                     colour = Color.DeepPink;
                 }
-                else if (GameScene.Game.GuildBox.GuildInfo != null && GameScene.Game.GuildBox.GuildInfo.Members.Any(x => x.ObjectID == ob.ObjectID))
+                else if (IsGuildMember(ob.ObjectID))
                 {
                     colour = Color.DeepSkyBlue;
                 }
@@ -708,19 +710,13 @@ namespace Client.Scenes.Views
 
         public void PlayLocatorAnim(long id)
         {
-            if (MapInfoObjects.Keys.OfType<ClientObjectData>().FirstOrDefault(x => x.ObjectID == id) is { } ob)
+            if (LocatorObjectControls.TryGetValue(id, out DXControl objectControl))
             {
-                if (!MapInfoObjects.TryGetValue(ob, out var control))
-                    return;
-
-                DXMapInfoControl.GetOverlay(control)?.PlayBorderAnimation(Color.Lime);
+                DXMapInfoControl.GetOverlay(objectControl)?.PlayBorderAnimation(Color.Lime);
             }
-            else if (MapInfoObjects.Keys.OfType<NPCInfo>().FirstOrDefault(x => x.Index == id) is { } npcOb)
+            else if (LocatorNpcControls.TryGetValue(id, out DXControl npcControl))
             {
-                if (!MapInfoObjects.TryGetValue(npcOb, out var control))
-                    return;
-
-                DXMapInfoControl.GetOverlay(control)?.PlayBorderAnimation(Color.Yellow);
+                DXMapInfoControl.GetOverlay(npcControl)?.PlayBorderAnimation(Color.Yellow);
             }
         }
 
@@ -740,7 +736,89 @@ namespace Client.Scenes.Views
             if (!MapInfoObjects.TryGetValue(ob, out control)) return;
 
             control.Dispose();
+            UnregisterMapInfoObject(ob);
+        }
+
+        private void RegisterMapInfoObject(object ob, DXControl control)
+        {
+            MapInfoObjects[ob] = control;
+
+            if (ob is ClientObjectData data)
+                LocatorObjectControls[data.ObjectID] = control;
+            else if (ob is NPCInfo npc)
+                LocatorNpcControls[npc.Index] = control;
+        }
+
+        private void UnregisterMapInfoObject(object ob)
+        {
             MapInfoObjects.Remove(ob);
+
+            if (ob is ClientObjectData data)
+                LocatorObjectControls.Remove(data.ObjectID);
+            else if (ob is NPCInfo npc)
+                LocatorNpcControls.Remove(npc.Index);
+        }
+
+        private void ClearMapInfoObjects()
+        {
+            foreach (DXControl control in MapInfoObjects.Values)
+                control.Dispose();
+
+            MapInfoObjects.Clear();
+            LocatorObjectControls.Clear();
+            LocatorNpcControls.Clear();
+        }
+
+        private bool InstanceContainsMap(InstanceInfo instance, MapInfo map)
+        {
+            if (instance?.Maps == null || map == null) return false;
+
+            if (CachedInstanceInfo != instance || CachedInstanceMapCount != instance.Maps.Count)
+            {
+                InstanceMapCache.Clear();
+                CachedInstanceInfo = instance;
+                CachedInstanceMapCount = instance.Maps.Count;
+
+                for (int i = 0; i < instance.Maps.Count; i++)
+                {
+                    MapInfo instanceMap = instance.Maps[i].Map;
+                    if (instanceMap != null)
+                        InstanceMapCache.Add(instanceMap);
+                }
+            }
+
+            return InstanceMapCache.Contains(map);
+        }
+
+        private void ClearInstanceMapCache()
+        {
+            CachedInstanceInfo = null;
+            CachedInstanceMapCount = -1;
+            InstanceMapCache.Clear();
+        }
+
+        private static bool IsGroupMember(uint objectID)
+        {
+            var members = GameScene.Game?.GroupBox?.Members;
+            if (members == null) return false;
+
+            for (int i = 0; i < members.Count; i++)
+                if (members[i].ObjectID == objectID)
+                    return true;
+
+            return false;
+        }
+
+        private static bool IsGuildMember(uint objectID)
+        {
+            var members = GameScene.Game?.GuildBox?.GuildInfo?.Members;
+            if (members == null) return false;
+
+            for (int i = 0; i < members.Count; i++)
+                if (members[i].ObjectID == objectID)
+                    return true;
+
+            return false;
         }
 
         #endregion
@@ -760,15 +838,8 @@ namespace Client.Scenes.Views
                 ScaleX = 0;
                 ScaleY = 0;
 
-                foreach (KeyValuePair<object, DXControl> pair in MapInfoObjects)
-                {
-                    if (pair.Value == null) continue;
-                    if (pair.Value.IsDisposed) continue;
-
-                    pair.Value.Dispose();
-                }
-
-                MapInfoObjects.Clear();
+                ClearMapInfoObjects();
+                ClearInstanceMapCache();
                 MapInfoObjects = null;
 
                 if (Image != null)

@@ -168,6 +168,7 @@ namespace Server.WinForms
             AddButton(toolStrip, "复制当前项", (_, _) => CopyCurrentSetting());
             AddButton(toolStrip, "英雄配置", (_, _) => FocusHeroSettings());
             AddButton(toolStrip, "品质试算", (_, _) => ShowHeroGradePromoteCostPreview());
+            AddButton(toolStrip, "套用品质活动模板", (_, _) => ShowHeroGradePromoteEventPresetApplier());
             toolStrip.Items.Add(new ToolStripSeparator());
             AddButton(toolStrip, "选择版本文件", (_, _) => SelectFileProperty("VersionPath", "选择客户端版本文件"));
             AddButton(toolStrip, "选择地图目录", (_, _) => SelectFolderProperty("MapPath", "选择地图目录"));
@@ -716,6 +717,72 @@ namespace Server.WinForms
             form.Show(this);
         }
 
+        private void ShowHeroGradePromoteEventPresetApplier()
+        {
+            HeroGradePromoteEventPresetApplyForm form = new HeroGradePromoteEventPresetApplyForm(
+                BuildHeroGradePromoteEventPresetApplyData,
+                ApplyHeroGradePromoteEventPreset);
+            form.Show(this);
+        }
+
+        private HeroGradePromoteEventPresetApplyData BuildHeroGradePromoteEventPresetApplyData()
+        {
+            HeroGradePromoteEventPresetApplyData data = new HeroGradePromoteEventPresetApplyData
+            {
+                ReferenceTime = GetHeroGradePromoteEventNow()
+            };
+
+            if (!EndGridEdits())
+            {
+                data.Errors.Add("当前表格编辑尚未提交，请先结束编辑后重试。");
+                return data;
+            }
+
+            List<string> currentErrors = new List<string>();
+            TryReadSettingValue("HeroGradePromoteEventCostRate", currentErrors, out int eventCostRate);
+            TryReadSettingValue("HeroGradePromoteEventSuccessBonus", currentErrors, out int eventSuccessBonus);
+            TryReadSettingValue("HeroGradePromoteEventEnd", currentErrors, out DateTime eventEnd);
+            TryReadSettingValue("HeroGradePromoteEventSaveOnExpire", currentErrors, out bool eventSaveOnExpire);
+            TryReadSettingValue("HeroGradePromoteEventPresets", data.Errors, out string eventPresets);
+
+            if (!HeroGradePromoteEventPresetParser.TryParse(eventPresets, out List<HeroGradePromoteEventPreset> parsedPresets, out List<string> presetErrors))
+                data.Errors.AddRange(presetErrors.Select(x => $"HeroGradePromoteEventPresets: {x}"));
+
+            if (eventCostRate < 0 || eventCostRate > 1000)
+                currentErrors.Add("HeroGradePromoteEventCostRate: 英雄品质培养活动消耗倍率建议在 0 到 1000 之间。");
+
+            if (eventSuccessBonus < 0 || eventSuccessBonus > 100)
+                currentErrors.Add("HeroGradePromoteEventSuccessBonus: 英雄品质培养活动成功率加成必须在 0 到 100 之间。");
+
+            data.CurrentCostRate = HeroGradePromoteCostCalculator.ClampCostRate(eventCostRate);
+            data.CurrentSuccessBonus = HeroGradePromoteCostCalculator.ClampSuccessBonus(eventSuccessBonus);
+            data.CurrentEventEnd = eventEnd;
+            data.CurrentSaveOnExpire = eventSaveOnExpire;
+            data.DefaultSaveOnExpire = eventEnd != DateTime.MinValue && eventSaveOnExpire;
+            data.CurrentErrors.AddRange(currentErrors);
+            data.Presets.AddRange(parsedPresets);
+            return data;
+        }
+
+        private void ApplyHeroGradePromoteEventPreset(HeroGradePromoteEventPreset preset, bool saveOnExpire)
+        {
+            if (preset == null) return;
+
+            DateTime eventEnd = preset.DurationMinutes > 0
+                ? GetHeroGradePromoteEventNow().AddMinutes(preset.DurationMinutes)
+                : DateTime.MinValue;
+            bool effectiveSaveOnExpire = eventEnd != DateTime.MinValue && saveOnExpire;
+
+            SetPropertyValue("HeroGradePromoteEventCostRate", preset.CostRate);
+            SetPropertyValue("HeroGradePromoteEventSuccessBonus", preset.SuccessBonus);
+            SetPropertyValue("HeroGradePromoteEventEnd", eventEnd);
+            SetPropertyValue("HeroGradePromoteEventSaveOnExpire", effectiveSaveOnExpire);
+            FocusSetting("HeroGradePromoteEventCostRate");
+            ApplyFilter();
+
+            _statusLabel.Text = $"已套用品质活动模板 {preset.Name}，当前配置尚未保存。{GetConfigPathText()}";
+        }
+
         private HeroGradePromoteCostPreviewData BuildHeroGradePromoteCostPreviewData()
         {
             HeroGradePromoteCostPreviewData data = new HeroGradePromoteCostPreviewData();
@@ -915,11 +982,16 @@ namespace Server.WinForms
             if (eventEnd == DateTime.MinValue)
                 return "不自动到期";
 
-            TimeSpan remaining = eventEnd - DateTime.UtcNow;
+            TimeSpan remaining = eventEnd - GetHeroGradePromoteEventNow();
             string state = remaining <= TimeSpan.Zero ? "已过期，服务端会自动恢复" : $"剩余 {FormatDuration(remaining)}";
             string saveText = saveOnExpire ? "，到期写回配置" : "，到期只恢复内存";
 
             return $"{eventEnd:yyyy-MM-dd HH:mm:ss} UTC({state}{saveText})";
+        }
+
+        private static DateTime GetHeroGradePromoteEventNow()
+        {
+            return SEnvir.Now == default ? DateTime.UtcNow : SEnvir.Now;
         }
 
         private static string FormatDuration(TimeSpan duration)
@@ -1916,6 +1988,200 @@ namespace Server.WinForms
             return true;
         }
 
+        private sealed class HeroGradePromoteEventPresetApplyForm : Form
+        {
+            private readonly Func<HeroGradePromoteEventPresetApplyData> _loadData;
+            private readonly Action<HeroGradePromoteEventPreset, bool> _applyPreset;
+            private readonly DataGridView _grid = new DataGridView();
+            private readonly Label _summaryLabel = new Label();
+            private readonly CheckBox _saveOnExpireBox = new CheckBox { Text = "到期写回配置", AutoSize = true };
+            private bool _loadingData;
+            private HeroGradePromoteEventPresetApplyData _data;
+
+            public HeroGradePromoteEventPresetApplyForm(
+                Func<HeroGradePromoteEventPresetApplyData> loadData,
+                Action<HeroGradePromoteEventPreset, bool> applyPreset)
+            {
+                _loadData = loadData;
+                _applyPreset = applyPreset;
+
+                Text = "套用品质活动模板";
+                Width = 720;
+                Height = 420;
+                StartPosition = FormStartPosition.CenterParent;
+
+                ToolStrip toolStrip = new ToolStrip();
+                ToolStripButton refreshButton = new ToolStripButton("刷新");
+                refreshButton.Click += (_, _) => RefreshData();
+                toolStrip.Items.Add(refreshButton);
+
+                ToolStripButton applyButton = new ToolStripButton("套用");
+                applyButton.Click += (_, _) => ApplySelectedPreset();
+                toolStrip.Items.Add(applyButton);
+
+                toolStrip.Items.Add(new ToolStripSeparator());
+                toolStrip.Items.Add(new ToolStripControlHost(_saveOnExpireBox));
+
+                _saveOnExpireBox.CheckedChanged += (_, _) => UpdateSummary();
+
+                _summaryLabel.Dock = DockStyle.Top;
+                _summaryLabel.AutoSize = false;
+                _summaryLabel.Height = 64;
+                _summaryLabel.Padding = new Padding(8);
+
+                _grid.Dock = DockStyle.Fill;
+                _grid.AllowUserToAddRows = false;
+                _grid.AllowUserToDeleteRows = false;
+                _grid.AutoGenerateColumns = false;
+                _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+                _grid.BackgroundColor = SystemColors.Window;
+                _grid.BorderStyle = BorderStyle.None;
+                _grid.MultiSelect = false;
+                _grid.ReadOnly = true;
+                _grid.RowHeadersVisible = false;
+                _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+                _grid.SelectionChanged += (_, _) => UpdateSummary();
+
+                AddPresetColumn("模板", nameof(HeroGradePromoteEventPresetApplyRow.Name), 160);
+                AddPresetColumn("消耗倍率", nameof(HeroGradePromoteEventPresetApplyRow.CostRate), 100);
+                AddPresetColumn("成功加成", nameof(HeroGradePromoteEventPresetApplyRow.SuccessBonus), 100);
+                AddPresetColumn("持续时间", nameof(HeroGradePromoteEventPresetApplyRow.Duration), 140);
+                AddPresetColumn("说明", nameof(HeroGradePromoteEventPresetApplyRow.Description), 220);
+
+                Controls.Add(_grid);
+                Controls.Add(_summaryLabel);
+                Controls.Add(toolStrip);
+                toolStrip.Dock = DockStyle.Top;
+
+                RefreshData();
+            }
+
+            private void AddPresetColumn(string header, string propertyName, int width)
+            {
+                _grid.Columns.Add(new DataGridViewTextBoxColumn
+                {
+                    HeaderText = header,
+                    DataPropertyName = propertyName,
+                    SortMode = DataGridViewColumnSortMode.NotSortable,
+                    Width = width
+                });
+            }
+
+            private void RefreshData()
+            {
+                string selectedName = GetSelectedPreset()?.Name;
+                _data = _loadData();
+
+                if (_data.Errors.Count > 0)
+                {
+                    _summaryLabel.Text = "活动模板配置存在错误。";
+                    _grid.DataSource = Array.Empty<HeroGradePromoteEventPresetApplyRow>();
+                    MessageBox.Show(this, string.Join("\r\n", _data.Errors.Take(20)), "套用品质活动模板", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                _loadingData = true;
+                try
+                {
+                    _saveOnExpireBox.Checked = _data.DefaultSaveOnExpire;
+                    _grid.DataSource = _data.Presets.Select(CreatePresetRow).ToList();
+
+                    if (!string.IsNullOrWhiteSpace(selectedName))
+                        SelectPreset(selectedName);
+
+                    if (_grid.Rows.Count > 0 && _grid.CurrentRow == null)
+                        _grid.CurrentCell = _grid.Rows[0].Cells[0];
+                }
+                finally
+                {
+                    _loadingData = false;
+                }
+
+                UpdateSummary();
+
+                if (_data.Presets.Count == 0)
+                    MessageBox.Show(this, "当前没有配置活动模板。", "套用品质活动模板", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+
+            private HeroGradePromoteEventPresetApplyRow CreatePresetRow(HeroGradePromoteEventPreset preset)
+            {
+                return new HeroGradePromoteEventPresetApplyRow
+                {
+                    Name = preset.Name,
+                    CostRate = $"{preset.CostRate}%",
+                    SuccessBonus = $"+{preset.SuccessBonus}%",
+                    Duration = FormatPresetDuration(preset.DurationMinutes),
+                    Description = HeroGradePromoteEventPresetParser.Format(preset),
+                    Preset = preset
+                };
+            }
+
+            private void ApplySelectedPreset()
+            {
+                HeroGradePromoteEventPreset preset = GetSelectedPreset();
+                if (preset == null)
+                {
+                    MessageBox.Show(this, "请选择一个活动模板。", "套用品质活动模板", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                _applyPreset(preset, _saveOnExpireBox.Checked);
+                RefreshData();
+                SelectPreset(preset.Name);
+            }
+
+            private HeroGradePromoteEventPreset GetSelectedPreset()
+            {
+                return _grid.CurrentRow?.DataBoundItem is HeroGradePromoteEventPresetApplyRow row ? row.Preset : null;
+            }
+
+            private void SelectPreset(string name)
+            {
+                if (string.IsNullOrWhiteSpace(name)) return;
+
+                foreach (DataGridViewRow row in _grid.Rows)
+                {
+                    if (row.DataBoundItem is not HeroGradePromoteEventPresetApplyRow presetRow ||
+                        !string.Equals(presetRow.Name, name, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    _grid.CurrentCell = row.Cells[0];
+                    return;
+                }
+            }
+
+            private void UpdateSummary()
+            {
+                if (_loadingData || _data == null)
+                    return;
+
+                string current = _data.CurrentErrors.Count > 0
+                    ? $"当前：活动字段存在错误（{_data.CurrentErrors[0]}）"
+                    : $"当前：消耗倍率 {_data.CurrentCostRate}%，成功率加成 +{_data.CurrentSuccessBonus}%，结束 {FormatHeroGradePromoteEventEnd(_data.CurrentEventEnd, _data.CurrentSaveOnExpire)}";
+                HeroGradePromoteEventPreset preset = GetSelectedPreset();
+                if (preset == null)
+                {
+                    _summaryLabel.Text = current;
+                    return;
+                }
+
+                DateTime eventEnd = preset.DurationMinutes > 0
+                    ? _data.ReferenceTime.AddMinutes(preset.DurationMinutes)
+                    : DateTime.MinValue;
+                bool saveOnExpire = eventEnd != DateTime.MinValue && _saveOnExpireBox.Checked;
+                string selected = $"选中：消耗倍率 {preset.CostRate}%，成功率加成 +{preset.SuccessBonus}%，结束 {FormatHeroGradePromoteEventEnd(eventEnd, saveOnExpire)}";
+                _summaryLabel.Text = $"{current}\r\n{selected}";
+            }
+
+            private static string FormatPresetDuration(int durationMinutes)
+            {
+                if (durationMinutes <= 0)
+                    return "不自动到期";
+
+                return FormatDuration(TimeSpan.FromMinutes(durationMinutes));
+            }
+        }
+
         private sealed class HeroGradePromoteCostPreviewForm : Form
         {
             private readonly Func<HeroGradePromoteCostPreviewData> _loadData;
@@ -2211,6 +2477,29 @@ namespace Server.WinForms
 
                 return builder.ToString();
             }
+        }
+
+        private sealed class HeroGradePromoteEventPresetApplyData
+        {
+            public readonly List<string> Errors = new List<string>();
+            public readonly List<string> CurrentErrors = new List<string>();
+            public readonly List<HeroGradePromoteEventPreset> Presets = new List<HeroGradePromoteEventPreset>();
+            public int CurrentCostRate { get; set; }
+            public int CurrentSuccessBonus { get; set; }
+            public DateTime CurrentEventEnd { get; set; }
+            public bool CurrentSaveOnExpire { get; set; }
+            public bool DefaultSaveOnExpire { get; set; }
+            public DateTime ReferenceTime { get; set; }
+        }
+
+        private sealed class HeroGradePromoteEventPresetApplyRow
+        {
+            public string Name { get; set; }
+            public string CostRate { get; set; }
+            public string SuccessBonus { get; set; }
+            public string Duration { get; set; }
+            public string Description { get; set; }
+            public HeroGradePromoteEventPreset Preset { get; set; }
         }
 
         private sealed class HeroGradePromoteCostPreviewRow

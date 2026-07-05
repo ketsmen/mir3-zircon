@@ -256,6 +256,12 @@ namespace Server.Models
                     }
                     return;
                 case ActionType.DelayMagic:
+                    if (action.Data.Length > 0 && action.Data[0] is HeroChainMagicPayload chainPayload)
+                    {
+                        CompleteHeroChainMagic(chainPayload);
+                        return;
+                    }
+
                     if (action.Data.Length > 0 && action.Data[0] is HeroAreaMagicPayload areaPayload)
                     {
                         CompleteHeroAreaMagic(areaPayload);
@@ -944,6 +950,235 @@ namespace Server.Models
 
             if (spawned)
                 LevelAttackMagic(payload.MagicType);
+        }
+
+        protected void QueueHeroFireBounce(UserMagic magic, MapObject source, MapObject target, int remainingBounces, bool broadcastProjectile)
+        {
+            if (magic == null || source?.Node == null || target?.Node == null) return;
+
+            int delay = Functions.Distance(source.CurrentLocation, target.CurrentLocation) * 48;
+            if (!broadcastProjectile)
+                delay += 500;
+
+            ActionList.Add(new DelayedAction(
+                SEnvir.Now.AddMilliseconds(Math.Max(0, delay)),
+                ActionType.DelayMagic,
+                new HeroChainMagicPayload
+                {
+                    Magic = magic,
+                    MagicType = MagicType.FireBounce,
+                    Element = Element.Fire,
+                    Source = source,
+                    Target = target,
+                    TargetLocation = target.CurrentLocation,
+                    RemainingBounces = Math.Max(0, remainingBounces),
+                    BroadcastProjectile = broadcastProjectile,
+                    JumpRadius = 3,
+                    PowerDivisor = 0,
+                }));
+        }
+
+        protected void QueueHeroChainLightning(UserMagic magic, List<Point> locations, List<Point> previousLocations, bool primary, int powerDivisor)
+        {
+            if (magic == null || locations == null || locations.Count == 0) return;
+
+            ActionList.Add(new DelayedAction(
+                SEnvir.Now.AddMilliseconds(primary ? 600 : 200),
+                ActionType.DelayMagic,
+                new HeroChainMagicPayload
+                {
+                    Magic = magic,
+                    MagicType = MagicType.ChainLightning,
+                    Element = Element.Lightning,
+                    Locations = locations,
+                    PreviousLocations = previousLocations ?? new List<Point>(),
+                    Primary = primary,
+                    PowerDivisor = Math.Max(0, powerDivisor),
+                    JumpRadius = 1,
+                }));
+        }
+
+        private void CompleteHeroChainMagic(HeroChainMagicPayload payload)
+        {
+            if (payload == null || CurrentMap == null) return;
+
+            switch (payload.MagicType)
+            {
+                case MagicType.FireBounce:
+                    CompleteHeroFireBounce(payload);
+                    break;
+                case MagicType.ChainLightning:
+                    CompleteHeroChainLightning(payload);
+                    break;
+            }
+        }
+
+        private void CompleteHeroFireBounce(HeroChainMagicPayload payload)
+        {
+            MapObject target = payload.Target;
+            if (target?.Node == null || target.Dead || target.CurrentMap != CurrentMap || !CanAttackTarget(target)) return;
+            if (!Functions.InRange(target.CurrentLocation, payload.TargetLocation, Globals.MagicRange)) return;
+
+            MapObject source = payload.Source?.Node == null ? this : payload.Source;
+
+            if (payload.BroadcastProjectile)
+            {
+                Broadcast(new S.ObjectProjectile
+                {
+                    ObjectID = source.ObjectID,
+                    Direction = source.Direction,
+                    CurrentLocation = source.CurrentLocation,
+                    Type = MagicType.FireBounce,
+                    MagicInfoIndex = payload.Magic?.Info?.Index ?? 0,
+                    Targets = new List<uint> { target.ObjectID },
+                    Locations = new List<Point>(),
+                });
+            }
+
+            int damage = Attack(target, GetHeroChainMagicPower(payload), Element.Fire);
+            if (damage <= 0) return;
+
+            LevelAttackMagic(MagicType.FireBounce);
+            LevelAttackPassives(target, MagicType.FireBounce, Element.Fire);
+            OnAttackLanded(target, MagicType.FireBounce, damage);
+
+            if (payload.RemainingBounces <= 1) return;
+
+            List<MapObject> targets = GetHeroFireBounceTargets(target, Math.Max(1, payload.JumpRadius));
+
+            if (targets.Count == 0) return;
+
+            MapObject nextTarget = targets[SEnvir.Random.Next(targets.Count)];
+            QueueHeroFireBounce(payload.Magic, target, nextTarget, payload.RemainingBounces - 1, true);
+        }
+
+        private void CompleteHeroChainLightning(HeroChainMagicPayload payload)
+        {
+            if (payload.Locations == null || payload.Locations.Count == 0) return;
+
+            List<Point> hitLocations = new List<Point>();
+            HashSet<Point> checkedLocations = payload.Locations.Count > 1 ? new HashSet<Point>() : null;
+
+            foreach (Point location in payload.Locations)
+            {
+                if (checkedLocations != null && !checkedLocations.Add(location)) continue;
+
+                Cell cell = CurrentMap.GetCell(location);
+                if (cell?.Objects == null) continue;
+
+                bool hitCell = false;
+                foreach (MapObject target in cell.Objects.ToArray())
+                {
+                    if (target?.Node == null || target.Dead || target.CurrentMap != CurrentMap) continue;
+                    if (target.Race != ObjectType.Monster || !CanAttackTarget(target)) continue;
+                    if (!Functions.InRange(CurrentLocation, target.CurrentLocation, Globals.MagicRange)) continue;
+
+                    int damage = Attack(target, GetHeroChainMagicPower(payload), Element.Lightning);
+                    if (damage <= 0) continue;
+
+                    hitCell = true;
+                    LevelAttackMagic(MagicType.ChainLightning);
+                    LevelAttackPassives(target, MagicType.ChainLightning, Element.Lightning);
+                    OnAttackLanded(target, MagicType.ChainLightning, damage);
+                }
+
+                if (hitCell)
+                    hitLocations.Add(location);
+            }
+
+            if (!payload.Primary && hitLocations.Count > 0)
+            {
+                Broadcast(new S.ObjectProjectile
+                {
+                    ObjectID = ObjectID,
+                    Direction = Direction,
+                    CurrentLocation = CurrentLocation,
+                    Type = MagicType.ChainLightning,
+                    MagicInfoIndex = payload.Magic?.Info?.Index ?? 0,
+                    Targets = new List<uint>(),
+                    Locations = hitLocations,
+                });
+            }
+
+            if (hitLocations.Count == 0) return;
+
+            List<Point> previousLocations = payload.PreviousLocations ?? new List<Point>();
+            previousLocations.AddRange(hitLocations);
+
+            int nextPowerDivisor = payload.PowerDivisor + 1;
+            List<Point> nextLocations = GetNextHeroChainLightningLocations(hitLocations, previousLocations, Math.Max(1, nextPowerDivisor));
+            if (nextLocations.Count == 0) return;
+
+            QueueHeroChainLightning(payload.Magic, nextLocations, previousLocations, false, nextPowerDivisor);
+        }
+
+        private List<Point> GetNextHeroChainLightningLocations(IEnumerable<Point> locations, List<Point> previousLocations, int powerDivisor)
+        {
+            List<Point> nextLocations = new List<Point>();
+            HashSet<Point> usedLocations = previousLocations == null
+                ? new HashSet<Point>()
+                : new HashSet<Point>(previousLocations);
+
+            foreach (Point location in locations)
+            {
+                foreach (Cell cell in CurrentMap.GetCells(location, 0, 1))
+                {
+                    if (cell?.Objects == null) continue;
+                    if (usedLocations.Contains(cell.Location)) continue;
+
+                    foreach (MapObject target in cell.Objects.ToArray())
+                    {
+                        if (target?.Node == null || target.Dead || target.CurrentMap != CurrentMap) continue;
+                        if (target.Race != ObjectType.Monster || !CanAttackTarget(target)) continue;
+                        if (!Functions.InRange(CurrentLocation, target.CurrentLocation, Globals.MagicRange)) continue;
+
+                        if (SEnvir.Random.Next(powerDivisor) == 0 && usedLocations.Add(cell.Location))
+                            nextLocations.Add(cell.Location);
+
+                        break;
+                    }
+                }
+            }
+
+            return nextLocations;
+        }
+
+        private List<MapObject> GetHeroFireBounceTargets(MapObject source, int radius)
+        {
+            List<MapObject> targets = new List<MapObject>();
+            if (source?.CurrentMap == null) return targets;
+
+            foreach (Cell cell in source.CurrentMap.GetCells(source.CurrentLocation, 0, radius))
+            {
+                if (cell?.Objects == null) continue;
+
+                foreach (MapObject target in cell.Objects.ToArray())
+                {
+                    if (target?.Node == null || target.Dead || target.CurrentMap != CurrentMap) continue;
+                    if (target.Race != ObjectType.Monster || target == source || !CanAttackTarget(target)) continue;
+
+                    targets.Add(target);
+                }
+            }
+
+            return targets;
+        }
+
+        private int GetHeroChainMagicPower(HeroChainMagicPayload payload)
+        {
+            int power = Math.Max(GetMC(), GetDC()) + Level + (payload.Magic?.GetPower() ?? 0);
+
+            power += payload.Element switch
+            {
+                Element.Fire => Stats[Stat.FireAttack],
+                Element.Lightning => Stats[Stat.LightningAttack],
+                _ => 0,
+            };
+
+            if (payload.MagicType == MagicType.ChainLightning)
+                power = power * 5 / (payload.PowerDivisor + 5);
+
+            return Math.Max(1, power);
         }
 
         private bool TryGetCustomAutoSkill(out UserMagic magic, out CustomSkillInfo skill, bool requireTargetInRange = false)
@@ -3294,8 +3529,13 @@ namespace Server.Models
             switch (magicType)
             {
                 case MagicType.FireBall:
+                case MagicType.FireBounce:
                     if (TryGetUsableMagic(MagicType.Burning, out UserMagic burning))
                         LevelMagic(burning);
+                    break;
+                case MagicType.ChainLightning:
+                    if (TryGetUsableMagic(MagicType.Shocked, out UserMagic shocked))
+                        LevelMagic(shocked);
                     break;
             }
         }
@@ -3835,6 +4075,23 @@ namespace Server.Models
             public int Slow { get; init; }
         }
 
+        protected sealed class HeroChainMagicPayload
+        {
+            public UserMagic Magic { get; init; }
+            public MagicType MagicType { get; init; }
+            public Element Element { get; init; }
+            public MapObject Source { get; init; }
+            public MapObject Target { get; init; }
+            public Point TargetLocation { get; init; }
+            public List<Point> Locations { get; init; }
+            public List<Point> PreviousLocations { get; init; }
+            public bool Primary { get; init; }
+            public bool BroadcastProjectile { get; init; }
+            public int RemainingBounces { get; init; }
+            public int JumpRadius { get; init; }
+            public int PowerDivisor { get; init; }
+        }
+
         private sealed class SkillAreaPayload
         {
             public Map Map { get; init; }
@@ -3930,6 +4187,7 @@ namespace Server.Models
     public sealed class WizardHero : HeroObject
     {
         private DateTime AreaMagicReadyTime;
+        private DateTime ChainMagicReadyTime;
         private DateTime ShieldReadyTime;
         private MagicType CurrentAutoMagic;
 
@@ -3975,7 +4233,7 @@ namespace Server.Models
 
         protected override bool TryCastClassSkill()
         {
-            return TryCastMagicShield() || TryCastWizardAreaMagic();
+            return TryCastMagicShield() || TryCastWizardChainMagic() || TryCastWizardAreaMagic();
         }
 
         private bool TryCastMagicShield()
@@ -4008,6 +4266,51 @@ namespace Server.Models
             }, true, false, TimeSpan.Zero);
 
             LevelMagic(magic);
+            return true;
+        }
+
+        private bool TryCastWizardChainMagic()
+        {
+            if (Target?.Node == null || !CanAttackTarget(Target) || SEnvir.Now < ChainMagicReadyTime || !CanCast) return false;
+            if ((Poison & PoisonType.Silenced) == PoisonType.Silenced) return false;
+            if (!Functions.InRange(CurrentLocation, Target.CurrentLocation, AttackRange)) return false;
+
+            return TryCastWizardChainMagic(MagicType.ChainLightning, Element.Lightning) ||
+                   TryCastWizardChainMagic(MagicType.FireBounce, Element.Fire);
+        }
+
+        private bool TryCastWizardChainMagic(MagicType type, Element element)
+        {
+            if (!TryGetUsableMagic(type, out UserMagic magic)) return false;
+            if (CurrentMP < magic.Cost || SEnvir.Now < magic.Cooldown) return false;
+            if (!CanUseWizardChainMagic(type, 2)) return false;
+
+            Direction = Functions.DirectionFromPoint(CurrentLocation, Target.CurrentLocation);
+
+            Broadcast(new S.ObjectMagic
+            {
+                ObjectID = ObjectID,
+                Direction = Direction,
+                CurrentLocation = CurrentLocation,
+                Cast = true,
+                Type = type,
+                MagicInfoIndex = magic.Info.Index,
+                AttackElement = element,
+                Targets = new List<uint> { Target.ObjectID },
+                Locations = new List<Point> { Target.CurrentLocation },
+            });
+
+            ChangeMP(-magic.Cost);
+            magic.Cooldown = SEnvir.Now.AddMilliseconds(Math.Max(0, magic.Info.Delay));
+            ChainMagicReadyTime = SEnvir.Now + GetWizardChainCooldown(type, magic);
+            UpdateMagicAttackTime();
+            DamageItem((int)EquipmentSlot.Weapon);
+
+            if (type == MagicType.FireBounce)
+                QueueHeroFireBounce(magic, this, Target, magic.Level + 2, false);
+            else
+                QueueHeroChainLightning(magic, new List<Point> { Target.CurrentLocation }, new List<Point>(), true, 0);
+
             return true;
         }
 
@@ -4094,6 +4397,60 @@ namespace Server.Models
                 .Count(x => x?.Node != null && !x.Dead && x.CurrentMap == CurrentMap && CanAttackTarget(x));
         }
 
+        private bool CanUseWizardChainMagic(MagicType magicType, int minimumTargets)
+        {
+            if (Target?.Node == null || CurrentMap == null) return false;
+
+            return magicType switch
+            {
+                MagicType.FireBounce => HasWizardBounceTargets(Target, minimumTargets),
+                MagicType.ChainLightning => HasWizardChainLightningTargets(Target.CurrentLocation, minimumTargets),
+                _ => false,
+            };
+        }
+
+        private bool HasWizardBounceTargets(MapObject primaryTarget, int minimumTargets)
+        {
+            if (primaryTarget?.Node == null || CurrentMap == null) return false;
+            int count = 1;
+
+            foreach (Cell cell in CurrentMap.GetCells(primaryTarget.CurrentLocation, 0, 3))
+            {
+                if (cell?.Objects == null) continue;
+
+                foreach (MapObject target in cell.Objects.ToArray())
+                {
+                    if (target?.Node == null || target.Dead || target.CurrentMap != CurrentMap) continue;
+                    if (target.Race != ObjectType.Monster || target == primaryTarget || !CanAttackTarget(target)) continue;
+                    if (++count >= minimumTargets) return true;
+                }
+            }
+
+            return count >= minimumTargets;
+        }
+
+        private bool HasWizardChainLightningTargets(Point location, int minimumTargets)
+        {
+            if (CurrentMap == null) return false;
+
+            int count = 0;
+
+            foreach (Cell cell in CurrentMap.GetCells(location, 0, 1))
+            {
+                if (cell?.Objects == null) continue;
+
+                foreach (MapObject target in cell.Objects.ToArray())
+                {
+                    if (target?.Node == null || target.Dead || target.CurrentMap != CurrentMap) continue;
+                    if (target.Race != ObjectType.Monster || !CanAttackTarget(target)) continue;
+                    if (!Functions.InRange(CurrentLocation, target.CurrentLocation, Globals.MagicRange)) continue;
+                    if (++count >= minimumTargets) return true;
+                }
+            }
+
+            return false;
+        }
+
         private static TimeSpan GetWizardAreaCooldown(MagicType magicType, UserMagic magic)
         {
             int level = magic?.Level ?? 0;
@@ -4103,6 +4460,18 @@ namespace Server.Models
                 MagicType.IceStorm => TimeSpan.FromSeconds(Math.Max(6, 12 - level * 2)),
                 MagicType.FireStorm => TimeSpan.FromSeconds(Math.Max(5, 10 - level * 2)),
                 MagicType.FireWall => TimeSpan.FromSeconds(Math.Max(8, 14 - level * 2)),
+                _ => TimeSpan.FromSeconds(8),
+            };
+        }
+
+        private static TimeSpan GetWizardChainCooldown(MagicType magicType, UserMagic magic)
+        {
+            int level = magic?.Level ?? 0;
+
+            return magicType switch
+            {
+                MagicType.ChainLightning => TimeSpan.FromSeconds(Math.Max(6, 12 - level * 2)),
+                MagicType.FireBounce => TimeSpan.FromSeconds(Math.Max(5, 10 - level * 2)),
                 _ => TimeSpan.FromSeconds(8),
             };
         }
