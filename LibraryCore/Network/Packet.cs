@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -10,7 +11,10 @@ namespace Library.Network
 {
     public abstract class Packet
     {
+        public const int MaxPacketSize = 4 * 1024 * 1024;
         private static readonly List<Type> Packets;
+        private static readonly Dictionary<Type, short> PacketIds;
+        private static readonly ConcurrentDictionary<Type, ObjectMetadata> MetadataCache;
         private static readonly Dictionary<Type, Action<object, BinaryWriter>> TypeWrite;
         private static readonly Dictionary<Type, Func<BinaryReader, object>> TypeRead;
         private const string GeneralPacketsNamespace = @"Library.Network.GeneralPackets";
@@ -31,9 +35,10 @@ namespace Library.Network
         static Packet()
         {
             Packets = new List<Type>();
+            PacketIds = new Dictionary<Type, short>();
+            MetadataCache = new ConcurrentDictionary<Type, ObjectMetadata>();
 
-            Type[] list = Assembly.GetExecutingAssembly().GetTypes();
-
+            Type[] list = PacketGeneratedRegistry.GetPacketTypes() ?? Assembly.GetExecutingAssembly().GetTypes();
 
             foreach (Type type in list)
             {
@@ -42,6 +47,8 @@ namespace Library.Network
             }
 
             Packets.Sort(ComparePacketTypes);
+            for (short i = 0; i < Packets.Count; i++)
+                PacketIds[Packets[i]] = i;
 
             #region Writes
 
@@ -162,10 +169,21 @@ namespace Library.Network
 
             int length = rawBytes[3] << 24 | rawBytes[2] << 16 | rawBytes[1] << 8 | rawBytes[0];
 
+            if (length > MaxPacketSize)
+                throw new InvalidDataException($"Packet length {length} exceeds the maximum allowed size {MaxPacketSize}.");
+
+            if (length < 6)
+            {
+                extra = rawBytes.Length > length && length > 0 ? rawBytes[length..] : Array.Empty<byte>();
+                return null;
+            }
+
             if (length > rawBytes.Length) return null;
 
-            extra = new byte[rawBytes.Length - length];
-            Buffer.BlockCopy(rawBytes, length, extra, 0, rawBytes.Length - length);
+            int extraLength = rawBytes.Length - length;
+            extra = extraLength == 0 ? Array.Empty<byte>() : new byte[extraLength];
+            if (extraLength > 0)
+                Buffer.BlockCopy(rawBytes, length, extra, 0, extraLength);
 
 
             using (MemoryStream stream = new MemoryStream(rawBytes))
@@ -182,6 +200,8 @@ namespace Library.Network
                 }
             }
 
+            if (p == null) return null;
+
             p.Length = length;
 
             return p;
@@ -193,7 +213,7 @@ namespace Library.Network
             using (MemoryStream stream = new MemoryStream())
             using (BinaryWriter writer = new BinaryWriter(stream))
             {
-                writer.Write((short)Packets.IndexOf(GetType()));
+                writer.Write(PacketIds[GetType()]);
                 WriteObject(writer, this, capabilities);
                 packet = stream.ToArray();
             }
@@ -210,16 +230,19 @@ namespace Library.Network
             }
         }
 
-        private static bool HasCapability(PropertyInfo property, ServerCapabilities capabilities)
+        private static ObjectMetadata GetMetadata(Type type)
         {
-            PacketCapability attribute = property.GetCustomAttribute<PacketCapability>();
-
-            return attribute?.IsSupported(capabilities) ?? true;
+            return MetadataCache.GetOrAdd(type, static value => new ObjectMetadata(value));
         }
 
-        private static bool HasOptionalData(BinaryReader reader, PropertyInfo property)
+        private static bool HasCapability(PacketProperty property, ServerCapabilities capabilities)
         {
-            if (property.GetCustomAttribute<OptionalPacketProperty>() == null) return true;
+            return property.Capability?.IsSupported(capabilities) ?? true;
+        }
+
+        private static bool HasOptionalData(BinaryReader reader, PacketProperty property)
+        {
+            if (!property.Optional) return true;
 
             // Optional properties are only safe for tail fields because the reader cannot
             // distinguish "missing" from "next field starts here" in the middle of a packet.
@@ -228,11 +251,10 @@ namespace Library.Network
 
         private static void WriteObject(BinaryWriter writer, object ob, ServerCapabilities capabilities)
         {
-            PropertyInfo[] properties = ob.GetType().GetProperties();
+            PacketProperty[] properties = GetMetadata(ob.GetType()).Properties;
 
-            foreach (PropertyInfo item in properties)
+            foreach (PacketProperty item in properties)
             {
-                if (item.GetCustomAttribute<IgnorePropertyPacket>() != null) continue;
                 if (!HasCapability(item, capabilities)) continue;
 
                 Action<object, BinaryWriter> writeAction;
@@ -340,12 +362,10 @@ namespace Library.Network
         }
         private static void ReadObject(BinaryReader reader, object ob, ServerCapabilities capabilities)
         {
-            Type type = ob.GetType();
-            PropertyInfo[] properties = type.GetProperties();
+            ObjectMetadata metadata = GetMetadata(ob.GetType());
 
-            foreach (PropertyInfo item in properties)
+            foreach (PacketProperty item in metadata.Properties)
             {
-                if (item.GetCustomAttribute<IgnorePropertyPacket>() != null) continue;
                 if (!HasCapability(item, capabilities)) continue;
                 if (!HasOptionalData(reader, item)) continue;
 
@@ -464,13 +484,68 @@ namespace Library.Network
                 item.SetValue(ob, readAction(reader));
             }
 
-            MethodInfo[] Methods = type.GetMethods();
-
-            foreach (MethodInfo item in Methods)
+            foreach (MethodInfo item in metadata.CompleteMethods)
             {
-                if (item.GetCustomAttribute<CompleteObject>() == null) continue;
-
                 item.Invoke(ob, null);
+            }
+        }
+
+        private sealed class ObjectMetadata
+        {
+            public PacketProperty[] Properties { get; }
+            public MethodInfo[] CompleteMethods { get; }
+
+            public ObjectMetadata(Type type)
+            {
+                PropertyInfo[] properties = type.GetProperties();
+                List<PacketProperty> packetProperties = new List<PacketProperty>(properties.Length);
+
+                foreach (PropertyInfo property in properties)
+                {
+                    if (property.GetCustomAttribute<IgnorePropertyPacket>() != null) continue;
+
+                    packetProperties.Add(new PacketProperty(property));
+                }
+
+                Properties = packetProperties.ToArray();
+
+                MethodInfo[] methods = type.GetMethods();
+                List<MethodInfo> completeMethods = new List<MethodInfo>();
+
+                foreach (MethodInfo method in methods)
+                {
+                    if (method.GetCustomAttribute<CompleteObject>() == null) continue;
+
+                    completeMethods.Add(method);
+                }
+
+                CompleteMethods = completeMethods.ToArray();
+            }
+        }
+
+        private sealed class PacketProperty
+        {
+            public PropertyInfo Property { get; }
+            public Type PropertyType { get; }
+            public PacketCapability Capability { get; }
+            public bool Optional { get; }
+
+            public PacketProperty(PropertyInfo property)
+            {
+                Property = property;
+                PropertyType = property.PropertyType;
+                Capability = property.GetCustomAttribute<PacketCapability>();
+                Optional = property.GetCustomAttribute<OptionalPacketProperty>() != null;
+            }
+
+            public object GetValue(object ob)
+            {
+                return Property.GetValue(ob);
+            }
+
+            public void SetValue(object ob, object value)
+            {
+                Property.SetValue(ob, value);
             }
         }
     }

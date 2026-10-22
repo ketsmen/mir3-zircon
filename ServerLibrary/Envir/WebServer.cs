@@ -11,6 +11,7 @@ using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using System.Web;
 
 namespace Server.Envir
 {
@@ -21,6 +22,8 @@ namespace Server.Envir
         private const int MaxSystemDatabaseSyncBytes = 10 * 1024 * 1024;
         private const int MaxIPNBytes = 256 * 1024;
         private static readonly TimeSpan IPNVerificationTimeout = TimeSpan.FromSeconds(15);
+        private static readonly TimeSpan RecentIPNRetention = TimeSpan.FromDays(1);
+        private static readonly ConcurrentDictionary<string, DateTime> RecentIPNIds = new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
         private static HttpListener WebListener;
         public const string ActivationCommand = "Activation", ResetCommand = "Reset", DeleteCommand = "Delete",
@@ -628,6 +631,13 @@ namespace Server.Envir
                     return;
                 }
 
+                if (!string.IsNullOrWhiteSpace(context.Request.ContentType) &&
+                    !context.Request.ContentType.StartsWith("application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Response.StatusCode = (int)HttpStatusCode.UnsupportedMediaType;
+                    return;
+                }
+
                 if (context.Request.ContentLength64 > MaxIPNBytes)
                 {
                     context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
@@ -644,6 +654,13 @@ namespace Server.Envir
                 Encoding encoding = context.Request.ContentEncoding ?? Encoding.UTF8;
                 string rawMessage = encoding.GetString(rawBytes);
 
+                if (!TryValidateIPNPayload(rawMessage, out string transactionId, out bool duplicate, out string rejection))
+                {
+                    context.Response.StatusCode = duplicate ? (int)HttpStatusCode.OK : (int)HttpStatusCode.BadRequest;
+                    SEnvir.Log(LogLevel.Warning, LogCategory.Web, $"IPN request rejected: {rejection}");
+                    return;
+                }
+
                 _ = Task.Run(() => VerifyIPNAsync(rawMessage, LiveURL, verified));
 
                 context.Response.StatusCode = (int)HttpStatusCode.OK;
@@ -659,11 +676,11 @@ namespace Server.Envir
             catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException)
             {
                 context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
-                SEnvir.Log("IPN request rejected: " + ex.Message);
+                SEnvir.Log(LogLevel.Warning, LogCategory.Web, "IPN request rejected: " + ex.Message);
             }
             catch (Exception ex)
             {
-                SEnvir.Log(ex.ToString());
+                SEnvir.Log(LogLevel.Error, LogCategory.Web, ex.ToString());
                 TryCloseResponse(context, HttpStatusCode.InternalServerError);
             }
             finally
@@ -673,6 +690,66 @@ namespace Server.Envir
                 if (IsCurrentListener(listener, IPNListener)) //IsBound ?
                     listener.BeginGetContext(IPNConnection, listener);
             }
+        }
+
+        internal static bool TryValidateIPNPayload(string rawMessage, out string transactionId, out bool duplicate, out string rejection)
+        {
+            transactionId = null;
+            duplicate = false;
+            rejection = null;
+
+            if (string.IsNullOrWhiteSpace(rawMessage))
+            {
+                rejection = "empty body";
+                return false;
+            }
+
+            var values = HttpUtility.ParseQueryString(rawMessage, Encoding.UTF8);
+            string[] requiredFields =
+            {
+                "payment_status",
+                "txn_id",
+                "receiver_email",
+                "mc_gross",
+                "custom",
+                "mc_currency",
+                "txn_type",
+            };
+
+            foreach (string field in requiredFields)
+            {
+                if (!string.IsNullOrWhiteSpace(values[field])) continue;
+
+                rejection = $"missing required field `{field}`";
+                return false;
+            }
+
+            transactionId = values["txn_id"];
+            CleanupRecentIPNIds();
+
+            if (RecentIPNIds.TryAdd(transactionId, DateTime.UtcNow))
+                return true;
+
+            duplicate = true;
+            rejection = $"duplicate queued txn_id `{transactionId}`";
+            return false;
+        }
+
+        private static void CleanupRecentIPNIds()
+        {
+            DateTime threshold = DateTime.UtcNow - RecentIPNRetention;
+
+            foreach (KeyValuePair<string, DateTime> pair in RecentIPNIds)
+            {
+                if (pair.Value >= threshold) continue;
+
+                RecentIPNIds.TryRemove(pair.Key, out _);
+            }
+        }
+
+        internal static void ClearRecentIPNIdsForTests()
+        {
+            RecentIPNIds.Clear();
         }
 
         private static async Task VerifyIPNAsync(string rawMessage, string liveUrl, string verifiedResponse)

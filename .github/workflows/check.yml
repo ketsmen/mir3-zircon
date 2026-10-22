@@ -1,0 +1,33 @@
+name: Check
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+jobs:
+  check:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: |
+          dotnet restore "Zircon Server.sln"
+          dotnet restore .\Tools\PacketBench\PacketBench.csproj
+          dotnet restore .\Tools\ConfigSchema\ConfigSchema.csproj
+
+      - name: Check
+        shell: pwsh
+        run: .\Tools\Check.ps1 -NoRestore -SkipLocalValidate -SkipOutputVerify
+
+      - name: Release Build
+        run: dotnet build "Zircon Server.sln" -c Release --no-restore -v minimal

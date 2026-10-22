@@ -36,23 +36,40 @@ namespace Server.Envir
 
         public static ConcurrentQueue<string> DisplayLogs = [];
         public static ConcurrentQueue<string> Logs = [];
+        public static ConcurrentQueue<string> StructuredLogs = [];
         public static bool UseLogConsole = false;
+        private const long MaxLogFileBytes = 10L * 1024 * 1024;
+        private const int LogRetentionDays = 14;
 
         public static void Log(string log, bool hardLog = true)
         {
-            log = string.Format("[{0:F}]: {1}", Time.Now, log);
+            Log(LogLevel.Info, LogCategory.General, log, hardLog);
+        }
+
+        public static void Log(LogCategory category, string log, bool hardLog = true)
+        {
+            Log(LogLevel.Info, category, log, hardLog);
+        }
+
+        public static void Log(LogLevel level, LogCategory category, string log, bool hardLog = true)
+        {
+            string message = LogText.Format(level, category, log);
+            string formattedLog = string.Format("[{0:F}]: {1}", Time.Now, message);
 
             if (UseLogConsole)
             {
-                Console.WriteLine(log);
+                Console.WriteLine(formattedLog);
             }
             else
             {
                 if (DisplayLogs.Count < 100)
-                    DisplayLogs.Enqueue(log);
+                    DisplayLogs.Enqueue(formattedLog);
 
                 if (hardLog && Logs.Count < 1000)
-                    Logs.Enqueue(log);
+                    Logs.Enqueue(formattedLog);
+
+                if (hardLog && StructuredLogs.Count < 1000)
+                    StructuredLogs.Enqueue(BuildStructuredLog(level, category, log));
             }
         }
 
@@ -96,12 +113,12 @@ namespace Server.Envir
                 _userCountListener.BeginAcceptTcpClient(CountConnection, null);
 
                 NetworkStarted = true;
-                if (log) Log($"Network Started. Listen: {Config.IPAddress}:{Config.Port}");
+                if (log) Log(LogCategory.Network, $"Network Started. Listen: {Config.IPAddress}:{Config.Port}");
             }
             catch (Exception ex)
             {
                 Started = false;
-                Log(ex.ToString());
+                Log(LogCategory.Network, ex.ToString());
             }
         }
         private static void StopNetwork(bool log = true)
@@ -138,7 +155,7 @@ namespace Server.Envir
             Connections.Clear();
             IPCount.Clear();
 
-            if (log) Log("Network Stopped.");
+            if (log) Log(LogCategory.Network, "Network Stopped.");
         }
 
         private static void Connection(IAsyncResult result)
@@ -170,7 +187,10 @@ namespace Server.Envir
             finally
             {
                 while (NewConnections?.Count >= 15)
+                {
+                    NewConnectionBackPressureWaits++;
                     Thread.Sleep(1);
+                }
 
                 if (_listener != null && _listener.Server.IsBound)
                     _listener.BeginAcceptTcpClient(Connection, null);
@@ -221,6 +241,7 @@ namespace Server.Envir
         public static DateTime Now, StartTime, LastWarTime;
 
         public static int ProcessObjectCount, LoopCount;
+        public static long NewConnectionBackPressureWaits, SavingWaits, SavingWaitMilliseconds, LogFlushIdleWaits;
 
         public static long DBytesSent, DBytesReceived;
         public static long TotalBytesSent, TotalBytesReceived;
@@ -1726,6 +1747,7 @@ namespace Server.Envir
             Now = Time.Now;
             DateTime DBTime = Now + Config.DBSaveDelay;
 
+            ValidateStartupHealth();
             StartEnvir();
             ProcessHeroGradePromoteEventExpiry();
             AuditHeroGradePromoteConfig("Startup");
@@ -1988,13 +2010,44 @@ namespace Server.Envir
             WebServer.StopWebServer();
             StopNetwork();
 
-            while (Saving) Thread.Sleep(1);
+            WaitForSaving();
             if (Session != null)
                 Session.BackUpDelay = 0;
             Save();
-            while (Saving) Thread.Sleep(1);
+            WaitForSaving();
 
             StopEnvir();
+        }
+
+        private static void ValidateStartupHealth()
+        {
+            ServerStartupHealthReport health = ServerStartupHealthCheck.Evaluate();
+
+            foreach (string warning in health.Warnings)
+                Log(LogLevel.Warning, LogCategory.General, "[StartupHealth] " + warning);
+
+            if (health.Success)
+                return;
+
+            foreach (string error in health.Errors)
+                Log(LogLevel.Error, LogCategory.General, "[StartupHealth] " + error);
+
+            throw new InvalidOperationException("服务器启动配置校验失败: " + string.Join("; ", health.Errors));
+        }
+
+        private static void WaitForSaving()
+        {
+            if (!Saving) return;
+
+            DateTime start = Time.Now;
+
+            while (Saving)
+            {
+                SavingWaits++;
+                Thread.Sleep(1);
+            }
+
+            SavingWaitMilliseconds += (long)(Time.Now - start).TotalMilliseconds;
         }
 
         public static void ProcessGameGold()
@@ -2339,7 +2392,8 @@ namespace Server.Envir
             {
                 if (Now < NextLogTime)
                 {
-                    Thread.Sleep(1);
+                    LogFlushIdleWaits++;
+                    Thread.Sleep(100);
                     continue;
                 }
 
@@ -2351,10 +2405,34 @@ namespace Server.Envir
         private static void WriteLogs()
         {
             var logPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".\\Logs.txt"));
+            var structuredLogPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".\\Logs.jsonl"));
             var chatLogPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".\\Chat Logs.txt"));
 
             FlushLogQueue(Logs, logPath);
+            FlushLogQueue(StructuredLogs, structuredLogPath);
             FlushLogQueue(ChatLogs, chatLogPath);
+        }
+
+        private static string BuildStructuredLog(LogLevel level, LogCategory category, string message)
+        {
+            return "{" +
+                   $"\"time\":\"{Time.Now:O}\"," +
+                   $"\"level\":\"{level}\"," +
+                   $"\"category\":\"{category}\"," +
+                   $"\"message\":\"{JsonEscape(message)}\"" +
+                   "}";
+        }
+
+        private static string JsonEscape(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return string.Empty;
+
+            return value
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"")
+                .Replace("\r", "\\r")
+                .Replace("\n", "\\n")
+                .Replace("\t", "\\t");
         }
 
         private static void FlushLogQueue(ConcurrentQueue<string> queue, string path)
@@ -2370,7 +2448,9 @@ namespace Server.Envir
 
             try
             {
+                LogFileMaintenance.RotateIfNeeded(path, MaxLogFileBytes);
                 File.AppendAllLines(path, lines);
+                LogFileMaintenance.CleanupOldFiles(path, LogRetentionDays);
             }
             catch
             {
@@ -4579,7 +4659,7 @@ namespace Server.Envir
 
         public static int ErrorCount;
         private static string LastError;
-        public static void SaveError(string ex)
+        public static void SaveError(string ex, LogCategory category = LogCategory.General)
         {
             try
             {
@@ -4588,11 +4668,12 @@ namespace Server.Envir
                 const string LogPath = @".\Errors\";
 
                 LastError = ex;
+                string message = LogText.WithCategory(category, LastError);
 
                 if (!Directory.Exists(LogPath))
                     Directory.CreateDirectory(LogPath);
 
-                File.AppendAllText($"{LogPath}{Now.Year}-{Now.Month}-{Now.Day}.txt", LastError + Environment.NewLine);
+                File.AppendAllText($"{LogPath}{Now.Year}-{Now.Month}-{Now.Day}.txt", message + Environment.NewLine);
             }
             catch
             { }

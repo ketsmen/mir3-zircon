@@ -1601,7 +1601,7 @@ namespace Server.Models
 
                     return true;
                 default:
-                    throw new NotImplementedException();
+                    return false;
             }
         }
         public override bool CanHelpTarget(MapObject ob)
@@ -1946,13 +1946,13 @@ namespace Server.Models
                             case ObjectType.Monster:
                                 return ((MonsterObject)x.Target).PetOwner == PetOwner;
                             default:
-                                throw new ArgumentOutOfRangeException();
+                                return false;
                         }
                     })) return true;
 
                     return false;
                 default:
-                    throw new NotImplementedException();
+                    return false;
             }
         }
         protected virtual void Attack()
@@ -2731,7 +2731,7 @@ namespace Server.Models
                     PlayerTagged = true;
                     break;
                 default:
-                    throw new NotImplementedException();
+                    return 0;
             }
 
             ShockTime = DateTime.MinValue;

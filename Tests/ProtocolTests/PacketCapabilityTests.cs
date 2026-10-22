@@ -522,7 +522,7 @@ namespace ProtocolTests
                 typeof(S.ItemMove),
             };
 
-            string[] packetNamespaces = packetRoots.Select(x => x.Namespace).Distinct().ToArray();
+            string[] packetNamespaces = packetRoots.Select(x => x.Namespace!).Distinct().ToArray();
 
             List<string> missing = assembly.GetTypes()
                 .Where(type => type.BaseType == typeof(Packet))
@@ -534,6 +534,93 @@ namespace ProtocolTests
                 .ToList();
 
             Assert.Empty(missing);
+        }
+
+        [Fact]
+        public void ReceivePacketKeepsIncompletePacketBytes()
+        {
+            byte[] packet = new G.Connected { Capabilities = ServerCapabilities.Current }.GetPacketBytes();
+            byte[] partial = packet.Take(packet.Length - 1).ToArray();
+
+            Packet received = Packet.ReceivePacket(partial, out byte[] extra);
+
+            Assert.Null(received);
+            Assert.Equal(partial, extra);
+        }
+
+        [Fact]
+        public void ReceivePacketIgnoresTooShortPacketLength()
+        {
+            byte[] packet = { 4, 0, 0, 0 };
+
+            Packet received = Packet.ReceivePacket(packet, out byte[] extra);
+
+            Assert.Null(received);
+            Assert.Empty(extra);
+        }
+
+        [Fact]
+        public void ReceivePacketIgnoresUnknownPacketId()
+        {
+            byte[] packet = { 6, 0, 0, 0, 255, 127 };
+
+            Packet received = Packet.ReceivePacket(packet, out byte[] extra);
+
+            Assert.Null(received);
+            Assert.Empty(extra);
+        }
+
+        [Fact]
+        public void ReceivePacketRejectsOversizedPacketLength()
+        {
+            byte[] packet =
+            {
+                (byte)((Packet.MaxPacketSize + 1) & 0xFF),
+                (byte)(((Packet.MaxPacketSize + 1) >> 8) & 0xFF),
+                (byte)(((Packet.MaxPacketSize + 1) >> 16) & 0xFF),
+                (byte)(((Packet.MaxPacketSize + 1) >> 24) & 0xFF),
+            };
+
+            Assert.Throws<System.IO.InvalidDataException>(() => Packet.ReceivePacket(packet, out _));
+        }
+
+        [Fact]
+        public void PacketFrameReaderKeepsPartialFramesUntilComplete()
+        {
+            byte[] packet = new G.Connected { Capabilities = ServerCapabilities.Current }.GetPacketBytes();
+            PacketFrameReader reader = new();
+
+            reader.Append(packet, 0, packet.Length - 1);
+            Assert.False(reader.TryReadPacket(ServerCapabilities.Current, out Packet partial));
+            Assert.Null(partial);
+            Assert.Equal(packet.Length - 1, reader.BufferedBytes);
+
+            reader.Append(packet, packet.Length - 1, 1);
+            Assert.True(reader.TryReadPacket(ServerCapabilities.Current, out Packet complete));
+            G.Connected connected = Assert.IsType<G.Connected>(complete);
+            Assert.Equal(ServerCapabilities.Current, connected.Capabilities);
+            Assert.Equal(0, reader.BufferedBytes);
+        }
+
+        [Fact]
+        public void PacketFrameReaderReadsMultipleFrames()
+        {
+            byte[] first = new G.Connected { Capabilities = ServerCapabilities.Current }.GetPacketBytes();
+            byte[] second = new G.Disconnect { Reason = DisconnectReason.ServerClosing }.GetPacketBytes();
+            byte[] combined = first.Concat(second).ToArray();
+            PacketFrameReader reader = new();
+
+            reader.Append(combined, 0, combined.Length);
+
+            Assert.True(reader.TryReadPacket(ServerCapabilities.Current, out Packet firstPacket));
+            Assert.IsType<G.Connected>(firstPacket);
+
+            Assert.True(reader.TryReadPacket(ServerCapabilities.Current, out Packet secondPacket));
+            G.Disconnect disconnect = Assert.IsType<G.Disconnect>(secondPacket);
+            Assert.Equal(DisconnectReason.ServerClosing, disconnect.Reason);
+
+            Assert.False(reader.TryReadPacket(ServerCapabilities.Current, out Packet empty));
+            Assert.Null(empty);
         }
     }
 }

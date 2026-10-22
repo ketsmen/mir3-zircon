@@ -114,7 +114,7 @@ namespace Server.Models.Monsters
 
                     return true;
                 default:
-                    throw new NotImplementedException();
+                    return false;
             }
         }
     }

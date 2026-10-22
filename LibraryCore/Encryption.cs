@@ -8,7 +8,7 @@ namespace Library
 {
     public class Encryption
     {
-        private static byte[] _cryptoKey = null;
+        private static byte[]? _cryptoKey = null;
 
         private static bool HasCryptoKey
         {
@@ -86,7 +86,7 @@ namespace Library
             return iv;
         }
 
-        public static void SetKey(byte[] databaseKey)
+        public static void SetKey(byte[]? databaseKey)
         {
             _cryptoKey = databaseKey;
         }

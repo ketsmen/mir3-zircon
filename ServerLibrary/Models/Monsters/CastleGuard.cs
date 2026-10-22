@@ -80,7 +80,7 @@ namespace Server.Models.Monsters
 
                     return player.Character.Account.GuildMember?.Guild.Castle != War.Castle;
                 default:
-                    throw new NotImplementedException();
+                    return false;
             }
         }
         public override bool CanAttackTarget(MapObject ob)
@@ -103,7 +103,7 @@ namespace Server.Models.Monsters
 
                     return player.Character.Account.GuildMember?.Guild.Castle != War.Castle;
                 default:
-                    throw new NotImplementedException();
+                    return false;
             }
         }
 

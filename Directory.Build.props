@@ -1,5 +1,9 @@
 <Project>
   <PropertyGroup>
-    <Mir3OutputRoot>D:\MirProject\Mir3\</Mir3OutputRoot>
+    <Mir3OutputRoot Condition="'$(Mir3OutputRoot)' == '' and '$(MIR3_OUTPUT_ROOT)' != ''">$(MIR3_OUTPUT_ROOT)</Mir3OutputRoot>
+    <Mir3OutputRoot Condition="'$(Mir3OutputRoot)' == ''">D:\MirProject\Mir3\</Mir3OutputRoot>
+    <Mir3OutputRoot>$([MSBuild]::EnsureTrailingSlash('$(Mir3OutputRoot)'))</Mir3OutputRoot>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
   </PropertyGroup>
 </Project>

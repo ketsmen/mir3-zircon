@@ -15,7 +15,7 @@
     <OutputPath>$(Mir3OutputRoot)Release\ServerCore\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="autofac" Version="9.1.0" />
+    <PackageReference Include="autofac" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\LibraryCore\LibraryCore.csproj" />

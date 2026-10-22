@@ -8666,25 +8666,7 @@ namespace Server.Envir
                 return;
             }
 
-            StringBuilder sb = new();
-            sb.AppendLine("自定义怪物与技能全量导出 TODO 报告");
-            sb.AppendLine();
-            sb.AppendLine($"待处理项: {report.PendingTodoCount}");
-            sb.AppendLine($"错误: {report.Failures.Count}");
-            sb.AppendLine();
-
-            if (report.Failures.Count > 0)
-            {
-                sb.AppendLine("错误明细:");
-                foreach (string failure in report.Failures)
-                    sb.AppendLine("- " + failure);
-                sb.AppendLine();
-            }
-
-            foreach (string todo in report.TodoDetails)
-                sb.AppendLine("- " + todo);
-
-            TryWriteAllText(path, sb.ToString(), report, "TODO 报告");
+            TryWriteAllText(path, CustomSystemReportFormatter.BuildTodoReportText(report), report, "TODO 报告");
         }
 
         private static bool TryWriteAllLines(string path, IEnumerable<string> lines, CustomSystemTextReport report, string description)
@@ -8865,48 +8847,7 @@ namespace Server.Envir
 
         public string ToDisplayText()
         {
-            StringBuilder sb = new();
-            sb.AppendLine($"模式: {Mode}");
-            sb.AppendLine($"资源: 加载 {ResourcesLoaded}, 导入 {ResourcesImported}, 导出 {ResourcesExported}");
-            sb.AppendLine($"怪物文件: 加载 {MonsterFilesLoaded}, 导出 {MonstersExported}");
-            sb.AppendLine($"怪物属性: 加载 {MonsterStatsLoaded}, 导入 {MonsterStatsImported}, 导出 {MonsterStatsExported}");
-            sb.AppendLine($"怪物掉落: 加载物品 {MonsterDropEntriesLoaded}, 加载组 {MonsterDropGroupsLoaded}, 导入物品 {MonsterDropEntriesImported}, 导入组 {MonsterDropGroupsImported}, 导出物品 {MonsterDropEntriesExported}, 导出组 {MonsterDropGroupsExported}");
-            sb.AppendLine($"掉落特殊行: 金币 {MonsterDropGoldLines}, 任务专属跳过 {MonsterDropQuestOnlyLines}, 缺失物品 {MissingItems.Distinct(StringComparer.OrdinalIgnoreCase).Count()}");
-            sb.AppendLine($"怪物视觉: 加载 {MonsterVisualsLoaded}, 导入 {MonsterVisualsImported}, 导出 {MonsterVisualsExported}");
-            sb.AppendLine($"怪物行为: 加载 {MonsterBehaviorsLoaded}, 导入 {MonsterBehaviorsImported}, 导出 {MonsterBehaviorsExported}");
-            sb.AppendLine($"技能: 加载 {SkillFilesLoaded}, 导入 {SkillsImported}, 导出 {SkillsExported}");
-            if (TemplateMonsterFilesLoaded > 0 || TemplateSkillFilesLoaded > 0)
-                sb.AppendLine($"模板校验: 怪物 {TemplateMonsterFilesLoaded}, 技能 {TemplateSkillFilesLoaded}");
-            sb.AppendLine($"缺失引用: 资源 {MissingResources.Distinct(StringComparer.OrdinalIgnoreCase).Count()}, 怪物 {MissingMonsters.Distinct(StringComparer.OrdinalIgnoreCase).Count()}, 技能 {MissingMagics.Distinct(StringComparer.OrdinalIgnoreCase).Count()}, 物品 {MissingItems.Distinct(StringComparer.OrdinalIgnoreCase).Count()}");
-            sb.AppendLine($"跳过: 怪物 {MonstersSkipped}, 技能 {SkillsSkipped}");
-            sb.AppendLine($"待迁移 TODO: {PendingTodoCount}");
-            sb.AppendLine($"错误: {Failures.Count}");
-
-            AppendSamples(sb, "缺失资源", MissingResources);
-            AppendSamples(sb, "缺失怪物", MissingMonsters);
-            AppendSamples(sb, "缺失技能", MissingMagics);
-            AppendSamples(sb, "缺失物品", MissingItems);
-            AppendSamples(sb, "待迁移 TODO 示例", PendingTodoDetails);
-
-            if (Failures.Count > 0)
-                AppendSamples(sb, "错误示例", Failures);
-
-            return sb.ToString();
-        }
-
-        private static void AppendSamples(StringBuilder sb, string title, IEnumerable<string> values)
-        {
-            List<string> samples = values?
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Take(30)
-                .ToList() ?? [];
-
-            if (samples.Count == 0) return;
-
-            sb.AppendLine();
-            sb.AppendLine($"{title}:");
-            sb.AppendLine(string.Join(Environment.NewLine, samples));
+            return CustomSystemReportFormatter.BuildDisplayText(this);
         }
 
         private static bool IsPendingTodoDetail(string value)

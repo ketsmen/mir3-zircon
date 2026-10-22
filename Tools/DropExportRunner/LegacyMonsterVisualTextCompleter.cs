@@ -533,27 +533,10 @@ internal static class LegacyMonsterVisualTextCompleter
     private static void RewriteTodoReport(string outputRoot, CustomSystemTextReport report)
     {
         string path = Path.Combine(outputRoot, "TODO报告.txt");
-        StringBuilder sb = new();
-        sb.AppendLine("自定义怪物与技能全量导出 TODO 报告");
-        sb.AppendLine();
-        sb.AppendLine($"待处理项: {report.PendingTodoCount}");
-        sb.AppendLine($"错误: {report.Failures.Count}");
-        sb.AppendLine();
-
-        if (report.Failures.Count > 0)
-        {
-            sb.AppendLine("错误明细:");
-            foreach (string failure in report.Failures)
-                sb.AppendLine("- " + failure);
-            sb.AppendLine();
-        }
-
-        foreach (string todo in report.TodoDetails)
-            sb.AppendLine("- " + todo);
 
         try
         {
-            WriteAllTextAtomically(path, sb.ToString());
+            WriteAllTextAtomically(path, CustomSystemReportFormatter.BuildTodoReportText(report));
         }
         catch (Exception ex) when (IsFileAccessException(ex))
         {

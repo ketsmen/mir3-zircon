@@ -56,6 +56,8 @@ namespace Client.Envir
         private static readonly object DynamicLibraryLock = new object();
         public static List<string> DynamicLibraryDiagnostics = new List<string>();
         private static readonly object DynamicLibraryDiagnosticLock = new object();
+        public static int DynamicLibrariesLoaded;
+        public static int DynamicLibrariesDisposed;
         public static Dictionary<int, CustomSkillInfo> ClientCustomSkillOverrideList = new Dictionary<int, CustomSkillInfo>();
         private static readonly object ClientCustomSkillOverrideLock = new object();
 
@@ -143,6 +145,7 @@ namespace Client.Envir
 
                     library = loadedLibrary;
                     DynamicLibraryList[cacheKey] = library;
+                    DynamicLibrariesLoaded++;
                 }
 
                 return true;
@@ -334,7 +337,7 @@ namespace Client.Envir
                 if (!Directory.Exists(logPath))
                     Directory.CreateDirectory(logPath);
 
-                File.AppendAllText(Path.Combine(logPath, "DynamicLibraryDiagnostics.txt"), $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
+                File.AppendAllText(Path.Combine(logPath, "DynamicLibraryDiagnostics.txt"), $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {LogText.WithCategory(LogCategory.CustomSystem, message)}{Environment.NewLine}");
             }
             catch
             {
@@ -1338,7 +1341,7 @@ namespace Client.Envir
 
         public static int ErrorCount;
         private static string LastError;
-        public static void SaveError(string ex)
+        public static void SaveError(string ex, LogCategory category = LogCategory.General)
         {
             try
             {
@@ -1347,12 +1350,13 @@ namespace Client.Envir
                 const string LogPath = @".\Errors\";
 
                 LastError = ex;
+                string message = LogText.WithCategory(category, LastError);
                 string state = $"State = {Target?.DisplayRectangle}";
 
                 if (!Directory.Exists(LogPath))
                     Directory.CreateDirectory(LogPath);
 
-                File.AppendAllText($"{LogPath}{Now.Year}-{Now.Month}-{Now.Day}.txt", LastError + Environment.NewLine + state + Environment.NewLine);
+                File.AppendAllText($"{LogPath}{Now.Year}-{Now.Month}-{Now.Day}.txt", message + Environment.NewLine + state + Environment.NewLine);
             }
             catch
             { }
@@ -1380,7 +1384,13 @@ namespace Client.Envir
             }
 
             foreach (MirLibrary library in dynamicLibraries)
+            {
                 library.Dispose();
+                DynamicLibrariesDisposed++;
+            }
+
+            if (dynamicLibraries.Count > 0)
+                AddDynamicLibraryDiagnostic($"客户端卸载时释放动态图库: {dynamicLibraries.Count}, 累计释放: {DynamicLibrariesDisposed}");
 
             lock (DynamicLibraryDiagnosticLock)
             {

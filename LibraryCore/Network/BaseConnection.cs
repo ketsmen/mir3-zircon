@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net.Sockets;
@@ -12,6 +13,7 @@ namespace Library.Network
         public static readonly ConcurrentDictionary<string, DiagnosticValue> Diagnostics = new ConcurrentDictionary<string, DiagnosticValue>();
         public static Dictionary<(Type ConnectionType, Type PacketType), MethodInfo> PacketMethods = new Dictionary<(Type ConnectionType, Type PacketType), MethodInfo>();
         private static readonly object PacketMethodsLock = new object();
+        private const int ReceiveBufferSize = 8 * 1024;
         public static bool Monitor;
 
         public bool Connected { get; set; }
@@ -48,7 +50,7 @@ namespace Library.Network
 
         public ConcurrentQueue<Packet> ReceiveList = new ConcurrentQueue<Packet>();
         public ConcurrentQueue<Packet> SendList = new ConcurrentQueue<Packet>();
-        private byte[] _rawData = new byte[0];
+        private readonly PacketFrameReader _packetReader = new PacketFrameReader();
 
         public EventHandler<Exception> OnException;
 
@@ -70,9 +72,17 @@ namespace Library.Network
                 TcpClient client = Client;
                 if (client == null || !client.Connected) return;
 
-                byte[] rawBytes = new byte[8 * 1024];
+                byte[] rawBytes = ArrayPool<byte>.Shared.Rent(ReceiveBufferSize);
 
-                client.Client.BeginReceive(rawBytes, 0, rawBytes.Length, SocketFlags.None, ReceiveData, rawBytes);
+                try
+                {
+                    client.Client.BeginReceive(rawBytes, 0, ReceiveBufferSize, SocketFlags.None, ReceiveData, rawBytes);
+                }
+                catch
+                {
+                    ArrayPool<byte>.Shared.Return(rawBytes);
+                    throw;
+                }
             }
             catch (Exception ex)
             {
@@ -83,6 +93,8 @@ namespace Library.Network
         }
         private void ReceiveData(IAsyncResult result)
         {
+            byte[] rawBytes = result.AsyncState as byte[];
+
             try
             {
                 if (!Connected) return;
@@ -102,20 +114,17 @@ namespace Library.Network
 
                 UpdateTimeOut();
 
-                byte[] rawBytes = result.AsyncState as byte[];
-
-                byte[] temp = _rawData;
-                _rawData = new byte[dataRead + temp.Length];
-                Buffer.BlockCopy(temp, 0, _rawData, 0, temp.Length);
-                Buffer.BlockCopy(rawBytes, 0, _rawData, temp.Length, dataRead);
+                _packetReader.Append(rawBytes, 0, dataRead);
 
                 ConcurrentQueue<Packet> receiveList = ReceiveList;
                 if (receiveList == null) return;
 
                 Packet p;
 
-                while ((p = Packet.ReceivePacket(_rawData, out _rawData, ReadCapabilities)) != null)
+                while (_packetReader.TryReadPacket(ReadCapabilities, out p))
                 {
+                    if (p == null) continue;
+
                     receiveList.Enqueue(p);
                     TotalPacketsProcessed++;
                 }
@@ -128,7 +137,13 @@ namespace Library.Network
                     OnException?.Invoke(this, ex);
                 Disconnecting = true;
             }
+            finally
+            {
+                if (rawBytes != null)
+                    ArrayPool<byte>.Shared.Return(rawBytes);
+            }
         }
+
         private void BeginSend(List<byte> data)
         {
             if (!Connected || data.Count == 0) return;
@@ -187,7 +202,7 @@ namespace Library.Network
 
             SendList = null;
             ReceiveList = null;
-            _rawData = null;
+            _packetReader.Clear();
 
             TcpClient client = Client;
             Client = null;
